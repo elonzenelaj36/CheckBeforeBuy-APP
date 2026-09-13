@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { useRouter } from 'expo-router';
 import {
   ScrollView,
   StyleSheet,
@@ -6,125 +6,107 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function HomeScreen() {
+import BottomNavigation from '@/components/BottomNavigation';
+
+export default function Home() {
+  const router = useRouter();
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.content}
       >
-
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.smallText}>
-              WELCOME BACK
-            </Text>
-
-            <Text style={styles.greeting}>
-              Elon
-            </Text>
+            <Text style={styles.eyebrow}>WELCOME BACK</Text>
+            <Text style={styles.name}>Elon</Text>
           </View>
 
           <TouchableOpacity
-            style={styles.profileButton}
+            style={styles.profileCircle}
             onPress={() => router.push('/profile')}
           >
-            <Text style={styles.profileText}>
-              E
-            </Text>
+            <Text style={styles.profileLetter}>E</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Main message */}
+        {/* Intro */}
         <View style={styles.intro}>
-          <Text style={styles.title}>
-            Before you buy,
-            {'\n'}
-            check it.
-          </Text>
+          <Text style={styles.title}>Before you buy,</Text>
+          <Text style={styles.title}>check it.</Text>
 
-          <Text style={styles.description}>
+          <Text style={styles.subtitle}>
             Analyze products, see how they fit your home,
-            and find out if they're really worth buying.
+            and make better buying decisions.
           </Text>
         </View>
 
         {/* Check Product */}
         <TouchableOpacity
-          style={styles.checkCard}
+          style={styles.mainCard}
           onPress={() => router.push('/check-product')}
+          activeOpacity={0.85}
         >
           <View>
-            <Text style={styles.cardLabel}>
-              MAIN FEATURE
-            </Text>
+            <Text style={styles.cardEyebrow}>MAIN TOOL</Text>
 
-            <Text style={styles.checkTitle}>
+            <Text style={styles.mainCardTitle}>
               Check a product
             </Text>
 
-            <Text style={styles.checkDescription}>
-              Scan or select a product to start your analysis.
+            <Text style={styles.mainCardDescription}>
+              Scan or search for something you're thinking
+              about buying.
             </Text>
           </View>
 
           <View style={styles.arrowCircle}>
-            <Text style={styles.arrow}>
-              →
-            </Text>
+            <Text style={styles.arrow}>→</Text>
           </View>
         </TouchableOpacity>
 
-        {/* Quick actions */}
-        <Text style={styles.sectionTitle}>
-          QUICK ACTIONS
-        </Text>
+        {/* Quick Actions */}
+        <Text style={styles.sectionTitle}>QUICK ACTIONS</Text>
 
-        <View style={styles.quickActions}>
-
+        <View style={styles.quickRow}>
           <TouchableOpacity
-            style={styles.actionCard}
+            style={styles.quickCard}
             onPress={() => router.push('/find-for-my-home')}
+            activeOpacity={0.85}
           >
-            <Text style={styles.actionNumber}>
-              01
+            <Text style={styles.quickTitle}>
+              Find for my home
             </Text>
 
-            <Text style={styles.actionTitle}>
-              Find for
-              {'\n'}
-              my home
+            <Text style={styles.quickDescription}>
+              Tell us what you need.
             </Text>
 
-            <Text style={styles.actionArrow}>
-              →
-            </Text>
+            <Text style={styles.quickArrow}>→</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.actionCard}
+            style={styles.quickCard}
             onPress={() => router.push('/my-home')}
+            activeOpacity={0.85}
           >
-            <Text style={styles.actionNumber}>
-              02
+            <Text style={styles.quickTitle}>
+              My home
             </Text>
 
-            <Text style={styles.actionTitle}>
-              My
-              {'\n'}
-              home
+            <Text style={styles.quickDescription}>
+              Manage your rooms.
             </Text>
 
-            <Text style={styles.actionArrow}>
-              →
-            </Text>
+            <Text style={styles.quickArrow}>→</Text>
           </TouchableOpacity>
-
         </View>
 
-        {/* Recently checked */}
+        {/* Recently Checked */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
             RECENTLY CHECKED
@@ -133,31 +115,25 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => router.push('/history')}
           >
-            <Text style={styles.seeAll}>
-              SEE ALL
-            </Text>
+            <Text style={styles.viewAll}>VIEW ALL</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIcon}>
-            <Text style={styles.emptyIconText}>
-              +
-            </Text>
-          </View>
+        <TouchableOpacity
+          style={styles.emptyCard}
+          onPress={() => router.push('/history')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.emptyTitle}>
+            Nothing checked yet
+          </Text>
 
-          <View style={styles.emptyContent}>
-            <Text style={styles.emptyTitle}>
-              Nothing checked yet
-            </Text>
+          <Text style={styles.emptyDescription}>
+            Products you analyze will appear here.
+          </Text>
+        </TouchableOpacity>
 
-            <Text style={styles.emptyDescription}>
-              Products you analyze will appear here.
-            </Text>
-          </View>
-        </View>
-
-        {/* Recommendations */}
+        {/* Recommended */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
             RECOMMENDED FOR YOU
@@ -166,85 +142,29 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => router.push('/recommendations')}
           >
-            <Text style={styles.seeAll}>
-              SEE ALL
-            </Text>
+            <Text style={styles.viewAll}>VIEW ALL</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIcon}>
-            <Text style={styles.emptyIconText}>
-              ★
-            </Text>
-          </View>
+        <TouchableOpacity
+          style={styles.emptyCard}
+          onPress={() => router.push('/recommendations')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.emptyTitle}>
+            Recommendations will appear here
+          </Text>
 
-          <View style={styles.emptyContent}>
-            <Text style={styles.emptyTitle}>
-              Recommendations coming soon
-            </Text>
-
-            <Text style={styles.emptyDescription}>
-              Once we know what you like, we'll find products
-              that fit your home and budget.
-            </Text>
-          </View>
-        </View>
-
+          <Text style={styles.emptyDescription}>
+            As you check products and build your home,
+            we'll learn what fits you.
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNavigation}>
-
-        <TouchableOpacity style={styles.navItem}>
-          <View style={styles.activeDot} />
-
-          <Text style={styles.activeNavText}>
-            Home
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/search')}
-        >
-          <Text style={styles.navIcon}>
-            ⌕
-          </Text>
-
-          <Text style={styles.navText}>
-            Search
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/saved')}
-        >
-          <Text style={styles.navIcon}>
-            ♡
-          </Text>
-
-          <Text style={styles.navText}>
-            Saved
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/profile')}
-        >
-          <Text style={styles.navIcon}>
-            ○
-          </Text>
-
-          <Text style={styles.navText}>
-            Profile
-          </Text>
-        </TouchableOpacity>
-
-      </View>
-    </View>
+      {/* Fixed Bottom Navigation */}
+      <BottomNavigation activeTab="home" />
+    </SafeAreaView>
   );
 }
 
@@ -254,9 +174,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#111111',
   },
 
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 60,
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 120,
   },
 
@@ -266,21 +186,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
 
-  smallText: {
+  eyebrow: {
     color: '#777777',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
-  greeting: {
+  name: {
     color: '#FFFFFF',
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: '700',
-    marginTop: 5,
+    marginTop: 4,
   },
 
-  profileButton: {
+  profileCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -289,77 +209,75 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  profileText: {
+  profileLetter: {
     color: '#111111',
     fontSize: 16,
     fontWeight: '700',
   },
 
   intro: {
-    marginTop: 45,
-    marginBottom: 30,
+    marginTop: 42,
+    marginBottom: 28,
   },
 
   title: {
     color: '#FFFFFF',
-    fontSize: 38,
-    lineHeight: 43,
+    fontSize: 34,
     fontWeight: '700',
+    lineHeight: 38,
   },
 
-  description: {
+  subtitle: {
     color: '#888888',
-    fontSize: 15,
-    lineHeight: 23,
-    marginTop: 15,
-    maxWidth: 340,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 14,
+    maxWidth: 330,
   },
 
-  checkCard: {
+  mainCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 24,
+    padding: 22,
     minHeight: 190,
     justifyContent: 'space-between',
   },
 
-  cardLabel: {
+  cardEyebrow: {
     color: '#777777',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
-  checkTitle: {
+  mainCardTitle: {
     color: '#111111',
-    fontSize: 27,
+    fontSize: 25,
     fontWeight: '700',
-    marginTop: 12,
+    marginTop: 10,
   },
 
-  checkDescription: {
+  mainCardDescription: {
     color: '#555555',
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 7,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 8,
     maxWidth: 280,
   },
 
   arrowCircle: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 45,
-    height: 45,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#111111',
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'flex-end',
   },
 
   arrow: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 20,
   },
 
   sectionTitle: {
@@ -369,85 +287,63 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  quickActions: {
+  quickRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 15,
+    marginTop: 12,
   },
 
-  actionCard: {
+  quickCard: {
     flex: 1,
-    minHeight: 155,
-    borderRadius: 18,
+    backgroundColor: '#181818',
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 145,
     borderWidth: 1,
     borderColor: '#2D2D2D',
-    backgroundColor: '#181818',
-    padding: 18,
-    justifyContent: 'space-between',
   },
 
-  actionNumber: {
-    color: '#555555',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  actionTitle: {
+  quickTitle: {
     color: '#FFFFFF',
-    fontSize: 19,
-    lineHeight: 23,
+    fontSize: 15,
     fontWeight: '600',
+    lineHeight: 20,
   },
 
-  actionArrow: {
+  quickDescription: {
+    color: '#777777',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
+  },
+
+  quickArrow: {
     color: '#FFFFFF',
-    fontSize: 20,
-    alignSelf: 'flex-end',
+    fontSize: 18,
+    marginTop: 18,
   },
 
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 38,
-    marginBottom: 15,
+    marginTop: 34,
+    marginBottom: 12,
   },
 
-  seeAll: {
-    color: '#AAAAAA',
-    fontSize: 10,
+  viewAll: {
+    color: '#FFFFFF',
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
   },
 
   emptyCard: {
-    minHeight: 100,
-    borderRadius: 16,
     backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#282828',
+    borderRadius: 16,
     padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  emptyIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#222222',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  emptyIconText: {
-    color: '#777777',
-    fontSize: 20,
-  },
-
-  emptyContent: {
-    flex: 1,
-    marginLeft: 14,
+    borderWidth: 1,
+    borderColor: '#2D2D2D',
   },
 
   emptyTitle: {
@@ -460,53 +356,6 @@ const styles = StyleSheet.create({
     color: '#777777',
     fontSize: 12,
     lineHeight: 18,
-    marginTop: 4,
-  },
-
-  bottomNavigation: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 82,
-    backgroundColor: '#151515',
-    borderTopWidth: 1,
-    borderTopColor: '#282828',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingBottom: 8,
-  },
-
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 65,
-  },
-
-  activeDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 6,
-  },
-
-  activeNavText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
-  navIcon: {
-    color: '#777777',
-    fontSize: 21,
-    height: 25,
-    marginBottom: 2,
-  },
-
-  navText: {
-    color: '#777777',
-    fontSize: 11,
+    marginTop: 6,
   },
 });
