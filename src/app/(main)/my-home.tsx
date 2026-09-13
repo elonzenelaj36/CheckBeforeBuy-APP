@@ -1,17 +1,48 @@
-import { useRouter } from 'expo-router';
+import React from 'react';
+
 import {
+  Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  useFocusEffect,
+  useRouter,
+} from 'expo-router';
 
 import BottomNavigation from '@/components/BottomNavigation';
 
+import {
+  deleteRoom,
+  getRooms,
+  SavedRoom,
+} from '@/services/storage';
+
 export default function MyHome() {
   const router = useRouter();
+
+  const [rooms, setRooms] = React.useState<SavedRoom[]>(
+    []
+  );
+
+  const loadRooms = async () => {
+    const savedRooms = await getRooms();
+
+    setRooms(savedRooms);
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadRooms();
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -20,25 +51,36 @@ export default function MyHome() {
         contentContainerStyle={styles.content}
       >
         {/* Header */}
+
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <Text style={styles.backArrow}>←</Text>
+            <Text style={styles.backArrow}>
+              ←
+            </Text>
           </TouchableOpacity>
 
           <View>
-            <Text style={styles.eyebrow}>YOUR SPACE</Text>
-            <Text style={styles.headerTitle}>My Home</Text>
+            <Text style={styles.eyebrow}>
+              YOUR SPACE
+            </Text>
+
+            <Text style={styles.headerTitle}>
+              My Home
+            </Text>
           </View>
 
           <View style={styles.headerSpacer} />
         </View>
 
         {/* Intro */}
+
         <View style={styles.intro}>
-          <Text style={styles.title}>Build your home.</Text>
+          <Text style={styles.title}>
+            Build your home.
+          </Text>
 
           <Text style={styles.subtitle}>
             Add your rooms so we can make every product
@@ -47,13 +89,16 @@ export default function MyHome() {
         </View>
 
         {/* Add Room */}
+
         <TouchableOpacity
           style={styles.addRoomCard}
           activeOpacity={0.85}
           onPress={() => router.push('/select-room')}
         >
           <View style={styles.addRoomIcon}>
-            <Text style={styles.plus}>+</Text>
+            <Text style={styles.plus}>
+              +
+            </Text>
           </View>
 
           <View style={styles.addRoomText}>
@@ -62,47 +107,124 @@ export default function MyHome() {
             </Text>
 
             <Text style={styles.addRoomDescription}>
-              Add a room photo and start building your space.
+              Add a room photo and start building your
+              space.
             </Text>
           </View>
 
-          <Text style={styles.addRoomArrow}>→</Text>
+          <Text style={styles.addRoomArrow}>
+            →
+          </Text>
         </TouchableOpacity>
 
-        {/* Rooms */}
+        {/* Rooms Header */}
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
             YOUR ROOMS
           </Text>
 
-          <Text style={styles.roomCount}>0 ROOMS</Text>
+          <Text style={styles.roomCount}>
+            {rooms.length}{' '}
+            {rooms.length === 1 ? 'ROOM' : 'ROOMS'}
+          </Text>
         </View>
 
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIcon}>
-            <Text style={styles.emptyIconText}>+</Text>
-          </View>
+        {/* Empty State */}
 
-          <Text style={styles.emptyTitle}>
-            No rooms yet
-          </Text>
+        {rooms.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIcon}>
+              <Text style={styles.emptyIconText}>
+                +
+              </Text>
+            </View>
 
-          <Text style={styles.emptyDescription}>
-            Add your first room to start visualizing
-            products in your actual space.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => router.push('/select-room')}
-          >
-            <Text style={styles.addButtonText}>
-              ADD FIRST ROOM
+            <Text style={styles.emptyTitle}>
+              No rooms yet
             </Text>
-          </TouchableOpacity>
-        </View>
+
+            <Text style={styles.emptyDescription}>
+              Add your first room to start visualizing
+              products in your actual space.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() =>
+                router.push('/select-room')
+              }
+            >
+              <Text style={styles.addButtonText}>
+                ADD FIRST ROOM
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          /* Saved Rooms */
+
+          <View style={styles.roomsList}>
+            {rooms.map((room) => (
+              <View
+                key={room.id}
+                style={styles.roomCard}
+              >
+                <Image
+                  source={{
+                    uri: room.imageUri,
+                  }}
+                  style={styles.roomImage}
+                />
+
+                <View style={styles.roomInfo}>
+                  <Text style={styles.roomType}>
+                    {room.roomType}
+                  </Text>
+
+                  <Text
+                    style={styles.roomDescription}
+                  >
+                    Added to your home
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => {
+                    Alert.alert(
+                      'Remove room',
+                      `Remove your ${room.roomType.toLowerCase()}?`,
+                      [
+                        {
+                          text: 'Cancel',
+                          style: 'cancel',
+                        },
+                        {
+                          text: 'Remove',
+                          style: 'destructive',
+                          onPress: async () => {
+                            await deleteRoom(
+                              room.id
+                            );
+
+                            loadRooms();
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={styles.deleteText}>
+                    ×
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Why Add Home */}
+
         <View style={styles.whySection}>
           <Text style={styles.sectionTitle}>
             WHY ADD YOUR HOME?
@@ -113,14 +235,15 @@ export default function MyHome() {
           </Text>
 
           <Text style={styles.whyDescription}>
-            Your rooms will help Check Before Buy understand
-            your space and show you how products actually
-            look before you buy them.
+            Your rooms will help Check Before Buy
+            understand your space and show you how
+            products actually look before you buy them.
           </Text>
         </View>
       </ScrollView>
 
-      {/* Fixed Bottom Navigation */}
+      {/* Bottom Navigation */}
+
       <BottomNavigation activeTab="home" />
     </SafeAreaView>
   );
@@ -325,6 +448,58 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+
+  roomsList: {
+    gap: 12,
+  },
+
+  roomCard: {
+    backgroundColor: '#181818',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2D2D2D',
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  roomImage: {
+    width: 82,
+    height: 82,
+    borderRadius: 12,
+  },
+
+  roomInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+
+  roomType: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  roomDescription: {
+    color: '#777777',
+    fontSize: 12,
+    marginTop: 5,
+  },
+
+  deleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#222222',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  deleteText: {
+    color: '#777777',
+    fontSize: 22,
+    fontWeight: '300',
   },
 
   whySection: {
