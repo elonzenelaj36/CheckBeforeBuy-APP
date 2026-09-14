@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -8,10 +9,28 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+
+import BottomNavigation from '@/components/BottomNavigation';
+import { Colors } from '@/constants/colors';
+import { AuthUser, getCurrentUser, logout } from '@/services/auth';
 
 export default function Profile() {
   const router = useRouter();
+  const [user, setUser] = React.useState<AuthUser | null>(null);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      setUser(getCurrentUser());
+    }, [])
+  );
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
+  };
+
+  const initial = (user?.name || 'U').charAt(0).toUpperCase();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -20,16 +39,16 @@ export default function Profile() {
       >
         <View style={styles.profileCircle}>
           <Text style={styles.profileLetter}>
-            E
+            {initial}
           </Text>
         </View>
 
         <Text style={styles.name}>
-          Elon
+          {user?.name || 'Guest'}
         </Text>
 
         <Text style={styles.email}>
-          elon@example.com
+          {user?.email || 'Not signed in'}
         </Text>
 
         <View style={styles.menu}>
@@ -53,17 +72,26 @@ export default function Profile() {
               router.push('/my-home')
             }
           />
+
+          <MenuItem
+            title="My Items"
+            onPress={() =>
+              router.push('/my-items')
+            }
+          />
         </View>
 
         <TouchableOpacity
           style={styles.logout}
-          onPress={() => router.replace('/login')}
+          onPress={handleLogout}
         >
           <Text style={styles.logoutText}>
             LOG OUT
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <BottomNavigation activeTab="profile" />
     </SafeAreaView>
   );
 }
@@ -94,40 +122,40 @@ function MenuItem({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
     padding: 20,
     alignItems: 'center',
-    paddingBottom: 40,
+    paddingBottom: 140,
   },
 
   profileCircle: {
     width: 82,
     height: 82,
     borderRadius: 41,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 30,
   },
 
   profileLetter: {
-    color: '#111111',
+    color: Colors.cardHighlight,
     fontSize: 28,
     fontWeight: '700',
   },
 
   name: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 24,
     fontWeight: '700',
     marginTop: 15,
   },
 
   email: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 13,
     marginTop: 5,
   },
@@ -139,9 +167,9 @@ const styles = StyleSheet.create({
 
   menuItem: {
     height: 62,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     borderRadius: 14,
     paddingHorizontal: 18,
     flexDirection: 'row',
@@ -151,13 +179,13 @@ const styles = StyleSheet.create({
   },
 
   menuTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 
   arrow: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 18,
   },
 
@@ -166,14 +194,14 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 25,
   },
 
   logoutText: {
-    color: '#AAAAAA',
+    color: Colors.dangerText,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.3,

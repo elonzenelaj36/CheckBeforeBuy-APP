@@ -14,10 +14,15 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
+
 export default function CheckProduct() {
   const router = useRouter();
 
-  const [imageUri, setImageUri] = React.useState<string | null>(null);
+  const [imageUri, setImageUri] = React.useState<
+    string | null
+  >(null);
 
   const takePhoto = async () => {
     const permission =
@@ -25,8 +30,9 @@ export default function CheckProduct() {
 
     if (!permission.granted) {
       Alert.alert(
-        'Camera permission needed',
-        'Please allow camera access to take a product photo.'
+        'Camera access needed',
+        'Please allow camera access in Settings to take a product photo.',
+        [{ text: 'OK' }]
       );
 
       return;
@@ -36,10 +42,10 @@ export default function CheckProduct() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.8,
+      quality: 0.85,
     });
 
-    if (!result.canceled) {
+    if (!result.canceled && result.assets[0]) {
       setImageUri(result.assets[0].uri);
     }
   };
@@ -50,8 +56,9 @@ export default function CheckProduct() {
 
     if (!permission.granted) {
       Alert.alert(
-        'Photo permission needed',
-        'Please allow photo library access to choose a product photo.'
+        'Photo access needed',
+        'Please allow photo library access in Settings to choose a product photo.',
+        [{ text: 'OK' }]
       );
 
       return;
@@ -62,10 +69,10 @@ export default function CheckProduct() {
         mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.8,
+        quality: 0.85,
       });
 
-    if (!result.canceled) {
+    if (!result.canceled && result.assets[0]) {
       setImageUri(result.assets[0].uri);
     }
   };
@@ -77,9 +84,7 @@ export default function CheckProduct() {
 
     router.push({
       pathname: '/product-captured',
-      params: {
-        imageUri: imageUri,
-      },
+      params: { imageUri },
     });
   };
 
@@ -89,57 +94,50 @@ export default function CheckProduct() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backArrow}>←</Text>
-          </TouchableOpacity>
-
-          <View>
-            <Text style={styles.eyebrow}>
-              CHECK
-            </Text>
-
-            <Text style={styles.headerTitle}>
-              Check a product
-            </Text>
-          </View>
-
-          <View style={styles.headerSpacer} />
-        </View>
+        <ScreenHeader
+          eyebrow="CHECK"
+          title="Check a product"
+        />
 
         {/* Intro */}
         <View style={styles.intro}>
           <Text style={styles.title}>
             Before you buy,
           </Text>
-
-          <Text style={styles.title}>
-            check it.
-          </Text>
+          <Text style={styles.title}>check it.</Text>
 
           <Text style={styles.subtitle}>
-            Take a photo of a product you're thinking about
-            buying. We'll help you understand it before you
-            spend your money.
+            Take a photo of a product you're thinking
+            about buying. We'll help you understand it
+            before you spend your money.
           </Text>
         </View>
 
         {/* Preview */}
         <View style={styles.previewContainer}>
           {imageUri ? (
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.previewImage}
-            />
+            <>
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.previewImage}
+              />
+
+              {/* Retake overlay */}
+              <TouchableOpacity
+                style={styles.retakeButton}
+                onPress={() => setImageUri(null)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.retakeText}>
+                  ✕ RETAKE
+                </Text>
+              </TouchableOpacity>
+            </>
           ) : (
             <View style={styles.emptyPreview}>
               <View style={styles.cameraCircle}>
                 <Text style={styles.cameraSymbol}>
-                  +
+                  ◎
                 </Text>
               </View>
 
@@ -148,8 +146,8 @@ export default function CheckProduct() {
               </Text>
 
               <Text style={styles.previewDescription}>
-                Point your camera at the product you want
-                to check.
+                Point your camera at the product you
+                want to check.
               </Text>
             </View>
           )}
@@ -162,7 +160,9 @@ export default function CheckProduct() {
           activeOpacity={0.85}
         >
           <Text style={styles.primaryButtonText}>
-            TAKE PRODUCT PHOTO
+            {imageUri
+              ? 'RETAKE PHOTO'
+              : 'TAKE PRODUCT PHOTO'}
           </Text>
         </TouchableOpacity>
 
@@ -190,68 +190,44 @@ export default function CheckProduct() {
           </TouchableOpacity>
         )}
 
-        {/* What happens */}
+        {/* What happens next */}
         <View style={styles.infoSection}>
           <Text style={styles.sectionTitle}>
             WHAT HAPPENS NEXT
           </Text>
 
-          <View style={styles.infoRow}>
-            <View style={styles.numberCircle}>
-              <Text style={styles.number}>
-                01
-              </Text>
+          {[
+            {
+              num: '01',
+              title: 'Identify the product',
+              desc: "We'll identify what you're looking at and collect useful product information.",
+            },
+            {
+              num: '02',
+              title: 'See it in your room',
+              desc: 'Generate the product inside one of your saved rooms.',
+            },
+            {
+              num: '03',
+              title: 'Decide before buying',
+              desc: 'Understand the price, quality, alternatives, and whether it makes sense for you.',
+            },
+          ].map(({ num, title, desc }) => (
+            <View key={num} style={styles.infoRow}>
+              <View style={styles.numberCircle}>
+                <Text style={styles.number}>{num}</Text>
+              </View>
+
+              <View style={styles.infoTextContainer}>
+                <Text style={styles.infoTitle}>
+                  {title}
+                </Text>
+                <Text style={styles.infoDescription}>
+                  {desc}
+                </Text>
+              </View>
             </View>
-
-            <View style={styles.infoTextContainer}>
-              <Text style={styles.infoTitle}>
-                Identify the product
-              </Text>
-
-              <Text style={styles.infoDescription}>
-                We'll identify what you're looking at and
-                collect useful product information.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoRow}>
-            <View style={styles.numberCircle}>
-              <Text style={styles.number}>
-                02
-              </Text>
-            </View>
-
-            <View style={styles.infoTextContainer}>
-              <Text style={styles.infoTitle}>
-                See it in your room
-              </Text>
-
-              <Text style={styles.infoDescription}>
-                Generate the product inside one of your
-                saved rooms.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoRow}>
-            <View style={styles.numberCircle}>
-              <Text style={styles.number}>
-                03
-              </Text>
-            </View>
-
-            <View style={styles.infoTextContainer}>
-              <Text style={styles.infoTitle}>
-                Decide before buying
-              </Text>
-
-              <Text style={styles.infoDescription}>
-                Understand the price, quality, alternatives,
-                and whether it makes sense for you.
-              </Text>
-            </View>
-          </View>
+          ))}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -261,7 +237,7 @@ export default function CheckProduct() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
@@ -270,65 +246,23 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 3,
-    textAlign: 'center',
-  },
-
-  headerSpacer: {
-    width: 44,
-  },
-
   intro: {
-    marginTop: 42,
-    marginBottom: 28,
+    marginTop: 40,
+    marginBottom: 24,
   },
 
   title: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 34,
     fontWeight: '700',
-    lineHeight: 38,
+    lineHeight: 40,
   },
 
   subtitle: {
-    color: '#888888',
+    color: Colors.textSecondary,
     fontSize: 14,
     lineHeight: 21,
-    marginTop: 14,
+    marginTop: 12,
   },
 
   previewContainer: {
@@ -336,14 +270,33 @@ const styles = StyleSheet.create({
     height: 280,
     borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
   },
 
   previewImage: {
     width: '100%',
     height: '100%',
+  },
+
+  retakeButton: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    backgroundColor: Colors.background,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+
+  retakeText: {
+    color: Colors.textPrimary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 
   emptyPreview: {
@@ -357,26 +310,27 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accentDim,
+    borderWidth: 1,
+    borderColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
 
   cameraSymbol: {
-    color: '#111111',
-    fontSize: 32,
-    fontWeight: '300',
+    color: Colors.accent,
+    fontSize: 28,
   },
 
   previewTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 17,
     fontWeight: '600',
   },
 
   previewDescription: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',
@@ -387,14 +341,14 @@ const styles = StyleSheet.create({
   primaryButton: {
     height: 56,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.cardHighlight,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 18,
   },
 
   primaryButtonText: {
-    color: '#111111',
+    color: Colors.cardHighlightText,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
@@ -403,16 +357,16 @@ const styles = StyleSheet.create({
   secondaryButton: {
     height: 56,
     borderRadius: 14,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
   },
 
   secondaryButtonText: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
@@ -421,14 +375,14 @@ const styles = StyleSheet.create({
   continueButton: {
     height: 56,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
   },
 
   continueButtonText: {
-    color: '#111111',
+    color: Colors.cardHighlight,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
@@ -439,8 +393,8 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
     marginBottom: 18,
@@ -449,40 +403,42 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     marginBottom: 22,
+    gap: 14,
   },
 
   numberCircle: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
 
   number: {
-    color: '#FFFFFF',
+    color: Colors.accent,
     fontSize: 9,
     fontWeight: '700',
   },
 
   infoTextContainer: {
     flex: 1,
-    marginLeft: 14,
+    paddingTop: 4,
   },
 
   infoTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 
   infoDescription: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
-    marginTop: 5,
+    marginTop: 4,
   },
 });

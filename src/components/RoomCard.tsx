@@ -1,15 +1,16 @@
 import {
-    Image,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-import { SavedRoom } from '@/services/storage';
+import { Colors } from '@/constants/colors';
+import { Room } from '@/services/rooms';
 
 type RoomCardProps = {
-  room: SavedRoom;
+  room: Room;
   onPress: () => void;
 };
 
@@ -17,24 +18,44 @@ export default function RoomCard({
   room,
   onPress,
 }: RoomCardProps) {
+  const imageUri =
+    room.primaryImageUri ??
+    room.imageUris[0] ??
+    null;
+
   return (
     <TouchableOpacity
       style={styles.card}
       onPress={onPress}
       activeOpacity={0.85}
     >
-      <Image
-        source={{ uri: room.imageUri }}
-        style={styles.image}
-      />
+      {imageUri ? (
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.image}
+        />
+      ) : (
+        <View style={styles.imagePlaceholder}>
+          <Text style={styles.placeholderText}>
+            No photo
+          </Text>
+        </View>
+      )}
 
       <View style={styles.info}>
+        <Text style={styles.name}>
+          {room.name}
+        </Text>
+
         <Text style={styles.type}>
           {room.roomType}
         </Text>
 
         <Text style={styles.description}>
-          Your saved room
+          {room.imageUris.length}{' '}
+          {room.imageUris.length === 1
+            ? 'photo'
+            : 'photos'}
         </Text>
       </View>
 
@@ -47,11 +68,11 @@ export default function RoomCard({
 
 const styles = StyleSheet.create({
   card: {
-    height: 96,
-    backgroundColor: '#181818',
+    minHeight: 96,
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -63,25 +84,45 @@ const styles = StyleSheet.create({
     borderRadius: 11,
   },
 
+  imagePlaceholder: {
+    width: 76,
+    height: 76,
+    borderRadius: 11,
+    backgroundColor: Colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  placeholderText: {
+    color: Colors.textMuted,
+    fontSize: 10,
+  },
+
   info: {
     flex: 1,
     marginLeft: 14,
   },
 
-  type: {
-    color: '#FFFFFF',
+  name: {
+    color: Colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
 
-  description: {
-    color: '#777777',
+  type: {
+    color: Colors.textSecondary,
     fontSize: 12,
-    marginTop: 5,
+    marginTop: 3,
+  },
+
+  description: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    marginTop: 4,
   },
 
   arrow: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 20,
     marginRight: 8,
   },

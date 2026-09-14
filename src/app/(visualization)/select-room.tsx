@@ -1,4 +1,6 @@
+import React from 'react';
 import {
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -6,53 +8,84 @@ import {
   View,
 } from 'react-native';
 
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type RoomType =
-  | 'Living Room'
-  | 'Bedroom'
-  | 'Kitchen'
-  | 'Office'
-  | 'Other';
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
+import { getRooms, ROOM_TYPES, Room, RoomType } from '@/services/rooms';
 
 export default function SelectRoom() {
   const router = useRouter();
 
   const params = useLocalSearchParams<{
     productImageUri?: string | string[];
+    productName?: string | string[];
+    productCheckId?: string | string[];
   }>();
 
   const productImageUri = Array.isArray(params.productImageUri)
     ? params.productImageUri[0]
     : params.productImageUri;
 
-  const rooms: RoomType[] = [
-    'Living Room',
-    'Bedroom',
-    'Kitchen',
-    'Office',
-    'Other',
-  ];
+  const productName = Array.isArray(params.productName)
+    ? params.productName[0]
+    : params.productName;
 
-  const selectRoom = (room: RoomType) => {
+  const productCheckId = Array.isArray(params.productCheckId)
+    ? params.productCheckId[0]
+    : params.productCheckId;
+
+  const [savedRooms, setSavedRooms] = React.useState<Room[]>([]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      getRooms().then(setSavedRooms);
+    }, [])
+  );
+
+  const selectSavedRoom = (room: Room) => {
     if (productImageUri) {
       router.push({
         pathname: '/visualization',
         params: {
-          roomType: room,
-          imageUri: productImageUri,
+          roomType: room.roomType,
+          roomId: room.id,
+          imageUri: room.primaryImageUri || productImageUri,
+          productImageUri,
+          productName: productName || room.name,
+          productCheckId,
           productMode: 'true',
         },
       });
+      return;
+    }
 
+    router.push({
+      pathname: '/room-detail',
+      params: { roomId: room.id },
+    });
+  };
+
+  const selectRoomType = (type: RoomType) => {
+    if (productImageUri) {
+      router.push({
+        pathname: '/visualization',
+        params: {
+          roomType: type,
+          imageUri: productImageUri,
+          productName,
+          productCheckId,
+          productMode: 'true',
+        },
+      });
       return;
     }
 
     router.push({
       pathname: '/capture-room',
       params: {
-        roomType: room,
+        roomType: type,
       },
     });
   };
@@ -63,31 +96,11 @@ export default function SelectRoom() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backArrow}>←</Text>
-          </TouchableOpacity>
+        <ScreenHeader
+          eyebrow={productImageUri ? 'VISUALIZE' : 'MY HOME'}
+          title={productImageUri ? 'Choose a room' : 'Select room type'}
+        />
 
-          <View>
-            <Text style={styles.eyebrow}>
-              {productImageUri ? 'VISUALIZE' : 'MY HOME'}
-            </Text>
-
-            <Text style={styles.headerTitle}>
-              {productImageUri
-                ? 'Choose a room'
-                : 'Add a room'}
-            </Text>
-          </View>
-
-          <View style={styles.headerSpacer} />
-        </View>
-
-        {/* Intro */}
         <View style={styles.intro}>
           <Text style={styles.title}>
             {productImageUri
@@ -97,41 +110,79 @@ export default function SelectRoom() {
 
           <Text style={styles.subtitle}>
             {productImageUri
-              ? 'Choose one of your rooms to visualize this product inside it.'
+              ? 'Choose one of your saved rooms or a room category to visualize this product.'
               : 'Choose the type of room you want to add to your home.'}
           </Text>
         </View>
 
-        {/* Room Options */}
-        <View style={styles.roomList}>
-          {rooms.map((room) => (
-            <TouchableOpacity
-              key={room}
-              style={styles.roomCard}
-              onPress={() => selectRoom(room)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.roomIcon}>
-                <Text style={styles.roomIconText}>
-                  {room.charAt(0)}
-                </Text>
-              </View>
+        {/* User's Saved Rooms (if any) */}
+        {savedRooms.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>YOUR SAVED ROOMS</Text>
+            <View style={styles.roomList}>
+              {savedRooms.map((room) => (
+                <TouchableOpacity
+                  key={room.id}
+                  style={styles.savedRoomCard}
+                  onPress={() => selectSavedRoom(room)}
+                  activeOpacity={0.8}
+                >
+                  {room.primaryImageUri ? (
+                    <Image
+                      source={{ uri: room.primaryImageUri }}
+                      style={styles.roomThumb}
+                    />
+                  ) : (
+                    <View style={styles.roomThumbPlaceholder}>
+                      <Text style={styles.roomIconText}>🏠</Text>
+                    </View>
+                  )}
 
-              <View style={styles.roomText}>
-                <Text style={styles.roomName}>
-                  {room}
-                </Text>
+                  <View style={styles.roomText}>
+                    <Text style={styles.roomName}>{room.name}</Text>
+                    <Text style={styles.roomDescription}>
+                      {room.roomType} · {room.imageUris.length} photos
+                    </Text>
+                  </View>
 
-                <Text style={styles.roomDescription}>
-                  {productImageUri
-                    ? 'Visualize product here'
-                    : 'Add this room to your home'}
-                </Text>
-              </View>
+                  <Text style={styles.arrow}>→</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
-              <Text style={styles.arrow}>→</Text>
-            </TouchableOpacity>
-          ))}
+        {/* Standard Room Types */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            {savedRooms.length > 0 ? 'OR CHOOSE A ROOM CATEGORY' : 'ROOM CATEGORIES'}
+          </Text>
+
+          <View style={styles.roomList}>
+            {ROOM_TYPES.map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={styles.roomCard}
+                onPress={() => selectRoomType(type)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.roomIcon}>
+                  <Text style={styles.roomIconText}>{type.charAt(0)}</Text>
+                </View>
+
+                <View style={styles.roomText}>
+                  <Text style={styles.roomName}>{type}</Text>
+                  <Text style={styles.roomDescription}>
+                    {productImageUri
+                      ? 'Visualize product in this category'
+                      : 'Add a new ' + type.toLowerCase()}
+                  </Text>
+                </View>
+
+                <Text style={styles.arrow}>→</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Info */}
@@ -144,8 +195,8 @@ export default function SelectRoom() {
 
           <Text style={styles.infoText}>
             {productImageUri
-              ? 'We will use the product photo together with your selected room to create a visualization of how the product could look in your space.'
-              : 'We will use your room type together with its photo to make product recommendations and visualizations more relevant to your space.'}
+              ? 'We will combine the product photo with your selected room space to preview how it fits.'
+              : 'Room details help Check Before Buy personalize recommendations and visualize products in your actual space.'}
           </Text>
         </View>
       </ScrollView>
@@ -156,147 +207,124 @@ export default function SelectRoom() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
-
   content: {
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 40,
   },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 3,
-    textAlign: 'center',
-  },
-
-  headerSpacer: {
-    width: 44,
-  },
-
   intro: {
-    marginTop: 42,
-    marginBottom: 28,
+    marginTop: 30,
+    marginBottom: 24,
   },
-
   title: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 32,
     fontWeight: '700',
     lineHeight: 38,
   },
-
   subtitle: {
-    color: '#888888',
+    color: Colors.textSecondary,
     fontSize: 14,
     lineHeight: 21,
-    marginTop: 12,
+    marginTop: 10,
   },
-
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    color: Colors.textMuted,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
   roomList: {
-    gap: 12,
+    gap: 10,
   },
-
-  roomCard: {
-    minHeight: 78,
-    backgroundColor: '#181818',
+  savedRoomCard: {
+    minHeight: 80,
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  roomThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 10,
+  },
+  roomThumbPlaceholder: {
+    width: 54,
+    height: 54,
+    borderRadius: 10,
+    backgroundColor: Colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roomCard: {
+    minHeight: 74,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-
   roomIcon: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accentDim,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   roomIconText: {
-    color: '#111111',
+    color: Colors.accentText,
     fontSize: 16,
     fontWeight: '700',
   },
-
   roomText: {
     flex: 1,
     marginLeft: 14,
   },
-
   roomName: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
-
   roomDescription: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 11,
     marginTop: 4,
   },
-
   arrow: {
-    color: '#FFFFFF',
+    color: Colors.accent,
     fontSize: 20,
     marginLeft: 10,
   },
-
   infoCard: {
-    marginTop: 32,
+    marginTop: 16,
     padding: 18,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
   },
-
   infoTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
-
   infoText: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 19,
     marginTop: 8,

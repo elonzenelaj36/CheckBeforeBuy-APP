@@ -1,76 +1,114 @@
 import { router } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React from 'react';
+import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { Colors } from '@/constants/colors';
+import { restoreSession } from '@/services/auth';
 
 export default function WelcomeScreen() {
+  React.useEffect(() => {
+    restoreSession().then((user) => {
+      if (user) {
+        router.replace('/home');
+      }
+    });
+  }, []);
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.inner}>
+        <View style={styles.logoContainer}>
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoCheck}>
+              CHECK
+            </Text>
+          </View>
 
-      <View style={styles.logoContainer}>
-        <Text style={styles.logo}>CHECK</Text>
-        <Text style={styles.logoSubtitle}>Before Buy</Text>
-      </View>
-
-      <View style={styles.content}>
-        <Text style={styles.title}>
-          Buy smarter.
-        </Text>
-
-        <Text style={styles.description}>
-          See it in your space. Compare it with what you own.
-          Know if it's worth buying.
-        </Text>
-      </View>
-
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => router.push('/onboarding')}
-        >
-          <Text style={styles.primaryButtonText}>
-            GET STARTED
+          <Text style={styles.logoSubtitle}>
+            Before Buy
           </Text>
-        </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={styles.loginButton}
-          onPress={() => router.push('/login')}
-        >
-          <Text style={styles.loginButtonText}>
-            I ALREADY HAVE AN ACCOUNT
+        <View style={styles.content}>
+          <Text style={styles.title}>
+            Buy smarter.
           </Text>
-        </TouchableOpacity>
-      </View>
 
-    </View>
+          <Text style={styles.description}>
+            See it in your space. Compare it with what
+            you own. Know if it&apos;s worth buying.
+          </Text>
+        </View>
+
+        <View style={styles.bottomContainer}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.push('/onboarding')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.primaryButtonText}>
+              GET STARTED
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={() => router.push('/login')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.loginButtonText}>
+              I ALREADY HAVE AN ACCOUNT
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
+  },
+
+  inner: {
+    flex: 1,
     paddingHorizontal: 28,
-    paddingTop: 80,
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
 
   logoContainer: {
     alignItems: 'center',
+    paddingTop: 48,
   },
 
-  logo: {
-    color: '#FFFFFF',
-    fontSize: 36,
+  logoBadge: {
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+
+  logoCheck: {
+    color: Colors.cardHighlight,
+    fontSize: 28,
     fontWeight: '800',
     letterSpacing: 3,
   },
 
   logoSubtitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '300',
-    marginTop: 2,
-    letterSpacing: 1,
+    color: Colors.textSecondary,
+    fontSize: 16,
+    fontWeight: '400',
+    marginTop: 10,
+    letterSpacing: 0.5,
   },
 
   content: {
@@ -80,19 +118,19 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 42,
     fontWeight: '700',
     textAlign: 'center',
   },
 
   description: {
-    color: '#AAAAAA',
-    fontSize: 17,
-    lineHeight: 26,
+    color: Colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 25,
     textAlign: 'center',
     marginTop: 20,
-    maxWidth: 330,
+    maxWidth: 340,
   },
 
   bottomContainer: {
@@ -100,7 +138,7 @@ const styles = StyleSheet.create({
   },
 
   primaryButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     height: 58,
     borderRadius: 14,
     alignItems: 'center',
@@ -108,10 +146,10 @@ const styles = StyleSheet.create({
   },
 
   primaryButtonText: {
-    color: '#111111',
-    fontSize: 15,
+    color: Colors.cardHighlight,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 1.2,
   },
 
   loginButton: {
@@ -122,8 +160,8 @@ const styles = StyleSheet.create({
   },
 
   loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    color: Colors.textSecondary,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.5,
   },

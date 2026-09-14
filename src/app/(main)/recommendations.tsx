@@ -8,6 +8,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import BottomNavigation from '@/components/BottomNavigation';
 import ProductCard from '@/components/ProductCard';
 import { products } from '@/services/products';
 
@@ -50,6 +51,8 @@ export default function Recommendations() {
           ))}
         </View>
       </ScrollView>
+
+      <BottomNavigation activeTab="home" />
     </SafeAreaView>
   );
 }
@@ -62,7 +65,7 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
 
   eyebrow: {

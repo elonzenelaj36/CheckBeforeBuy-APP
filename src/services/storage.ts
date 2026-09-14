@@ -1,61 +1,29 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+/**
+ * Legacy storage.ts — retained for backward compatibility.
+ *
+ * The room system has been migrated to /services/rooms.ts
+ * which supports multiple photos, custom room names, and more.
+ *
+ * This file re-exports the new types and functions so that
+ * any existing imports of @/services/storage still work.
+ */
 
-const ROOMS_KEY = '@check_before_buy_rooms';
+export type {
+  Room as SavedRoom,
+  Room,
+  RoomType,
+  CreateRoomInput,
+  UpdateRoomInput,
+} from './rooms';
 
-export type SavedRoom = {
-  id: string;
-  roomType: string;
-  imageUri: string;
-  createdAt: string;
-};
-
-export async function getRooms(): Promise<SavedRoom[]> {
-  try {
-    const data = await AsyncStorage.getItem(ROOMS_KEY);
-
-    if (!data) {
-      return [];
-    }
-
-    return JSON.parse(data);
-  } catch (error) {
-    console.log('Failed to load rooms:', error);
-    return [];
-  }
-}
-
-export async function saveRoom(
-  room: SavedRoom
-): Promise<void> {
-  try {
-    const rooms = await getRooms();
-
-    const updatedRooms = [...rooms, room];
-
-    await AsyncStorage.setItem(
-      ROOMS_KEY,
-      JSON.stringify(updatedRooms)
-    );
-  } catch (error) {
-    console.log('Failed to save room:', error);
-  }
-}
-
-export async function deleteRoom(
-  roomId: string
-): Promise<void> {
-  try {
-    const rooms = await getRooms();
-
-    const updatedRooms = rooms.filter(
-      (room) => room.id !== roomId
-    );
-
-    await AsyncStorage.setItem(
-      ROOMS_KEY,
-      JSON.stringify(updatedRooms)
-    );
-  } catch (error) {
-    console.log('Failed to delete room:', error);
-  }
-}
+export {
+  getRooms,
+  getRoomById,
+  createRoom,
+  updateRoom,
+  deleteRoom,
+  addRoomPhoto,
+  removeRoomPhoto,
+  setRoomPrimaryPhoto,
+  ROOM_TYPES,
+} from './rooms';

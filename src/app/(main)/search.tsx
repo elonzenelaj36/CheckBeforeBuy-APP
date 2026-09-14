@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
 import ProductCard from '@/components/ProductCard';
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
 import { products } from '@/services/products';
 
 export default function Search() {
@@ -39,22 +41,12 @@ export default function Search() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>
-              EXPLORE
-            </Text>
-
-            <Text style={styles.title}>
-              Search products.
-            </Text>
-          </View>
-        </View>
+        <ScreenHeader eyebrow="EXPLORE" title="Search products" />
 
         <TextInput
           style={styles.searchInput}
           placeholder="Search furniture, electronics..."
-          placeholderTextColor="#666666"
+          placeholderTextColor={Colors.textMuted}
           value={query}
           onChangeText={setQuery}
         />
@@ -94,7 +86,7 @@ export default function Search() {
         )}
       </ScrollView>
 
-      <BottomNavigation activeTab="search" />
+      <BottomNavigation activeTab="home" />
     </SafeAreaView>
   );
 }
@@ -102,7 +94,7 @@ export default function Search() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
@@ -111,38 +103,21 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
 
-  header: {
-    marginBottom: 28,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-
   searchInput: {
     height: 56,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     borderRadius: 15,
     paddingHorizontal: 17,
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
+    marginTop: 20,
     marginBottom: 28,
   },
 
   sectionTitle: {
-    color: '#777777',
+    color: Colors.textMuted,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -150,21 +125,21 @@ const styles = StyleSheet.create({
   },
 
   emptyCard: {
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 22,
   },
 
   emptyTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
 
   emptyText: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 7,

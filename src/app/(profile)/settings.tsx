@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRouter } from 'expo-router';
 
+import BottomNavigation from '@/components/BottomNavigation';
+
 export default function Settings() {
   const router = useRouter();
 
@@ -74,6 +76,8 @@ export default function Settings() {
           </Text>
         </View>
       </ScrollView>
+
+      <BottomNavigation activeTab="profile" />
     </SafeAreaView>
   );
 }
@@ -122,7 +126,7 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
 
   backButton: {

@@ -12,12 +12,46 @@ import {
 } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+const RECOMMENDATION_LABEL: Record<string, string> = {
+  buy: 'BUY',
+  consider: 'CONSIDER',
+  skip: 'SKIP',
+  unknown: 'UNCLEAR',
+};
+
+const RECOMMENDATION_SUBTITLE: Record<string, string> = {
+  buy: 'This looks like a solid purchase based on the analysis.',
+  consider: 'It could work, but weigh the notes below first.',
+  skip: 'The analysis suggests holding off on this one.',
+  unknown: 'There was not enough information for a confident verdict.',
+};
+
+const PRICE_ASSESSMENT_NOTE: Record<string, string> = {
+  fair: 'The price looks in line with typical market value.',
+  good_deal: 'The price looks better than typical market value.',
+  overpriced: 'The price looks higher than typical market value.',
+  unknown: 'We could not confidently assess whether the price is fair.',
+};
+
 export default function Decision() {
   const router = useRouter();
 
-  const { imageUri } = useLocalSearchParams<{
-    imageUri: string;
-  }>();
+  const { imageUri, productName, recommendation, confidence, priceAssessment, description } =
+    useLocalSearchParams<{
+      imageUri: string;
+      productName?: string;
+      recommendation?: string;
+      confidence?: string;
+      priceAssessment?: string;
+      description?: string;
+    }>();
+
+  const rec = recommendation || 'unknown';
+  const confidenceValue = confidence ? Number(confidence) : null;
+  const confidencePercent =
+    confidenceValue !== null && !Number.isNaN(confidenceValue)
+      ? Math.round(confidenceValue * 100)
+      : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -56,12 +90,11 @@ export default function Decision() {
           </Text>
 
           <Text style={styles.verdict}>
-            BUY
+            {RECOMMENDATION_LABEL[rec] ?? rec.toUpperCase()}
           </Text>
 
           <Text style={styles.verdictSubtitle}>
-            But only if it fits your space and you like the
-            design.
+            {RECOMMENDATION_SUBTITLE[rec] ?? RECOMMENDATION_SUBTITLE.unknown}
           </Text>
         </View>
 
@@ -69,24 +102,24 @@ export default function Decision() {
         <View style={styles.scoreCard}>
           <View>
             <Text style={styles.scoreLabel}>
-              OVERALL SCORE
+              CONFIDENCE
             </Text>
 
             <Text style={styles.score}>
-              82
+              {confidencePercent !== null ? confidencePercent : '—'}
               <Text style={styles.scoreOutOf}>
-                /100
+                {confidencePercent !== null ? '%' : ''}
               </Text>
             </Text>
           </View>
 
           <View style={styles.scoreStatus}>
             <Text style={styles.scoreStatusTitle}>
-              GOOD BUY
+              {productName || 'This product'}
             </Text>
 
             <Text style={styles.scoreStatusText}>
-              Price and product look reasonable.
+              {PRICE_ASSESSMENT_NOTE[priceAssessment || 'unknown'] ?? PRICE_ASSESSMENT_NOTE.unknown}
             </Text>
           </View>
         </View>
@@ -100,18 +133,17 @@ export default function Decision() {
           <View style={styles.reasonRow}>
             <View style={styles.reasonIcon}>
               <Text style={styles.reasonIconText}>
-                +
+                {rec === 'buy' ? '+' : rec === 'skip' ? '−' : '!'}
               </Text>
             </View>
 
             <View style={styles.reasonText}>
               <Text style={styles.reasonTitle}>
-                Fair price
+                Price assessment
               </Text>
 
               <Text style={styles.reasonDescription}>
-                The current price is within the expected
-                market range.
+                {PRICE_ASSESSMENT_NOTE[priceAssessment || 'unknown'] ?? PRICE_ASSESSMENT_NOTE.unknown}
               </Text>
             </View>
           </View>
@@ -121,39 +153,17 @@ export default function Decision() {
           <View style={styles.reasonRow}>
             <View style={styles.reasonIcon}>
               <Text style={styles.reasonIconText}>
-                +
+                i
               </Text>
             </View>
 
             <View style={styles.reasonText}>
               <Text style={styles.reasonTitle}>
-                Good match
+                What the AI saw
               </Text>
 
               <Text style={styles.reasonDescription}>
-                The product style appears compatible with
-                your home.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.reasonRow}>
-            <View style={styles.reasonIcon}>
-              <Text style={styles.reasonIconText}>
-                !
-              </Text>
-            </View>
-
-            <View style={styles.reasonText}>
-              <Text style={styles.reasonTitle}>
-                Similar item found
-              </Text>
-
-              <Text style={styles.reasonDescription}>
-                You may already own something similar, so
-                compare before buying.
+                {description || 'No additional details were captured for this product.'}
               </Text>
             </View>
           </View>
@@ -224,14 +234,14 @@ export default function Decision() {
         {/* Note */}
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>
-            AI decision preview
+            How this recommendation is made
           </Text>
 
           <Text style={styles.infoText}>
-            This recommendation is sample data for the
-            frontend phase. Later, AI will combine product
-            information, prices, your home, and your saved
-            items to produce the recommendation.
+            This is based on the AI&apos;s product analysis (what it saw in the
+            photo and, if you gave one, how the price compares). It does not
+            yet factor in your home or your saved items — that&apos;s a planned
+            improvement, see the README roadmap.
           </Text>
         </View>
       </ScrollView>

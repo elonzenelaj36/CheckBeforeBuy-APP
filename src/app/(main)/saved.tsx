@@ -1,5 +1,4 @@
 import React from 'react';
-
 import {
   Alert,
   Image,
@@ -14,7 +13,13 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
-
+import EmptyState from '@/components/EmptyState';
+import { Colors } from '@/constants/colors';
+import {
+  deleteGeneratedImage,
+  getGeneratedImages,
+  GeneratedImage,
+} from '@/services/generatedImages';
 import {
   deleteSavedProduct,
   getSavedProducts,
@@ -23,39 +28,56 @@ import {
 
 export default function Saved() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = React.useState<'products' | 'visualizations'>('products');
+  const [products, setProducts] = React.useState<SavedProduct[]>([]);
+  const [visualizations, setVisualizations] = React.useState<GeneratedImage[]>([]);
 
-  const [products, setProducts] = React.useState<SavedProduct[]>(
-    []
-  );
-
-  const loadProducts = async () => {
-    const savedProducts = await getSavedProducts();
+  const loadData = async () => {
+    const [savedProducts, savedVisualizations] = await Promise.all([
+      getSavedProducts(),
+      getGeneratedImages(),
+    ]);
 
     setProducts(savedProducts);
+    setVisualizations(savedVisualizations);
   };
 
   useFocusEffect(
     React.useCallback(() => {
-      loadProducts();
+      loadData();
     }, [])
   );
 
-  const handleDelete = (product: SavedProduct) => {
+  const handleDeleteProduct = (product: SavedProduct) => {
     Alert.alert(
       'Remove product?',
       `Remove "${product.name}" from your saved products?`,
       [
-        {
-          text: 'CANCEL',
-          style: 'cancel',
-        },
+        { text: 'CANCEL', style: 'cancel' },
         {
           text: 'REMOVE',
           style: 'destructive',
           onPress: async () => {
             await deleteSavedProduct(product.id);
+            loadData();
+          },
+        },
+      ]
+    );
+  };
 
-            loadProducts();
+  const handleDeleteVisualization = (vis: GeneratedImage) => {
+    Alert.alert(
+      'Remove visualization?',
+      `Remove visualization of "${vis.productName}" for ${vis.roomName}?`,
+      [
+        { text: 'CANCEL', style: 'cancel' },
+        {
+          text: 'REMOVE',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteGeneratedImage(vis.id);
+            loadData();
           },
         },
       ]
@@ -68,6 +90,10 @@ export default function Saved() {
       params: {
         imageUri: product.imageUri,
         productName: product.name,
+        // Carries this saved product back to the same underlying check (when
+        // it has one) so editing its name updates the existing record
+        // instead of creating an unrelated duplicate.
+        ...(product.productCheckId ? { productCheckId: product.productCheckId } : {}),
       },
     });
   };
@@ -78,112 +104,141 @@ export default function Saved() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
+        {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.eyebrow}>
-              YOUR PRODUCTS
-            </Text>
-
-            <Text style={styles.headerTitle}>
-              Saved
-            </Text>
+            <Text style={styles.eyebrow}>YOUR COLLECTION</Text>
+            <Text style={styles.headerTitle}>Saved</Text>
           </View>
 
           <Text style={styles.count}>
-            {products.length} SAVED
+            {activeTab === 'products'
+              ? `${products.length} PRODUCTS`
+              : `${visualizations.length} VISUALIZATIONS`}
           </Text>
         </View>
 
+        {/* Intro */}
         <View style={styles.intro}>
-          <Text style={styles.title}>
-            Keep what matters.
-          </Text>
+          <Text style={styles.title}>Keep what matters.</Text>
 
           <Text style={styles.subtitle}>
-            Products you save will stay here so you can
-            come back to them later.
+            Products and room visualizations you save will stay here so you can review them anytime.
           </Text>
         </View>
 
-        {products.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <View style={styles.emptyIcon}>
-              <Text style={styles.emptyIconText}>
-                ♡
-              </Text>
-            </View>
-
-            <Text style={styles.emptyTitle}>
-              Nothing saved yet
-            </Text>
-
-            <Text style={styles.emptyDescription}>
-              When you find a product you want to remember,
-              save it and it will appear here.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.checkButton}
-              onPress={() => router.push('/check-product')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.checkButtonText}>
-                CHECK A PRODUCT
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.productList}>
-            {products.map((product) => (
-              <TouchableOpacity
-                key={product.id}
-                style={styles.productCard}
-                activeOpacity={0.85}
-                onPress={() => openProduct(product)}
-              >
-                <Image
-                  source={{ uri: product.imageUri }}
-                  style={styles.productImage}
-                />
-
-                <View style={styles.productInfo}>
-                  <Text
-                    style={styles.productName}
-                    numberOfLines={2}
-                  >
-                    {product.name}
-                  </Text>
-
-                  <Text style={styles.productLabel}>
-                    SAVED PRODUCT
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => handleDelete(product)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.deleteText}>
-                    ×
-                  </Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {products.length > 0 && (
+        {/* Tabs */}
+        <View style={styles.tabsContainer}>
           <TouchableOpacity
-            style={styles.addMoreButton}
-            onPress={() => router.push('/check-product')}
-            activeOpacity={0.85}
+            style={[styles.tab, activeTab === 'products' && styles.tabActive]}
+            onPress={() => setActiveTab('products')}
+            activeOpacity={0.8}
           >
-            <Text style={styles.addMoreText}>
-              + CHECK ANOTHER PRODUCT
+            <Text style={[styles.tabText, activeTab === 'products' && styles.tabTextActive]}>
+              PRODUCTS ({products.length})
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'visualizations' && styles.tabActive]}
+            onPress={() => setActiveTab('visualizations')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabText, activeTab === 'visualizations' && styles.tabTextActive]}>
+              VISUALIZATIONS ({visualizations.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Content based on Active Tab */}
+        {activeTab === 'products' ? (
+          products.length === 0 ? (
+            <EmptyState
+              icon="♡"
+              title="Nothing saved yet"
+              description="When you find a product you want to remember, save it and it will appear here."
+              actionLabel="CHECK A PRODUCT"
+              onAction={() => router.push('/check-product')}
+            />
+          ) : (
+            <View style={styles.productList}>
+              {products.map((product) => (
+                <TouchableOpacity
+                  key={product.id}
+                  style={styles.productCard}
+                  activeOpacity={0.85}
+                  onPress={() => openProduct(product)}
+                >
+                  <Image source={{ uri: product.imageUri ?? undefined }} style={styles.productImage} />
+
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productName} numberOfLines={2}>
+                      {product.name}
+                    </Text>
+                    <Text style={styles.productLabel}>SAVED PRODUCT</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => handleDeleteProduct(product)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.deleteText}>×</Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )
+        ) : (
+          visualizations.length === 0 ? (
+            <EmptyState
+              icon="🎨"
+              title="No visualizations saved"
+              description="Generated room visualizations will be saved here so you can compare how items look in your home."
+              actionLabel="VISUALIZE A PRODUCT"
+              onAction={() => router.push('/check-product')}
+            />
+          ) : (
+            <View style={styles.productList}>
+              {visualizations.map((item) => (
+                <View key={item.id} style={styles.productCard}>
+                  <Image
+                    source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
+                    style={styles.productImage}
+                  />
+
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productName} numberOfLines={1}>
+                      {item.productName}
+                    </Text>
+                    <Text style={styles.productLabel}>
+                      ROOM: {item.roomName}
+                    </Text>
+                    <Text style={styles.dateText}>
+                      {new Date(item.createdAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => handleDeleteVisualization(item)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.deleteText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )
         )}
+
+        <TouchableOpacity
+          style={styles.addMoreButton}
+          onPress={() => router.push('/check-product')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.addMoreText}>+ CHECK ANOTHER PRODUCT</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <BottomNavigation activeTab="saved" />
@@ -194,189 +249,149 @@ export default function Saved() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
-
   content: {
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 120,
   },
-
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-
   eyebrow: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
-
   headerTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 24,
     fontWeight: '700',
     marginTop: 4,
   },
-
   count: {
-    color: '#555555',
+    color: Colors.textMuted,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
   },
-
   intro: {
-    marginTop: 42,
-    marginBottom: 28,
+    marginTop: 30,
+    marginBottom: 20,
   },
-
   title: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 32,
     fontWeight: '700',
     lineHeight: 38,
   },
-
   subtitle: {
-    color: '#888888',
+    color: Colors.textSecondary,
     fontSize: 14,
     lineHeight: 21,
-    marginTop: 12,
-  },
-
-  emptyCard: {
-    backgroundColor: '#181818',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    padding: 24,
-    alignItems: 'center',
-  },
-
-  emptyIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#222222',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-  },
-
-  emptyIconText: {
-    color: '#FFFFFF',
-    fontSize: 28,
-  },
-
-  emptyTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600',
-  },
-
-  emptyDescription: {
-    color: '#777777',
-    fontSize: 12,
-    lineHeight: 19,
-    textAlign: 'center',
     marginTop: 8,
-    maxWidth: 300,
   },
-
-  checkButton: {
-    height: 48,
-    paddingHorizontal: 22,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 22,
+    borderRadius: 10,
   },
-
-  checkButtonText: {
-    color: '#111111',
-    fontSize: 10,
+  tabActive: {
+    backgroundColor: Colors.surface2,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  tabText: {
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
   },
-
+  tabTextActive: {
+    color: Colors.textPrimary,
+  },
   productList: {
     gap: 12,
   },
-
   productCard: {
-    minHeight: 110,
-    backgroundColor: '#181818',
-    borderRadius: 18,
+    minHeight: 100,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
   },
-
   productImage: {
-    width: 90,
-    height: 90,
+    width: 80,
+    height: 80,
     borderRadius: 12,
-    backgroundColor: '#222222',
+    backgroundColor: Colors.surface2,
   },
-
   productInfo: {
     flex: 1,
     marginLeft: 14,
     paddingRight: 8,
   },
-
   productName: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: Colors.textPrimary,
+    fontSize: 15,
     fontWeight: '600',
-    lineHeight: 21,
+    lineHeight: 20,
   },
-
   productLabel: {
-    color: '#666666',
+    color: Colors.accentText,
     fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 1.2,
-    marginTop: 8,
+    letterSpacing: 1,
+    marginTop: 6,
   },
-
+  dateText: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    marginTop: 4,
+  },
   deleteButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#222222',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.surface2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   deleteText: {
-    color: '#888888',
-    fontSize: 22,
+    color: Colors.textMuted,
+    fontSize: 20,
     fontWeight: '300',
-    marginTop: -2,
   },
-
   addMoreButton: {
     height: 52,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
-    backgroundColor: '#181818',
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    marginTop: 20,
   },
-
   addMoreText: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,

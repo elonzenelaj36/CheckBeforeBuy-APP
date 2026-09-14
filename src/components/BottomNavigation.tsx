@@ -1,3 +1,9 @@
+/**
+ * BottomNavigation — Main app tab bar.
+ *
+ * Tabs: HOME | CHECK | SAVED | PROFILE
+ */
+
 import {
   StyleSheet,
   Text,
@@ -7,11 +13,9 @@ import {
 
 import { useRouter } from 'expo-router';
 
-type Tab =
-  | 'home'
-  | 'check'
-  | 'saved'
-  | 'profile';
+import { Colors } from '@/constants/colors';
+
+type Tab = 'home' | 'check' | 'saved' | 'profile';
 
 type BottomNavigationProps = {
   activeTab: Tab;
@@ -20,11 +24,8 @@ type BottomNavigationProps = {
 type NavigationTab = {
   name: Tab;
   label: string;
-  route:
-    | '/home'
-    | '/check-product'
-    | '/saved'
-    | '/profile';
+  icon: string;
+  route: '/home' | '/check-product' | '/saved' | '/profile';
 };
 
 export default function BottomNavigation({
@@ -36,21 +37,25 @@ export default function BottomNavigation({
     {
       name: 'home',
       label: 'Home',
+      icon: '⌂',
       route: '/home',
     },
     {
       name: 'check',
       label: 'Check',
+      icon: '◎',
       route: '/check-product',
     },
     {
       name: 'saved',
       label: 'Saved',
+      icon: '♡',
       route: '/saved',
     },
     {
       name: 'profile',
       label: 'Profile',
+      icon: '◉',
       route: '/profile',
     },
   ];
@@ -58,21 +63,23 @@ export default function BottomNavigation({
   return (
     <View style={styles.container}>
       {tabs.map((tab) => {
-        const isActive =
-          activeTab === tab.name;
+        const isActive = activeTab === tab.name;
 
         return (
           <TouchableOpacity
             key={tab.name}
             style={styles.tab}
             onPress={() => router.push(tab.route)}
+            activeOpacity={0.7}
           >
-            <View
+            <Text
               style={[
                 styles.icon,
                 isActive && styles.activeIcon,
               ]}
-            />
+            >
+              {tab.icon}
+            </Text>
 
             <Text
               style={[
@@ -82,6 +89,10 @@ export default function BottomNavigation({
             >
               {tab.label}
             </Text>
+
+            {isActive && (
+              <View style={styles.activeDot} />
+            )}
           </TouchableOpacity>
         );
       })}
@@ -95,41 +106,52 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 82,
-    backgroundColor: '#111111',
+    height: 84,
+    backgroundColor: Colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#2D2D2D',
+    borderTopColor: Colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
 
   tab: {
-    width: 80,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: 8,
+    position: 'relative',
   },
 
   icon: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#555555',
-    marginBottom: 8,
+    fontSize: 20,
+    color: Colors.textMuted,
+    marginBottom: 4,
   },
 
   activeIcon: {
-    backgroundColor: '#FFFFFF',
+    color: Colors.accent,
   },
 
   label: {
-    fontSize: 11,
-    color: '#666666',
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontWeight: '500',
   },
 
   activeLabel: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+
+  activeDot: {
+    position: 'absolute',
+    top: 0,
+    width: 28,
+    height: 2,
+    backgroundColor: Colors.accent,
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
   },
 });

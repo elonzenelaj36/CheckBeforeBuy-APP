@@ -1,6 +1,8 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -10,16 +12,43 @@ import {
   View,
 } from 'react-native';
 
+import { register } from '@/services/auth';
+
 export default function SignupScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSignup = () => {
-    // Real account creation will be connected later.
-    // For now, go directly to the Home screen.
-    router.replace('/home');
+  const handleSignup = async () => {
+    if (!name.trim() || !email.trim() || !password) {
+      Alert.alert('Missing information', 'Please fill in every field.');
+      return;
+    }
+
+    if (password.length < 8) {
+      Alert.alert('Password too short', 'Use at least 8 characters.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert("Passwords don't match", 'Please make sure both passwords are the same.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await register(name.trim(), email.trim(), password);
+      router.replace('/home');
+    } catch (error: any) {
+      Alert.alert(
+        'Sign up failed',
+        error?.message ?? 'Could not create your account. Please try again.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -112,12 +141,17 @@ export default function SignupScreen() {
           </View>
 
           <TouchableOpacity
-            style={styles.signupButton}
+            style={[styles.signupButton, isLoading && styles.signupButtonDisabled]}
             onPress={handleSignup}
+            disabled={isLoading}
           >
-            <Text style={styles.signupButtonText}>
-              CREATE ACCOUNT
-            </Text>
+            {isLoading ? (
+              <ActivityIndicator color="#111111" />
+            ) : (
+              <Text style={styles.signupButtonText}>
+                CREATE ACCOUNT
+              </Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.loginContainer}>
@@ -244,6 +278,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+  },
+
+  signupButtonDisabled: {
+    opacity: 0.6,
   },
 
   signupButtonText: {

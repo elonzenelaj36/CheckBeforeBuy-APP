@@ -9,146 +9,273 @@ import {
   View,
 } from 'react-native';
 
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
 import {
-  useLocalSearchParams,
-  useRouter,
-} from 'expo-router';
-
-import {
-  ProductAnalysis as Analysis,
   analyzeProduct,
-} from '@/services/ai';
+  ProductCheckResult,
+} from '@/services/productChecks';
+
+const RECOMMENDATION_LABEL: Record<string, string> = {
+  buy: 'Good Buy',
+  consider: 'Worth Considering',
+  skip: 'Consider Skipping',
+  unknown: 'Not Enough Information',
+};
+
+const PRICE_ASSESSMENT_LABEL: Record<string, string> = {
+  fair: 'Fair Price',
+  good_deal: 'Good Deal',
+  overpriced: 'Overpriced',
+  unknown: 'Price Unknown',
+};
 
 export default function ProductAnalysis() {
   const router = useRouter();
 
-  const { productId } =
-    useLocalSearchParams<{
-      productId: string;
-    }>();
+  const { imageUri, productName } = useLocalSearchParams<{
+    imageUri?: string;
+    productName?: string;
+  }>();
 
-  const [analysis, setAnalysis] =
-    React.useState<Analysis | null>(null);
+  const [result, setResult] = React.useState<ProductCheckResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  const runAnalysis = React.useCallback(() => {
+    if (!imageUri) {
+      setError("We couldn't find the product photo.\nPlease try again.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    analyzeProduct(imageUri, undefined, productName)
+      .then((res) => {
+        setResult(res);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(
+          err?.message ??
+            "We couldn't analyze this product.\nPlease try again."
+        );
+        setLoading(false);
+      });
+  }, [imageUri]);
 
   React.useEffect(() => {
-    analyzeProduct(productId || '1').then(
-      setAnalysis
-    );
-  }, [productId]);
+    runAnalysis();
+  }, [runAnalysis]);
 
-  if (!analysis) {
+  if (error) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loading}>
-          <ActivityIndicator
-            size="large"
-            color="#FFFFFF"
-          />
+        <View style={styles.centerState}>
+          <ScreenHeader eyebrow="ANALYSIS" title="Analysis" />
 
-          <Text style={styles.loadingText}>
-            Analyzing product...
+          <View style={styles.errorCard}>
+            <Text style={styles.errorTitle}>Analysis failed</Text>
+            <Text style={styles.errorText}>{error}</Text>
+
+            <TouchableOpacity style={styles.retryButton} onPress={runAnalysis}>
+              <Text style={styles.retryButtonText}>TRY AGAIN</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading || !result) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={Colors.accent} />
+          <Text style={styles.loadingText}>Analyzing product...</Text>
+          <Text style={styles.loadingSubtext}>
+            Please wait while we identify this product.
           </Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  const { analysis, product } = result;
+
+  const recommendationColor =
+    analysis.recommendation === 'buy'
+      ? Colors.success
+      : analysis.recommendation === 'consider'
+        ? Colors.warning
+        : analysis.recommendation === 'skip'
+          ? Colors.danger
+          : Colors.textSecondary;
+
+  const recommendationBg =
+    analysis.recommendation === 'buy'
+      ? Colors.successDim
+      : analysis.recommendation === 'consider'
+        ? Colors.warningDim
+        : analysis.recommendation === 'skip'
+          ? Colors.dangerDim
+          : Colors.surface2;
+
+  const hasPriceRange =
+    analysis.estimatedPriceMin !== null && analysis.estimatedPriceMax !== null;
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backArrow}>
-            ←
-          </Text>
-        </TouchableOpacity>
+        <ScreenHeader
+          eyebrow="ANALYSIS COMPLETE"
+          title={product.name || productName || 'Product analysis'}
+        />
 
-        <Text style={styles.eyebrow}>
-          ANALYSIS COMPLETE
-        </Text>
+        {analysis.isMock && (
+          <View style={styles.mockBanner}>
+            <Text style={styles.mockBannerText}>
+              ⚠ AI analysis is not configured on this server yet — showing a
+              placeholder result. See backend/README.md.
+            </Text>
+          </View>
+        )}
 
-        <Text style={styles.title}>
-          Here's what we found.
-        </Text>
-
+        {/* Recommendation Card */}
         <View style={styles.scoreCard}>
-          <Text style={styles.scoreLabel}>
-            CHECK SCORE
-          </Text>
+          <Text style={styles.scoreLabel}>OUR RECOMMENDATION</Text>
 
-          <Text style={styles.score}>
-            {analysis.score}
-          </Text>
+          <View
+            style={[
+              styles.recommendationBadge,
+              { backgroundColor: recommendationBg },
+            ]}
+          >
+            <Text style={[styles.recommendation, { color: recommendationColor }]}>
+              {RECOMMENDATION_LABEL[analysis.recommendation] ?? analysis.recommendation}
+            </Text>
+          </View>
 
-          <Text style={styles.scoreOut}>
-            /100
-          </Text>
-
-          <Text style={styles.recommendation}>
-            {analysis.recommendation}
+          <Text style={styles.confidenceText}>
+            {analysis.confidence !== null
+              ? `Confidence: ${Math.round(analysis.confidence * 100)}%`
+              : 'Confidence: not available'}
           </Text>
         </View>
 
+        {/* Product info */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            SUMMARY
+          <Text style={styles.cardTitle}>PRODUCT</Text>
+          <Text style={styles.productName}>{product.name || 'Unknown product'}</Text>
+          <Text style={styles.productMeta}>
+            {[product.category, product.brand].filter(Boolean).join(' · ') || 'Category unknown'}
           </Text>
+        </View>
 
+        {/* Price Analysis */}
+        <View style={styles.priceCard}>
+          <Text style={styles.cardTitle}>PRICE</Text>
+
+          {hasPriceRange ? (
+            <Text style={styles.priceRange}>
+              Estimated range: {analysis.currency}
+              {analysis.estimatedPriceMin} – {analysis.currency}
+              {analysis.estimatedPriceMax}
+            </Text>
+          ) : (
+            <Text style={styles.priceRange}>
+              Not enough information to estimate a price.
+            </Text>
+          )}
+
+          {analysis.userPrice !== null && (
+            <Text style={styles.priceRange}>
+              Your price: {analysis.currency}
+              {analysis.userPrice}
+            </Text>
+          )}
+
+          <View
+            style={[
+              styles.verdictBadge,
+              {
+                backgroundColor:
+                  analysis.priceAssessment === 'good_deal'
+                    ? Colors.successDim
+                    : analysis.priceAssessment === 'overpriced'
+                      ? Colors.dangerDim
+                      : Colors.accentDim,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.verdictText,
+                {
+                  color:
+                    analysis.priceAssessment === 'good_deal'
+                      ? Colors.successText
+                      : analysis.priceAssessment === 'overpriced'
+                        ? Colors.dangerText
+                        : Colors.accentText,
+                },
+              ]}
+            >
+              {PRICE_ASSESSMENT_LABEL[analysis.priceAssessment] ?? analysis.priceAssessment}
+            </Text>
+          </View>
+        </View>
+
+        {/* Description */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>WHAT WE SEE</Text>
           <Text style={styles.text}>
-            {analysis.summary}
+            {analysis.description || 'No description available.'}
           </Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            WHAT WE LIKE
-          </Text>
-
-          {analysis.pros.map((item) => (
-            <Text
-              key={item}
-              style={styles.listItem}
-            >
-              + {item}
-            </Text>
-          ))}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            THINGS TO CONSIDER
-          </Text>
-
-          {analysis.cons.map((item) => (
-            <Text
-              key={item}
-              style={styles.listItem}
-            >
-              − {item}
-            </Text>
-          ))}
-        </View>
-
+        {/* Actions */}
         <TouchableOpacity
-          style={styles.button}
+          style={styles.primaryButton}
           onPress={() =>
             router.push({
-              pathname: '/product-info',
+              pathname: '/decision',
               params: {
-                productId,
+                imageUri,
+                productName: product.name || productName,
+                recommendation: analysis.recommendation,
+                confidence: analysis.confidence !== null ? String(analysis.confidence) : '',
+                priceAssessment: analysis.priceAssessment,
+                description: analysis.description || '',
               },
             })
           }
         >
-          <Text style={styles.buttonText}>
-            SEE PRODUCT DETAILS
-          </Text>
+          <Text style={styles.primaryButtonText}>SEE FULL RECOMMENDATION →</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() =>
+            router.push({
+              pathname: '/select-room',
+              params: {
+                productImageUri: result.imageUrl ?? imageUri,
+                productName: product.name || productName,
+                productCheckId: result.id,
+              },
+            })
+          }
+        >
+          <Text style={styles.secondaryButtonText}>GENERATE INTO MY ROOM</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -158,133 +285,227 @@ export default function ProductAnalysis() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
-  loading: {
+  centerState: {
     flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   loadingText: {
-    color: '#777777',
-    marginTop: 14,
+    color: Colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '600',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+
+  loadingSubtext: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
+  errorCard: {
+    backgroundColor: Colors.dangerDim,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.danger,
+    padding: 20,
+    marginTop: 40,
+    width: '100%',
+    alignItems: 'center',
+  },
+
+  errorTitle: {
+    color: Colors.dangerText,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  errorText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+
+  retryButton: {
+    height: 48,
+    paddingHorizontal: 22,
+    backgroundColor: Colors.cardHighlight,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 18,
+  },
+
+  retryButtonText: {
+    color: Colors.cardHighlightText,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 40,
   },
 
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
+  mockBanner: {
+    backgroundColor: Colors.warningDim,
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 14,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 28,
+    borderColor: Colors.warning,
   },
 
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 7,
+  mockBannerText: {
+    color: Colors.warningText,
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 16,
+    textAlign: 'center',
   },
 
   scoreCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.surface,
     borderRadius: 20,
     padding: 24,
-    marginTop: 28,
+    marginTop: 20,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
 
   scoreLabel: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
-  score: {
-    color: '#111111',
-    fontSize: 64,
+  recommendationBadge: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 14,
+  },
+
+  recommendation: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+
+  confidenceText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    marginTop: 12,
+  },
+
+  priceCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 18,
+    marginTop: 14,
+  },
+
+  productName: {
+    color: Colors.textPrimary,
+    fontSize: 18,
     fontWeight: '700',
     marginTop: 8,
   },
 
-  scoreOut: {
-    color: '#777777',
-    fontSize: 14,
-    marginTop: -10,
+  productMeta: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
   },
 
-  recommendation: {
-    color: '#111111',
+  priceRange: {
+    color: Colors.textSecondary,
     fontSize: 13,
-    fontWeight: '700',
+    marginTop: 8,
+  },
+
+  verdictBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
     marginTop: 12,
-    letterSpacing: 1,
+  },
+
+  verdictText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 
   card: {
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 18,
     marginTop: 14,
   },
 
   cardTitle: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
   text: {
-    color: '#AAAAAA',
+    color: Colors.textSecondary,
     fontSize: 13,
     lineHeight: 20,
     marginTop: 10,
   },
 
-  listItem: {
-    color: '#AAAAAA',
-    fontSize: 13,
-    lineHeight: 21,
-    marginTop: 9,
-  },
-
-  button: {
+  primaryButton: {
     height: 56,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 24,
   },
 
-  buttonText: {
-    color: '#111111',
+  primaryButtonText: {
+    color: Colors.cardHighlight,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+
+  secondaryButton: {
+    height: 56,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+
+  secondaryButtonText: {
+    color: Colors.textPrimary,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,

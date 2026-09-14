@@ -1,6 +1,8 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -10,14 +12,31 @@ import {
   View,
 } from 'react-native';
 
+import { login } from '@/services/auth';
+
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  function handleLogin() {
-    // Authentication will be connected later.
-    // For now, continue to the Home screen.
-    router.replace('/home');
+  async function handleLogin() {
+    if (!email.trim() || !password) {
+      Alert.alert('Missing information', 'Please enter your email and password.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await login(email.trim(), password);
+      router.replace('/home');
+    } catch (error: any) {
+      Alert.alert(
+        'Login failed',
+        error?.message ?? 'Could not sign in. Please check your credentials and try again.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -99,12 +118,17 @@ export default function LoginScreen() {
         {/* Login */}
 
         <TouchableOpacity
-          style={styles.loginButton}
+          style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
           onPress={handleLogin}
+          disabled={isLoading}
         >
-          <Text style={styles.loginButtonText}>
-            LOGIN
-          </Text>
+          {isLoading ? (
+            <ActivityIndicator color="#111111" />
+          ) : (
+            <Text style={styles.loginButtonText}>
+              LOGIN
+            </Text>
+          )}
         </TouchableOpacity>
 
         {/* Divider */}
@@ -140,7 +164,7 @@ export default function LoginScreen() {
       <View style={styles.signupContainer}>
 
         <Text style={styles.signupText}>
-          Don't have an account?
+          Don&apos;t have an account?
         </Text>
 
         <TouchableOpacity
@@ -244,6 +268,10 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  loginButtonDisabled: {
+    opacity: 0.6,
   },
 
   loginButtonText: {
