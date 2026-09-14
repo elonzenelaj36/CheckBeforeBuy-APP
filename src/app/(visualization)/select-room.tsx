@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import {
   ScrollView,
   StyleSheet,
@@ -6,6 +5,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type RoomType =
@@ -18,6 +19,14 @@ type RoomType =
 export default function SelectRoom() {
   const router = useRouter();
 
+  const params = useLocalSearchParams<{
+    productImageUri?: string | string[];
+  }>();
+
+  const productImageUri = Array.isArray(params.productImageUri)
+    ? params.productImageUri[0]
+    : params.productImageUri;
+
   const rooms: RoomType[] = [
     'Living Room',
     'Bedroom',
@@ -27,6 +36,19 @@ export default function SelectRoom() {
   ];
 
   const selectRoom = (room: RoomType) => {
+    if (productImageUri) {
+      router.push({
+        pathname: '/visualization',
+        params: {
+          roomType: room,
+          imageUri: productImageUri,
+          productMode: 'true',
+        },
+      });
+
+      return;
+    }
+
     router.push({
       pathname: '/capture-room',
       params: {
@@ -51,8 +73,15 @@ export default function SelectRoom() {
           </TouchableOpacity>
 
           <View>
-            <Text style={styles.eyebrow}>MY HOME</Text>
-            <Text style={styles.headerTitle}>Add a room</Text>
+            <Text style={styles.eyebrow}>
+              {productImageUri ? 'VISUALIZE' : 'MY HOME'}
+            </Text>
+
+            <Text style={styles.headerTitle}>
+              {productImageUri
+                ? 'Choose a room'
+                : 'Add a room'}
+            </Text>
           </View>
 
           <View style={styles.headerSpacer} />
@@ -61,12 +90,15 @@ export default function SelectRoom() {
         {/* Intro */}
         <View style={styles.intro}>
           <Text style={styles.title}>
-            What room are we adding?
+            {productImageUri
+              ? 'Where should we put it?'
+              : 'What room are we adding?'}
           </Text>
 
           <Text style={styles.subtitle}>
-            Choose the type of room you want to add to your
-            home.
+            {productImageUri
+              ? 'Choose one of your rooms to visualize this product inside it.'
+              : 'Choose the type of room you want to add to your home.'}
           </Text>
         </View>
 
@@ -85,9 +117,17 @@ export default function SelectRoom() {
                 </Text>
               </View>
 
-              <Text style={styles.roomName}>
-                {room}
-              </Text>
+              <View style={styles.roomText}>
+                <Text style={styles.roomName}>
+                  {room}
+                </Text>
+
+                <Text style={styles.roomDescription}>
+                  {productImageUri
+                    ? 'Visualize product here'
+                    : 'Add this room to your home'}
+                </Text>
+              </View>
 
               <Text style={styles.arrow}>→</Text>
             </TouchableOpacity>
@@ -97,13 +137,15 @@ export default function SelectRoom() {
         {/* Info */}
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>
-            Why do we need this?
+            {productImageUri
+              ? 'How visualization works'
+              : 'Why do we need this?'}
           </Text>
 
           <Text style={styles.infoText}>
-            We'll use your room type together with its photo
-            to make product recommendations and visualizations
-            more relevant to your space.
+            {productImageUri
+              ? 'We will use the product photo together with your selected room to create a visualization of how the product could look in your space.'
+              : 'We will use your room type together with its photo to make product recommendations and visualizations more relevant to your space.'}
           </Text>
         </View>
       </ScrollView>
@@ -189,16 +231,15 @@ const styles = StyleSheet.create({
   },
 
   roomCard: {
-    height: 76,
+    minHeight: 78,
     backgroundColor: '#181818',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#2D2D2D',
-
     flexDirection: 'row',
     alignItems: 'center',
-
     paddingHorizontal: 16,
+    paddingVertical: 12,
   },
 
   roomIcon: {
@@ -206,7 +247,6 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 12,
     backgroundColor: '#FFFFFF',
-
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -217,23 +257,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  roomName: {
+  roomText: {
     flex: 1,
+    marginLeft: 14,
+  },
+
+  roomName: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 14,
+  },
+
+  roomDescription: {
+    color: '#777777',
+    fontSize: 11,
+    marginTop: 4,
   },
 
   arrow: {
     color: '#FFFFFF',
     fontSize: 20,
+    marginLeft: 10,
   },
 
   infoCard: {
     marginTop: 32,
     padding: 18,
-
     backgroundColor: '#181818',
     borderRadius: 16,
     borderWidth: 1,

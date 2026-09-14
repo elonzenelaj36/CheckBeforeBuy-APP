@@ -1,35 +1,84 @@
 import React from 'react';
+
 import {
+  Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 
-import {
-  useLocalSearchParams,
-  useRouter,
-} from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CheckProduct() {
   const router = useRouter();
 
-  const { productId } =
-    useLocalSearchParams<{
-      productId?: string;
-    }>();
+  const [imageUri, setImageUri] = React.useState<string | null>(null);
 
-  const [url, setUrl] = React.useState('');
+  const takePhoto = async () => {
+    const permission =
+      await ImagePicker.requestCameraPermissionsAsync();
 
-  const continueToAnalysis = () => {
+    if (!permission.granted) {
+      Alert.alert(
+        'Camera permission needed',
+        'Please allow camera access to take a product photo.'
+      );
+
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  const chooseFromGallery = async () => {
+    const permission =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(
+        'Photo permission needed',
+        'Please allow photo library access to choose a product photo.'
+      );
+
+      return;
+    }
+
+    const result =
+      await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+    if (!result.canceled) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  const continueWithProduct = () => {
+    if (!imageUri) {
+      return;
+    }
+
     router.push({
-      pathname: '/product-analysis',
+      pathname: '/product-captured',
       params: {
-        productId: productId || '1',
-        url,
+        imageUri: imageUri,
       },
     });
   };
@@ -37,81 +86,173 @@ export default function CheckProduct() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backArrow}>
-            ←
-          </Text>
-        </TouchableOpacity>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backArrow}>←</Text>
+          </TouchableOpacity>
 
+          <View>
+            <Text style={styles.eyebrow}>
+              CHECK
+            </Text>
+
+            <Text style={styles.headerTitle}>
+              Check a product
+            </Text>
+          </View>
+
+          <View style={styles.headerSpacer} />
+        </View>
+
+        {/* Intro */}
         <View style={styles.intro}>
-          <Text style={styles.eyebrow}>
-            CHECK BEFORE BUY
+          <Text style={styles.title}>
+            Before you buy,
           </Text>
 
           <Text style={styles.title}>
-            What are you thinking about buying?
+            check it.
           </Text>
 
           <Text style={styles.subtitle}>
-            Search for a product or paste a product link.
+            Take a photo of a product you're thinking about
+            buying. We'll help you understand it before you
+            spend your money.
           </Text>
         </View>
 
+        {/* Preview */}
+        <View style={styles.previewContainer}>
+          {imageUri ? (
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.previewImage}
+            />
+          ) : (
+            <View style={styles.emptyPreview}>
+              <View style={styles.cameraCircle}>
+                <Text style={styles.cameraSymbol}>
+                  +
+                </Text>
+              </View>
+
+              <Text style={styles.previewTitle}>
+                Take a photo
+              </Text>
+
+              <Text style={styles.previewDescription}>
+                Point your camera at the product you want
+                to check.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Camera */}
         <TouchableOpacity
-          style={styles.option}
-          onPress={() => router.push('/search')}
+          style={styles.primaryButton}
+          onPress={takePhoto}
+          activeOpacity={0.85}
         >
-          <View style={styles.icon}>
-            <Text style={styles.iconText}>
-              ⌕
-            </Text>
-          </View>
-
-          <View style={styles.optionInfo}>
-            <Text style={styles.optionTitle}>
-              Search products
-            </Text>
-
-            <Text style={styles.optionDescription}>
-              Browse products available in the app.
-            </Text>
-          </View>
-
-          <Text style={styles.arrow}>
-            →
+          <Text style={styles.primaryButtonText}>
+            TAKE PRODUCT PHOTO
           </Text>
         </TouchableOpacity>
 
-        <Text style={styles.or}>
-          OR
-        </Text>
-
-        <Text style={styles.label}>
-          PRODUCT LINK
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Paste product URL"
-          placeholderTextColor="#666666"
-          value={url}
-          onChangeText={setUrl}
-          autoCapitalize="none"
-        />
-
+        {/* Gallery */}
         <TouchableOpacity
-          style={styles.button}
-          onPress={continueToAnalysis}
+          style={styles.secondaryButton}
+          onPress={chooseFromGallery}
+          activeOpacity={0.85}
         >
-          <Text style={styles.buttonText}>
-            ANALYZE PRODUCT
+          <Text style={styles.secondaryButtonText}>
+            CHOOSE FROM GALLERY
           </Text>
         </TouchableOpacity>
+
+        {/* Continue */}
+        {imageUri && (
+          <TouchableOpacity
+            style={styles.continueButton}
+            onPress={continueWithProduct}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.continueButtonText}>
+              CHECK THIS PRODUCT →
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* What happens */}
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>
+            WHAT HAPPENS NEXT
+          </Text>
+
+          <View style={styles.infoRow}>
+            <View style={styles.numberCircle}>
+              <Text style={styles.number}>
+                01
+              </Text>
+            </View>
+
+            <View style={styles.infoTextContainer}>
+              <Text style={styles.infoTitle}>
+                Identify the product
+              </Text>
+
+              <Text style={styles.infoDescription}>
+                We'll identify what you're looking at and
+                collect useful product information.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.infoRow}>
+            <View style={styles.numberCircle}>
+              <Text style={styles.number}>
+                02
+              </Text>
+            </View>
+
+            <View style={styles.infoTextContainer}>
+              <Text style={styles.infoTitle}>
+                See it in your room
+              </Text>
+
+              <Text style={styles.infoDescription}>
+                Generate the product inside one of your
+                saved rooms.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.infoRow}>
+            <View style={styles.numberCircle}>
+              <Text style={styles.number}>
+                03
+              </Text>
+            </View>
+
+            <View style={styles.infoTextContainer}>
+              <Text style={styles.infoTitle}>
+                Decide before buying
+              </Text>
+
+              <Text style={styles.infoDescription}>
+                Understand the price, quality, alternatives,
+                and whether it makes sense for you.
+              </Text>
+            </View>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -124,8 +265,15 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 40,
+  },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 
   backButton: {
@@ -144,118 +292,197 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
 
-  intro: {
-    marginTop: 42,
-    marginBottom: 28,
-  },
-
   eyebrow: {
     color: '#777777',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 3,
+    textAlign: 'center',
+  },
+
+  headerSpacer: {
+    width: 44,
+  },
+
+  intro: {
+    marginTop: 42,
+    marginBottom: 28,
   },
 
   title: {
     color: '#FFFFFF',
-    fontSize: 32,
-    lineHeight: 38,
+    fontSize: 34,
     fontWeight: '700',
-    marginTop: 8,
+    lineHeight: 38,
   },
 
   subtitle: {
     color: '#888888',
     fontSize: 14,
     lineHeight: 21,
-    marginTop: 12,
+    marginTop: 14,
   },
 
-  option: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  icon: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#111111',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  iconText: {
-    color: '#FFFFFF',
-    fontSize: 24,
-  },
-
-  optionInfo: {
-    flex: 1,
-    marginLeft: 14,
-  },
-
-  optionTitle: {
-    color: '#111111',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  optionDescription: {
-    color: '#666666',
-    fontSize: 12,
-    marginTop: 5,
-  },
-
-  arrow: {
-    color: '#111111',
-    fontSize: 20,
-  },
-
-  or: {
-    color: '#555555',
-    textAlign: 'center',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginVertical: 28,
-  },
-
-  label: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: 9,
-  },
-
-  input: {
-    height: 56,
+  previewContainer: {
+    width: '100%',
+    height: 280,
+    borderRadius: 20,
+    overflow: 'hidden',
     backgroundColor: '#181818',
     borderWidth: 1,
     borderColor: '#2D2D2D',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    color: '#FFFFFF',
-    fontSize: 13,
   },
 
-  button: {
-    height: 56,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  emptyPreview: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    paddingHorizontal: 30,
   },
 
-  buttonText: {
+  cameraCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+
+  cameraSymbol: {
+    color: '#111111',
+    fontSize: 32,
+    fontWeight: '300',
+  },
+
+  previewTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+
+  previewDescription: {
+    color: '#777777',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 7,
+    maxWidth: 280,
+  },
+
+  primaryButton: {
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 18,
+  },
+
+  primaryButtonText: {
     color: '#111111',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+
+  secondaryButton: {
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#2D2D2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+
+  secondaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+
+  continueButton: {
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+
+  continueButtonText: {
+    color: '#111111',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+
+  infoSection: {
+    marginTop: 36,
+  },
+
+  sectionTitle: {
+    color: '#777777',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 18,
+  },
+
+  infoRow: {
+    flexDirection: 'row',
+    marginBottom: 22,
+  },
+
+  numberCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#2D2D2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  number: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+
+  infoTextContainer: {
+    flex: 1,
+    marginLeft: 14,
+  },
+
+  infoTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  infoDescription: {
+    color: '#777777',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 5,
   },
 });

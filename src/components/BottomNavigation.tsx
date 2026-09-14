@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import {
   StyleSheet,
   Text,
@@ -6,7 +5,13 @@ import {
   View,
 } from 'react-native';
 
-type Tab = 'home' | 'search' | 'saved' | 'profile';
+import { useRouter } from 'expo-router';
+
+type Tab =
+  | 'home'
+  | 'check'
+  | 'saved'
+  | 'profile';
 
 type BottomNavigationProps = {
   activeTab: Tab;
@@ -15,7 +20,11 @@ type BottomNavigationProps = {
 type NavigationTab = {
   name: Tab;
   label: string;
-  route: '/home' | '/search' | '/saved' | '/profile';
+  route:
+    | '/home'
+    | '/check-product'
+    | '/saved'
+    | '/profile';
 };
 
 export default function BottomNavigation({
@@ -30,9 +39,9 @@ export default function BottomNavigation({
       route: '/home',
     },
     {
-      name: 'search',
-      label: 'Search',
-      route: '/search',
+      name: 'check',
+      label: 'Check',
+      route: '/check-product',
     },
     {
       name: 'saved',
@@ -49,7 +58,8 @@ export default function BottomNavigation({
   return (
     <View style={styles.container}>
       {tabs.map((tab) => {
-        const isActive = activeTab === tab.name;
+        const isActive =
+          activeTab === tab.name;
 
         return (
           <TouchableOpacity
@@ -85,18 +95,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-
     height: 82,
-
     backgroundColor: '#111111',
-
     borderTopWidth: 1,
     borderTopColor: '#2D2D2D',
-
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-
     paddingBottom: 8,
   },
 
@@ -109,11 +114,8 @@ const styles = StyleSheet.create({
   icon: {
     width: 6,
     height: 6,
-
     borderRadius: 3,
-
     backgroundColor: '#555555',
-
     marginBottom: 8,
   },
 
