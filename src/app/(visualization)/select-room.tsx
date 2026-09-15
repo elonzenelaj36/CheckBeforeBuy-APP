@@ -11,9 +11,10 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import EmptyState from '@/components/EmptyState';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
-import { getRooms, ROOM_TYPES, Room, RoomType } from '@/services/rooms';
+import { getRooms, Room } from '@/services/rooms';
 
 export default function SelectRoom() {
   const router = useRouter();
@@ -37,57 +38,37 @@ export default function SelectRoom() {
     : params.productCheckId;
 
   const [savedRooms, setSavedRooms] = React.useState<Room[]>([]);
+  const [loaded, setLoaded] = React.useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
-      getRooms().then(setSavedRooms);
+      getRooms().then((rooms) => {
+        setSavedRooms(rooms);
+        setLoaded(true);
+      });
     }, [])
   );
 
+  // A room only exists once the user has explicitly created it — selecting
+  // it here must always carry its real roomId into the visualization
+  // request, never just a roomType category.
   const selectSavedRoom = (room: Room) => {
-    if (productImageUri) {
-      router.push({
-        pathname: '/visualization',
-        params: {
-          roomType: room.roomType,
-          roomId: room.id,
-          imageUri: room.primaryImageUri || productImageUri,
-          productImageUri,
-          productName: productName || room.name,
-          productCheckId,
-          productMode: 'true',
-        },
-      });
-      return;
-    }
-
     router.push({
-      pathname: '/room-detail',
-      params: { roomId: room.id },
+      pathname: '/visualization',
+      params: {
+        roomType: room.roomType,
+        roomId: room.id,
+        imageUri: room.primaryImageUri || productImageUri,
+        productImageUri,
+        productName: productName || room.name,
+        productCheckId,
+        productMode: 'true',
+      },
     });
   };
 
-  const selectRoomType = (type: RoomType) => {
-    if (productImageUri) {
-      router.push({
-        pathname: '/visualization',
-        params: {
-          roomType: type,
-          imageUri: productImageUri,
-          productName,
-          productCheckId,
-          productMode: 'true',
-        },
-      });
-      return;
-    }
-
-    router.push({
-      pathname: '/capture-room',
-      params: {
-        roomType: type,
-      },
-    });
+  const goToCreateRoom = () => {
+    router.push('/add-room');
   };
 
   return (
@@ -96,27 +77,25 @@ export default function SelectRoom() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <ScreenHeader
-          eyebrow={productImageUri ? 'VISUALIZE' : 'MY HOME'}
-          title={productImageUri ? 'Choose a room' : 'Select room type'}
-        />
+        <ScreenHeader eyebrow="VISUALIZE" title="Choose a room" />
 
         <View style={styles.intro}>
-          <Text style={styles.title}>
-            {productImageUri
-              ? 'Where should we put it?'
-              : 'What room are we adding?'}
-          </Text>
+          <Text style={styles.title}>Where should we put it?</Text>
 
           <Text style={styles.subtitle}>
-            {productImageUri
-              ? 'Choose one of your saved rooms or a room category to visualize this product.'
-              : 'Choose the type of room you want to add to your home.'}
+            Choose one of your saved rooms to visualize this product.
           </Text>
         </View>
 
-        {/* User's Saved Rooms (if any) */}
-        {savedRooms.length > 0 && (
+        {!loaded ? null : savedRooms.length === 0 ? (
+          <EmptyState
+            icon="🏠"
+            title="NO ROOMS YET"
+            description="Create a room to visualize products in your space."
+            actionLabel="CREATE A ROOM"
+            onAction={goToCreateRoom}
+          />
+        ) : (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>YOUR SAVED ROOMS</Text>
             <View style={styles.roomList}>
@@ -148,55 +127,24 @@ export default function SelectRoom() {
                   <Text style={styles.arrow}>→</Text>
                 </TouchableOpacity>
               ))}
+
+              <TouchableOpacity
+                style={styles.addRoomCard}
+                onPress={goToCreateRoom}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.addRoomText}>+ CREATE ANOTHER ROOM</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* Standard Room Types */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {savedRooms.length > 0 ? 'OR CHOOSE A ROOM CATEGORY' : 'ROOM CATEGORIES'}
-          </Text>
-
-          <View style={styles.roomList}>
-            {ROOM_TYPES.map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={styles.roomCard}
-                onPress={() => selectRoomType(type)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.roomIcon}>
-                  <Text style={styles.roomIconText}>{type.charAt(0)}</Text>
-                </View>
-
-                <View style={styles.roomText}>
-                  <Text style={styles.roomName}>{type}</Text>
-                  <Text style={styles.roomDescription}>
-                    {productImageUri
-                      ? 'Visualize product in this category'
-                      : 'Add a new ' + type.toLowerCase()}
-                  </Text>
-                </View>
-
-                <Text style={styles.arrow}>→</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
         {/* Info */}
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>
-            {productImageUri
-              ? 'How visualization works'
-              : 'Why do we need this?'}
-          </Text>
+          <Text style={styles.infoTitle}>How visualization works</Text>
 
           <Text style={styles.infoText}>
-            {productImageUri
-              ? 'We will combine the product photo with your selected room space to preview how it fits.'
-              : 'Room details help Check Before Buy personalize recommendations and visualize products in your actual space.'}
+            We will combine the product photo with your selected room space to preview how it fits.
           </Text>
         </View>
       </ScrollView>
@@ -267,25 +215,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  roomCard: {
-    minHeight: 74,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  roomIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.accentDim,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   roomIconText: {
     color: Colors.accentText,
     fontSize: 16,
@@ -309,6 +238,21 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontSize: 20,
     marginLeft: 10,
+  },
+  addRoomCard: {
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addRoomText: {
+    color: Colors.textPrimary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   infoCard: {
     marginTop: 16,

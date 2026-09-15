@@ -38,7 +38,9 @@ export default function VisualizationDetail() {
     setSaving(true);
     const result = await saveImageToGallery(imageUri);
     setSaving(false);
-    Alert.alert(result.success ? 'Saved' : "Couldn't save photo", result.message);
+
+    const isError = result.status === 'permission-denied' || result.status === 'failed';
+    Alert.alert(isError ? "Couldn't save photo" : 'Gallery', result.message);
   };
 
   return (

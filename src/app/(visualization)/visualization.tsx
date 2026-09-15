@@ -17,7 +17,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import { saveImageToGallery } from '@/services/gallery';
-import { createRoom } from '@/services/rooms';
 import {
   GeneratedImageStatus,
   requestRoomVisualization,
@@ -35,7 +34,7 @@ export default function Visualization() {
     productCheckId?: string;
   }>();
 
-  const roomType = params.roomType || 'Living Room';
+  const roomType = params.roomType || 'Room';
   const roomImageUri = params.imageUri;
   const productImageUri = params.productImageUri || params.imageUri;
   const productName = params.productName || 'Captured Product';
@@ -46,23 +45,19 @@ export default function Visualization() {
   const [savingToGallery, setSavingToGallery] = React.useState(false);
 
   const generateVisualization = async () => {
+    // A visualization must always attach to a real, user-created room — it
+    // must never fall back to auto-creating one from a roomType category.
+    if (!params.roomId) {
+      setStatus('failed');
+      setStatusMessage('No room was selected. Please go back and choose one of your saved rooms.');
+      return;
+    }
+
     setStatus('generating');
     setStatusMessage(null);
 
     try {
-      // The "choose a room category" flow doesn't have a saved room yet —
-      // create one on the fly so the visualization has something real to
-      // attach to in the backend.
-      let roomId = params.roomId;
-      if (!roomId) {
-        const room = await createRoom({
-          name: roomType,
-          roomType: roomType as never,
-          imageUri: roomImageUri,
-        });
-        roomId = room.id;
-      }
-
+      const roomId = params.roomId;
       const isLocalProductImage = productImageUri?.startsWith('file://');
 
       const result = await requestRoomVisualization({
@@ -93,7 +88,9 @@ export default function Visualization() {
     setSavingToGallery(true);
     const result = await saveImageToGallery(generatedImageUri);
     setSavingToGallery(false);
-    Alert.alert(result.success ? 'Saved' : "Couldn't save photo", result.message);
+
+    const isError = result.status === 'permission-denied' || result.status === 'failed';
+    Alert.alert(isError ? "Couldn't save photo" : 'Gallery', result.message);
   };
 
   const isDone = status === 'pending' || status === 'completed' || status === 'failed';
