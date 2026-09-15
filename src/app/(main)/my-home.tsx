@@ -25,20 +25,23 @@ import {
   getRooms,
   Room,
 } from '@/services/rooms';
+import { getUserItems, UserItem } from '@/services/userItems';
 
 export default function MyHome() {
   const router = useRouter();
 
   const [rooms, setRooms] = React.useState<Room[]>([]);
+  const [items, setItems] = React.useState<UserItem[]>([]);
 
-  const loadRooms = async () => {
-    const savedRooms = await getRooms();
+  const loadData = async () => {
+    const [savedRooms, detectedItems] = await Promise.all([getRooms(), getUserItems()]);
     setRooms(savedRooms);
+    setItems(detectedItems);
   };
 
   useFocusEffect(
     React.useCallback(() => {
-      loadRooms();
+      loadData();
     }, [])
   );
 
@@ -54,7 +57,7 @@ export default function MyHome() {
           onPress: async () => {
             await deleteRoom(room.id);
             await deleteGeneratedImagesForRoom(room.id);
-            loadRooms();
+            loadData();
           },
         },
       ]
@@ -208,22 +211,50 @@ export default function MyHome() {
           </View>
         )}
 
-        {/* Why section */}
-        <View style={styles.whySection}>
-          <Text style={styles.sectionTitle}>
-            WHY ADD YOUR HOME?
-          </Text>
+        {/* My Items */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>MY ITEMS</Text>
 
-          <Text style={styles.whyTitle}>
-            Make every recommendation personal.
-          </Text>
-
-          <Text style={styles.whyDescription}>
-            Your rooms will help Check Before Buy understand
-            your space and show you how products actually
-            look before you buy them.
-          </Text>
+          <TouchableOpacity onPress={() => router.push('/my-items')}>
+            <Text style={styles.viewAllText}>
+              {items.length} {items.length === 1 ? 'ITEM' : 'ITEMS'} · VIEW ALL
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        {items.length === 0 ? (
+          <View style={styles.myItemsPreviewCard}>
+            <Text style={styles.myItemsPreviewText}>
+              Items detected in your rooms will show up here automatically — add a room photo to get started.
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.myItemsPreviewCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/my-items')}
+          >
+            <Text style={styles.myItemsPreviewText} numberOfLines={2}>
+              {items.slice(0, 6).map((item) => item.name).join(' · ')}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Find for My Home CTA */}
+        <TouchableOpacity
+          style={styles.findCard}
+          activeOpacity={0.85}
+          onPress={() => router.push('/find-for-my-home')}
+        >
+          <View style={styles.findText}>
+            <Text style={styles.findTitle}>Find for my home</Text>
+            <Text style={styles.findDescription}>
+              See products that would actually complement what you already have.
+            </Text>
+          </View>
+
+          <Text style={styles.addRoomArrow}>→</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <BottomNavigation activeTab="home" />
@@ -459,22 +490,53 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
 
-  whySection: {
-    marginTop: 36,
-    paddingBottom: 10,
+  viewAllText: {
+    color: Colors.accent,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 
-  whyTitle: {
-    color: Colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '600',
-    marginTop: 10,
+  myItemsPreviewCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 16,
   },
 
-  whyDescription: {
+  myItemsPreviewText: {
     color: Colors.textSecondary,
     fontSize: 13,
-    lineHeight: 20,
-    marginTop: 8,
+    lineHeight: 19,
+  },
+
+  findCard: {
+    marginTop: 30,
+    marginBottom: 10,
+    backgroundColor: Colors.cardHighlight,
+    borderRadius: 20,
+    padding: 18,
+    minHeight: 90,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+
+  findText: {
+    flex: 1,
+  },
+
+  findTitle: {
+    color: Colors.cardHighlightText,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+
+  findDescription: {
+    color: Colors.cardHighlightTextMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
   },
 });

@@ -10,6 +10,7 @@ router.use('/rooms', require('./roomRoutes'));
 router.use('/saved-products', require('./savedProductRoutes'));
 router.use('/items', require('./userItemRoutes'));
 router.use('/generated-images', require('./generatedImageRoutes'));
+router.use('/find-for-my-home', require('./findForMyHomeRoutes'));
 
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });

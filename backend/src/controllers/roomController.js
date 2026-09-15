@@ -1,9 +1,12 @@
+const path = require('path');
 const { pool } = require('../db/connection');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { requireString } = require('../utils/validate');
-const { relativeUploadPath } = require('../middleware/upload');
+const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
+const { analyzeRoomImages } = require('../services/aiService');
+const { serializeUserItem } = require('./userItemController');
 
 async function loadRoomWithPhotos(roomId, userId) {
   const [roomRows] = await pool.query('SELECT * FROM rooms WHERE id = ? AND user_id = ? LIMIT 1', [
@@ -117,6 +120,87 @@ const updateRoom = asyncHandler(async (req, res) => {
   res.json({ room });
 });
 
+/**
+ * POST /api/rooms/:id/analyze
+ *
+ * Runs AI room analysis over the room's current photos and saves any
+ * newly-detected objects to user_items. Never blocks room creation/editing
+ * — this is always a separate, best-effort call the frontend makes after
+ * the room (and its photos) are already saved. A room with no photos yet
+ * simply returns no items rather than erroring.
+ *
+ * Duplicate-avoidance: existing items for this room are fetched first and
+ * passed to the AI as context (so a re-analysis after adding more photos
+ * doesn't re-describe furniture it already knows about), and are checked
+ * again on the way in as a hard guard against inserting an exact
+ * name+category repeat.
+ */
+const analyzeRoom = asyncHandler(async (req, res) => {
+  const existing = await loadRoomWithPhotos(req.params.id, req.user.id);
+  if (!existing) throw new ApiError(404, 'Room not found.');
+
+  if (existing.imageUris.length === 0) {
+    return res.json({ items: [], totalDetected: 0, isMock: false, message: 'Add a room photo before analyzing.' });
+  }
+
+  const [photoRows] = await pool.query(
+    'SELECT image_path FROM room_photos WHERE room_id = ? ORDER BY created_at ASC LIMIT 5',
+    [req.params.id]
+  );
+  const absoluteImagePaths = photoRows.map((p) => path.join(uploadRoot, path.basename(p.image_path)));
+
+  const [existingItemRows] = await pool.query(
+    'SELECT name, category FROM user_items WHERE user_id = ? AND room_id = ?',
+    [req.user.id, req.params.id]
+  );
+
+  let aiResult;
+  try {
+    aiResult = await analyzeRoomImages({
+      absoluteImagePaths,
+      roomType: existing.roomType,
+      existingItems: existingItemRows,
+    });
+  } catch (err) {
+    throw new ApiError(502, "We couldn't analyze this room. Please try again.", err.message);
+  }
+
+  const knownItems = existingItemRows.map((row) => ({
+    name: row.name.toLowerCase(),
+    category: row.category.toLowerCase(),
+  }));
+
+  const created = [];
+  for (const item of aiResult.items) {
+    const name = (item.name || '').trim();
+    if (!name) continue;
+    const category = (item.category || 'Other').trim() || 'Other';
+
+    const isDuplicate = knownItems.some(
+      (known) => known.name === name.toLowerCase() && known.category === category.toLowerCase()
+    );
+    if (isDuplicate) continue;
+
+    const [result] = await pool.query(
+      `INSERT INTO user_items (user_id, room_id, name, category, description, source)
+       VALUES (?, ?, ?, ?, ?, 'ai')`,
+      [req.user.id, req.params.id, name, category, item.description || null]
+    );
+
+    knownItems.push({ name: name.toLowerCase(), category: category.toLowerCase() });
+
+    const [rows] = await pool.query('SELECT * FROM user_items WHERE id = ?', [result.insertId]);
+    created.push(serializeUserItem(rows[0]));
+  }
+
+  res.json({
+    items: created,
+    totalDetected: aiResult.items.length,
+    isMock: aiResult.isMock,
+    provider: aiResult.provider,
+  });
+});
+
 /** DELETE /api/rooms/:id */
 const deleteRoom = asyncHandler(async (req, res) => {
   const [result] = await pool.query('DELETE FROM rooms WHERE id = ? AND user_id = ?', [
@@ -204,4 +288,5 @@ module.exports = {
   addRoomPhoto,
   removeRoomPhoto,
   setPrimaryPhoto,
+  analyzeRoom,
 };

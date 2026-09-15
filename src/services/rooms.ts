@@ -13,6 +13,7 @@ import {
   apiDelete,
   apiGet,
   apiPatch,
+  apiPost,
   apiPut,
   apiUploadMultipart,
 } from './api';
@@ -205,6 +206,36 @@ export async function removeRoomPhoto(
   await writeCache(cached.map((r) => (r.id === roomId ? updated : r)));
 
   return updated;
+}
+
+// ── AI Room Analysis ─────────────────────────────────────────────────────────
+
+export type DetectedRoomItem = {
+  id: string;
+  name: string;
+  category: string;
+  description: string | null;
+  imageUri: string | null;
+  roomId: string | null;
+  source: 'manual' | 'ai';
+  createdAt: string;
+};
+
+export type AnalyzeRoomResult = {
+  items: DetectedRoomItem[];
+  totalDetected: number;
+  isMock: boolean;
+  provider?: string | null;
+  message?: string;
+};
+
+/**
+ * Runs AI analysis over the room's current photos and saves any
+ * newly-detected objects to My Items. Safe to call repeatedly — already
+ * known items are not re-added (see backend roomController.js#analyzeRoom).
+ */
+export async function analyzeRoom(roomId: string): Promise<AnalyzeRoomResult> {
+  return apiPost<AnalyzeRoomResult>(`/rooms/${roomId}/analyze`, {});
 }
 
 export async function setRoomPrimaryPhoto(

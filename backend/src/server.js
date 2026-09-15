@@ -24,6 +24,10 @@ async function start() {
     console.log(
       `[server] Room visualization AI: ${env.imageAi.provider ? `enabled (${env.imageAi.provider})` : 'NOT CONFIGURED (set IMAGE_AI_PROVIDER)'}`
     );
+    // eslint-disable-next-line no-console
+    console.log(`[server] AI room analysis: ${env.ai.apiKey ? `enabled (${env.ai.model})` : 'MOCK MODE (set AI_API_KEY)'}`);
+    // eslint-disable-next-line no-console
+    console.log('[server] Find for My Home product search: MOCK MODE (no real product source connected yet)');
   });
 }
 

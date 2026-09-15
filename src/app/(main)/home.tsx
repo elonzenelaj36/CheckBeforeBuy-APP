@@ -107,27 +107,7 @@ export default function Home() {
 
         <View style={styles.quickRow}>
           <TouchableOpacity
-            style={styles.quickCard}
-            onPress={() =>
-              router.push('/find-for-my-home')
-            }
-            activeOpacity={0.85}
-          >
-            <Text style={styles.quickIcon}>🔍</Text>
-
-            <Text style={styles.quickTitle}>
-              Find for my home
-            </Text>
-
-            <Text style={styles.quickDescription}>
-              Tell us what you need.
-            </Text>
-
-            <Text style={styles.quickArrow}>→</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickCard}
+            style={styles.quickCardFull}
             onPress={() => router.push('/my-home')}
             activeOpacity={0.85}
           >
@@ -138,7 +118,7 @@ export default function Home() {
             </Text>
 
             <Text style={styles.quickDescription}>
-              Manage your rooms.
+              Manage your rooms, your detected items, and find products for your space.
             </Text>
 
             <Text style={styles.quickArrow}>→</Text>
@@ -373,12 +353,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
-  quickCard: {
+  quickCardFull: {
     flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: 16,
     padding: 16,
-    minHeight: 150,
+    minHeight: 110,
     borderWidth: 1,
     borderColor: Colors.border,
     justifyContent: 'space-between',

@@ -4,36 +4,52 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
 import EmptyState from '@/components/EmptyState';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
-import {
-  createUserItem,
-  deleteUserItem,
-  getUserItems,
-  UserItem,
-} from '@/services/userItems';
+import { getRooms, Room } from '@/services/rooms';
+import { deleteUserItem, getUserItems, UserItem } from '@/services/userItems';
+
+type ItemGroup = {
+  key: string;
+  roomName: string;
+  items: UserItem[];
+};
+
+function groupByRoom(items: UserItem[], rooms: Room[]): ItemGroup[] {
+  const roomNameById = new Map(rooms.map((r) => [r.id, r.name]));
+  const groups = new Map<string, ItemGroup>();
+
+  for (const item of items) {
+    const key = item.roomId ?? '__unassigned__';
+    const roomName = item.roomId ? roomNameById.get(item.roomId) ?? 'Unknown room' : 'Not linked to a room';
+
+    if (!groups.has(key)) {
+      groups.set(key, { key, roomName, items: [] });
+    }
+    groups.get(key)!.items.push(item);
+  }
+
+  return Array.from(groups.values());
+}
 
 export default function MyItems() {
+  const router = useRouter();
   const [items, setItems] = React.useState<UserItem[]>([]);
-  const [showAddModal, setShowAddModal] = React.useState(false);
-  const [itemName, setItemName] = React.useState('');
-  const [itemCategory, setItemCategory] = React.useState('Furniture');
-
-  const categories = ['Furniture', 'Electronics', 'Lighting', 'Storage', 'Decor', 'Other'];
+  const [rooms, setRooms] = React.useState<Room[]>([]);
 
   const loadItems = async () => {
-    const data = await getUserItems();
-    setItems(data);
+    const [fetchedItems, fetchedRooms] = await Promise.all([getUserItems(), getRooms()]);
+    setItems(fetchedItems);
+    setRooms(fetchedRooms);
   };
 
   useFocusEffect(
@@ -42,24 +58,8 @@ export default function MyItems() {
     }, [])
   );
 
-  const handleCreate = async () => {
-    if (!itemName.trim()) {
-      Alert.alert('Item name required', 'Please enter a name for the item you own.');
-      return;
-    }
-
-    await createUserItem({
-      name: itemName.trim(),
-      category: itemCategory,
-    });
-
-    setItemName('');
-    setShowAddModal(false);
-    loadItems();
-  };
-
   const handleDelete = (item: UserItem) => {
-    Alert.alert('Remove Item', `Remove "${item.name}" from your belongings?`, [
+    Alert.alert('Remove Item', `Remove "${item.name}" from My Items?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -72,84 +72,58 @@ export default function MyItems() {
     ]);
   };
 
+  const groups = groupByRoom(items, rooms);
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ScreenHeader
-          eyebrow="YOUR BELONGINGS"
-          title="My Items"
-          rightElement={
-            <TouchableOpacity onPress={() => setShowAddModal(!showAddModal)}>
-              <Text style={styles.addBtnText}>{showAddModal ? 'Cancel' : '+ Add'}</Text>
-            </TouchableOpacity>
-          }
-        />
+        <ScreenHeader eyebrow="YOUR BELONGINGS" title="My Items" />
 
         <View style={styles.intro}>
-          <Text style={styles.title}>Things you own.</Text>
+          <Text style={styles.title}>Items detected from your rooms.</Text>
           <Text style={styles.subtitle}>
-            Logging items you already own helps Check Before Buy avoid duplicate recommendations and verify style compatibility.
+            When you add a room and its photos, AI looks for recognizable furniture and objects so Check Before Buy
+            can avoid recommending things you already own.
           </Text>
         </View>
 
-        {/* Add Item Form */}
-        {showAddModal && (
-          <View style={styles.addForm}>
-            <Text style={styles.formTitle}>Add item you own</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Grey Fabric Sofa, Samsung TV"
-              placeholderTextColor={Colors.textMuted}
-              value={itemName}
-              onChangeText={setItemName}
-            />
-
-            <Text style={styles.label}>CATEGORY</Text>
-            <View style={styles.chipGrid}>
-              {categories.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.chip, itemCategory === cat && styles.chipActive]}
-                  onPress={() => setItemCategory(cat)}
-                >
-                  <Text style={[styles.chipText, itemCategory === cat && styles.chipTextActive]}>
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TouchableOpacity style={styles.submitBtn} onPress={handleCreate}>
-              <Text style={styles.submitBtnText}>SAVE BELONGING</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Items List */}
         {items.length === 0 ? (
           <EmptyState
             icon="🛋️"
-            title="No items logged"
-            description="Add furniture, electronics, or decor you already own so AI can check for similar items before you buy."
-            actionLabel="+ LOG FIRST ITEM"
-            onAction={() => setShowAddModal(true)}
+            title="No items detected yet"
+            description="Add a room with a photo in My Home — AI will detect furniture and other objects automatically."
+            actionLabel="GO TO MY HOME"
+            onAction={() => router.push('/my-home')}
           />
         ) : (
-          <View style={styles.itemList}>
-            {items.map((item) => (
-              <View key={item.id} style={styles.itemCard}>
-                <View style={styles.itemIcon}>
-                  <Text style={styles.itemIconText}>📦</Text>
-                </View>
+          <View style={styles.groupList}>
+            {groups.map((group) => (
+              <View key={group.key} style={styles.group}>
+                <Text style={styles.groupTitle}>{group.roomName.toUpperCase()}</Text>
 
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemMeta}>{item.category}</Text>
-                </View>
+                <View style={styles.itemList}>
+                  {group.items.map((item) => (
+                    <View key={item.id} style={styles.itemCard}>
+                      <View style={styles.itemIcon}>
+                        <Text style={styles.itemIconText}>📦</Text>
+                      </View>
 
-                <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item)}>
-                  <Text style={styles.deleteBtnText}>✕</Text>
-                </TouchableOpacity>
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemName}>{item.name}</Text>
+                        <Text style={styles.itemMeta}>{item.category}</Text>
+                        {item.description ? (
+                          <Text style={styles.itemDescription} numberOfLines={2}>
+                            {item.description}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item)}>
+                        <Text style={styles.deleteBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
               </View>
             ))}
           </View>
@@ -171,19 +145,15 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 120,
   },
-  addBtnText: {
-    color: Colors.accent,
-    fontSize: 14,
-    fontWeight: '600',
-  },
   intro: {
     marginTop: 30,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   title: {
     color: Colors.textPrimary,
     fontSize: 32,
     fontWeight: '700',
+    lineHeight: 38,
   },
   subtitle: {
     color: Colors.textSecondary,
@@ -191,76 +161,17 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 8,
   },
-  addForm: {
-    backgroundColor: Colors.surface,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 24,
+  groupList: {
+    gap: 24,
   },
-  formTitle: {
-    color: Colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 12,
+  group: {
+    gap: 10,
   },
-  input: {
-    height: 48,
-    backgroundColor: Colors.surface2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 14,
-    color: Colors.textPrimary,
-    fontSize: 13,
-  },
-  label: {
+  groupTitle: {
     color: Colors.textMuted,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginTop: 14,
-    marginBottom: 8,
-  },
-  chipGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: Colors.surface2,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  chipActive: {
-    backgroundColor: Colors.accentDim,
-    borderColor: Colors.accent,
-  },
-  chipText: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-  },
-  chipTextActive: {
-    color: Colors.accentText,
-    fontWeight: '700',
-  },
-  submitBtn: {
-    height: 46,
-    backgroundColor: Colors.cardHighlight,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 18,
-  },
-  submitBtnText: {
-    color: Colors.cardHighlightText,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
   },
   itemList: {
     gap: 10,
@@ -298,6 +209,12 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 11,
     marginTop: 2,
+  },
+  itemDescription: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    marginTop: 4,
+    lineHeight: 15,
   },
   deleteBtn: {
     width: 28,

@@ -1,12 +1,14 @@
 /**
  * User Items service — items the user already owns, backed by the
- * backend's /api/items. Used by the AI product-check flow to flag
- * potentially redundant purchases.
+ * backend's /api/items. Populated automatically by AI room analysis (see
+ * services/rooms.ts#analyzeRoom) rather than manual entry. Used by the AI
+ * product-check flow to flag potentially redundant purchases, and by Find
+ * for My Home to understand what the user already has.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { apiDelete, apiGet, apiUploadMultipart, apiPut } from './api';
+import { apiDelete, apiGet, apiPut } from './api';
 
 const USER_ITEMS_CACHE_KEY = '@check_before_buy_user_items_cache_v2';
 
@@ -15,9 +17,11 @@ const USER_ITEMS_CACHE_KEY = '@check_before_buy_user_items_cache_v2';
 export type UserItem = {
   id: string;
   name: string;
+  description: string | null;
   imageUri: string | null;
   roomId: string | null;
   category: string;
+  source: 'manual' | 'ai';
   createdAt: string;
 };
 
@@ -66,33 +70,10 @@ export async function getUserItemsForRoom(roomId: string): Promise<UserItem[]> {
   }
 }
 
-// ── Create ───────────────────────────────────────────────────────────────────
-
-export type CreateUserItemInput = {
-  name: string;
-  imageUri?: string | null;
-  roomId?: string | null;
-  category?: string;
-};
-
-export async function createUserItem(input: CreateUserItemInput): Promise<UserItem> {
-  const item = await apiUploadMultipart<UserItem>(
-    '/items',
-    { image: input.imageUri },
-    {
-      name: input.name.trim(),
-      category: input.category ?? 'Other',
-      ...(input.roomId ? { roomId: input.roomId } : {}),
-    }
-  );
-
-  const existing = await readCache();
-  await writeCache([item, ...existing]);
-
-  return item;
-}
-
 // ── Update ───────────────────────────────────────────────────────────────────
+// Items are detected automatically (see services/rooms.ts#analyzeRoom) — My
+// Items intentionally has no manual-create flow. Editing a detected item's
+// name/category is still useful and doesn't conflict with that, so it stays.
 
 export type UpdateUserItemInput = {
   name?: string;

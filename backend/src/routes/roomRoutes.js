@@ -10,6 +10,7 @@ const {
   addRoomPhoto,
   removeRoomPhoto,
   setPrimaryPhoto,
+  analyzeRoom,
 } = require('../controllers/roomController');
 
 const router = express.Router();
@@ -25,5 +26,7 @@ router.delete('/:id', deleteRoom);
 router.post('/:id/photos', upload.single('image'), addRoomPhoto);
 router.delete('/:id/photos/:photoId', removeRoomPhoto);
 router.patch('/:id/photos/:photoId', setPrimaryPhoto);
+
+router.post('/:id/analyze', analyzeRoom);
 
 module.exports = router;

@@ -14,8 +14,10 @@ backend/
 │   ├── controllers/          # request handlers, one per resource
 │   ├── routes/                # Express routers, mounted under /api
 │   ├── services/
-│   │   ├── aiService.js               # product analysis (Anthropic Claude, vision)
-│   │   └── imageGenerationService.js  # room visualization (NOT configured — see below)
+│   │   ├── aiService.js               # product analysis + room analysis + home recommendations (Anthropic Claude, vision)
+│   │   ├── imageGenerationService.js  # room visualization (NOT configured — see below)
+│   │   ├── productService.js          # Find for My Home product search (MOCK — see below)
+│   │   └── locationService.js         # approximate IP geolocation for Find for My Home
 │   ├── utils/                # ApiError, asyncHandler, password/token/validate helpers
 │   ├── app.js                 # Express app assembly
 │   └── server.js              # entrypoint — connects to MySQL, then listens
@@ -56,6 +58,8 @@ On success you'll see:
 [server] Check Before Buy API listening on http://localhost:5000
 [server] AI product analysis: enabled (claude-sonnet-5)
 [server] Room visualization AI: NOT CONFIGURED (set IMAGE_AI_PROVIDER)
+[server] AI room analysis: enabled (claude-sonnet-5)
+[server] Find for My Home product search: MOCK MODE (no real product source connected yet)
 ```
 
 ## Authentication
@@ -91,17 +95,19 @@ On success you'll see:
 | POST | `/api/rooms/:id/photos` | Add a photo |
 | DELETE | `/api/rooms/:id/photos/:photoId` | Remove a photo |
 | PATCH | `/api/rooms/:id/photos/:photoId` | Set as primary photo (`{ isPrimary: true }`) |
+| POST | `/api/rooms/:id/analyze` | AI-detect objects in the room's photos → save new ones to `user_items` (see "AI — room analysis") |
 | GET | `/api/saved-products` | List saved products |
 | POST | `/api/saved-products` | Save a product |
 | DELETE | `/api/saved-products/:id` | Unsave |
-| GET | `/api/items` | List owned items (optional `?roomId=`) |
-| POST | `/api/items` | Log an owned item |
+| GET | `/api/items` | List items — `?roomId=` filters to one room. This is also "My Items"/"a room's items"; there is no separate endpoint for those, to avoid duplicating the same query. |
+| POST | `/api/items` | Create an item directly (legacy manual-entry path — the mobile app no longer exposes a UI for this; items are populated by room analysis instead) |
 | PUT | `/api/items/:id` | Edit |
 | DELETE | `/api/items/:id` | Delete |
 | GET | `/api/generated-images` | List room visualizations |
 | GET | `/api/generated-images/room/:roomId` | Visualizations for one room |
 | POST | `/api/generated-images` | Request a visualization (see status note below) |
 | DELETE | `/api/generated-images/:id` | Delete |
+| POST | `/api/find-for-my-home` | AI product recommendations for the user's home (see "Find for My Home") |
 | GET | `/api/health` | Liveness check |
 
 All list/create endpoints that accept an image use
@@ -171,6 +177,87 @@ mobile UI) needs to change, since they already speak the `pending` /
 
 The mobile app is built to reflect this honestly: it shows a "visualization
 pending — AI not configured yet" state instead of a fake generated image.
+
+## AI — room analysis
+
+`services/aiService.js#analyzeRoomImages` calls the same Anthropic Claude
+API used for product analysis (vision + tool-use, this time a
+`record_room_items` tool) with up to 5 of a room's photos in one request,
+and asks it to list the distinct physical objects actually visible —
+never inventing anything it can't identify, and never structural elements
+like walls/floors/doors.
+
+`POST /api/rooms/:id/analyze` is the endpoint the mobile app calls right
+after a room (and its first photo) is saved, and again whenever a new photo
+is added to an existing room:
+1. Loads the room's current photos and its already-recorded `user_items`.
+2. Passes the already-known items to the AI as context, so a re-analysis
+   doesn't re-describe furniture it already knows about.
+3. As a hard guard against duplicates, also skips inserting any returned
+   item whose name+category already exactly matches an existing one for
+   that room.
+4. Inserts genuinely new items with `source = 'ai'` and returns only the
+   newly-created ones (not the room's full item list).
+
+Analysis is always a separate, best-effort call from room/photo saving —
+a failure here is caught and logged by the mobile app but never undoes or
+blocks the already-successful room/photo save.
+
+**Status: fully implemented**, gated on the same `AI_API_KEY` as product
+analysis. Without a key, it returns a clearly-marked mock detection
+(`isMock: true`) built from a small per-room-type furniture list (e.g. a
+mock "Living Room" analysis suggests a sofa, coffee table, TV, TV stand)
+instead of calling out to Claude — so the whole room → analyze → My Items
+flow is testable without any AI credentials.
+
+## Find for My Home
+
+`POST /api/find-for-my-home` (body: optional `{ category, budget, city }`)
+ties three things together:
+
+1. **Home understanding** — the user's rooms and their AI-detected
+   `user_items` (plus, for light extra context, their 10 most recent
+   product checks) are read from the database.
+2. **Product search** — `services/productService.js#searchProducts`
+   returns candidate products. **No real store/product source is connected
+   yet** — it returns a small, explicitly `isMock: true` illustrative
+   catalog (clearly-labeled placeholder store names, no fabricated images
+   or product URLs) instead of pretending to have real Kosovo store data.
+   The function signature (`{ category, city }` in, a flat product list
+   with `store`/`price`/`currency`/`dimensions`/etc. out) is what a real
+   integration (GjirafaMall, JYSK Kosovo, or another retailer's feed/API)
+   would implement — nothing else in the app would need to change.
+3. **AI ranking** — `services/aiService.js#analyzeHomeNeeds` is given the
+   home context and the candidate products (referenced only by id — the
+   model is explicitly told never to invent a product not in that list) and
+   asked which ones are genuinely useful additions and why. It is correct
+   and expected for it to recommend fewer products than were offered,
+   including zero — the prompt explicitly discourages recommending
+   something just because it exists.
+
+**Status: architecture fully implemented, product data is MOCK.** Every
+response carries `isMock` (true if either the AI reasoning or the product
+data is mock) so the mobile app can label results honestly rather than
+presenting mock picks as real ones.
+
+### Location
+
+Recommendations try to prioritize nearby stores using `services/locationService.js`:
+- A city the user types in the app always wins.
+- Otherwise, the backend takes the request's IP and, **only if it is not a
+  private/loopback address** (`192.168.x.x`, `10.x.x.x`, `127.0.0.1`, `::1`,
+  etc. are rejected immediately, with no network call), makes one best-effort,
+  short-timeout lookup against a free keyless IP-geolocation API for an
+  approximate country/region/city.
+- Any failure (private IP, network error, timeout, malformed response)
+  resolves to `location.source: "unknown"` — never a guessed or fabricated
+  location.
+- The IP address itself is never logged, stored, or included in any
+  response — only the derived city/region/country, and only for the
+  duration of that one request.
+- In local development the request IP is essentially always private, so
+  you should expect `"unknown"` unless you pass `city` explicitly — that's
+  correct behavior, not a bug.
 
 ## Images
 

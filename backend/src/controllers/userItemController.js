@@ -10,8 +10,10 @@ function serialize(row) {
     id: String(row.id),
     name: row.name,
     category: row.category,
+    description: row.description || null,
     imageUri: toAbsoluteUrl(row.image_path),
     roomId: row.room_id ? String(row.room_id) : null,
+    source: row.source || 'manual',
     createdAt: row.created_at,
   };
 }
@@ -89,4 +91,10 @@ const deleteUserItem = asyncHandler(async (req, res) => {
   res.status(204).end();
 });
 
-module.exports = { listUserItems, createUserItem, updateUserItem, deleteUserItem };
+module.exports = {
+  listUserItems,
+  createUserItem,
+  updateUserItem,
+  deleteUserItem,
+  serializeUserItem: serialize,
+};

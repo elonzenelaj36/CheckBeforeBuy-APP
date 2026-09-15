@@ -84,15 +84,20 @@ CREATE TABLE IF NOT EXISTS room_photos (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── user_items ──────────────────────────────────────────────────────────────
--- Things the user already owns. Used later to compare a newly checked
--- product against what the user already has.
+-- Things the user already owns. Populated automatically by AI room analysis
+-- (see backend/src/services/aiService.js#analyzeRoomImages) when a room's
+-- photos are analyzed; `source` records whether a row came from that or from
+-- the (legacy) manual-entry endpoint. Used to compare a newly checked
+-- product against what the user already has, and to power Find for My Home.
 CREATE TABLE IF NOT EXISTS user_items (
   id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id     BIGINT UNSIGNED NOT NULL,
   room_id     BIGINT UNSIGNED NULL,
   name        VARCHAR(255)    NOT NULL,
   category    VARCHAR(120)    NOT NULL DEFAULT 'Other',
+  description TEXT            NULL,
   image_path  VARCHAR(500)    NULL,
+  source      ENUM('manual', 'ai') NOT NULL DEFAULT 'manual',
   created_at  TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),

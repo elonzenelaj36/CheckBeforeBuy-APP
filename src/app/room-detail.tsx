@@ -23,6 +23,7 @@ import {
 } from '@/services/generatedImages';
 import {
   addRoomPhoto,
+  analyzeRoom,
   deleteRoom,
   getRoomById,
   removeRoomPhoto,
@@ -40,6 +41,7 @@ export default function RoomDetail() {
   const [generatedImages, setGeneratedImages] = React.useState<GeneratedImage[]>([]);
   const [userItems, setUserItems] = React.useState<UserItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [analyzing, setAnalyzing] = React.useState(false);
 
   const loadData = React.useCallback(async () => {
     if (!roomId) {
@@ -93,6 +95,29 @@ export default function RoomDetail() {
 
   const primaryPhoto = room.primaryImageUri || room.imageUris[0] || null;
 
+  // Best-effort: re-analyzing after a new photo is added must never block
+  // or fail the photo add itself, which has already succeeded by the time
+  // this runs. Already-known items are not re-added (see
+  // backend roomController.js#analyzeRoom), so this is safe to call after
+  // every new photo.
+  const analyzeAndRefreshItems = async () => {
+    if (!roomId) return;
+    setAnalyzing(true);
+    try {
+      const result = await analyzeRoom(roomId);
+      if (result.items.length > 0) {
+        setUserItems((prev) => [...result.items, ...prev]);
+        Alert.alert(
+          'Room analyzed',
+          `${result.items.length} item${result.items.length === 1 ? '' : 's'} added to My Items.`
+        );
+      }
+    } catch (error) {
+      console.error('[room-detail] Room analysis failed:', error);
+    }
+    setAnalyzing(false);
+  };
+
   const handleAddPhoto = () => {
     Alert.alert('Add Room Photo', 'Choose photo source', [
       {
@@ -110,6 +135,7 @@ export default function RoomDetail() {
           if (!res.canceled && res.assets[0]) {
             const updated = await addRoomPhoto(room.id, res.assets[0].uri);
             if (updated) setRoom(updated);
+            await analyzeAndRefreshItems();
           }
         },
       },
@@ -128,6 +154,7 @@ export default function RoomDetail() {
           if (!res.canceled && res.assets[0]) {
             const updated = await addRoomPhoto(room.id, res.assets[0].uri);
             if (updated) setRoom(updated);
+            await analyzeAndRefreshItems();
           }
         },
       },
@@ -294,15 +321,19 @@ export default function RoomDetail() {
           </View>
         )}
 
-        {/* Products / Belongings in this room */}
+        {/* Items detected in this room */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>ITEMS IN ROOM ({userItems.length})</Text>
+          <Text style={styles.sectionTitle}>ITEMS DETECTED ({userItems.length})</Text>
         </View>
 
-        {userItems.length === 0 ? (
+        {analyzing ? (
+          <View style={styles.subtleInfoCard}>
+            <Text style={styles.subtleInfoText}>Analyzing your room photo...</Text>
+          </View>
+        ) : userItems.length === 0 ? (
           <View style={styles.subtleInfoCard}>
             <Text style={styles.subtleInfoText}>
-              No personal belongings logged for this room yet.
+              No items detected in this room yet. Add a room photo and AI will look for recognizable furniture.
             </Text>
           </View>
         ) : (

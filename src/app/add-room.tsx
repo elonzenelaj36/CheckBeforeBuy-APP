@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
-import { createRoom, ROOM_TYPES, RoomType } from '@/services/rooms';
+import { analyzeRoom, createRoom, ROOM_TYPES, RoomType } from '@/services/rooms';
 
 export default function AddRoom() {
   const router = useRouter();
@@ -26,6 +26,7 @@ export default function AddRoom() {
   const [selectedType, setSelectedType] = React.useState<RoomType>('Living Room');
   const [imageUri, setImageUri] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isAnalyzing, setIsAnalyzing] = React.useState(false);
 
   const takePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -80,16 +81,37 @@ export default function AddRoom() {
 
     setIsSaving(true);
     try {
-      await createRoom({
+      const room = await createRoom({
         name: trimmedName,
         roomType: selectedType,
         imageUri: imageUri ?? undefined,
       });
 
       setIsSaving(false);
+
+      // Room analysis is best-effort: the room is already saved above, so a
+      // failure here must never block navigation or look like the room save
+      // itself failed.
+      if (imageUri) {
+        setIsAnalyzing(true);
+        try {
+          const result = await analyzeRoom(room.id);
+          if (result.items.length > 0) {
+            Alert.alert(
+              'Room analyzed',
+              `${result.items.length} item${result.items.length === 1 ? '' : 's'} added to My Items.`
+            );
+          }
+        } catch (error) {
+          console.error('[add-room] Room analysis failed:', error);
+        }
+        setIsAnalyzing(false);
+      }
+
       router.back();
     } catch (error: any) {
       setIsSaving(false);
+      setIsAnalyzing(false);
       Alert.alert(
         'Error',
         error?.message ?? 'Failed to save room. Please try again.'
@@ -194,15 +216,25 @@ export default function AddRoom() {
 
           {/* Save Button */}
           <TouchableOpacity
-            style={[styles.saveButton, isSaving && styles.disabledButton]}
+            style={[styles.saveButton, (isSaving || isAnalyzing) && styles.disabledButton]}
             onPress={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || isAnalyzing}
             activeOpacity={0.85}
           >
             <Text style={styles.saveButtonText}>
-              {isSaving ? 'CREATING ROOM...' : 'CREATE ROOM'}
+              {isAnalyzing
+                ? 'ANALYZING YOUR ROOM...'
+                : isSaving
+                  ? 'CREATING ROOM...'
+                  : 'CREATE ROOM'}
             </Text>
           </TouchableOpacity>
+
+          {isAnalyzing && (
+            <Text style={styles.analyzingHint}>
+              AI is checking your room photo for recognizable furniture — this only takes a moment.
+            </Text>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -356,5 +388,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  analyzingHint: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 12,
   },
 });

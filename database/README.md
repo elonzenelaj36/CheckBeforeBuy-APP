@@ -30,6 +30,19 @@ This creates all tables (`users`, `products`, `saved_products`, `product_checks`
 proper primary keys, foreign keys, and indexes. See `schema.sql` for full
 column definitions and relationships.
 
+## Upgrading an existing database
+
+If you already ran `schema.sql` before `user_items` gained `description` and
+`source` columns (used by AI room-detection — see backend README → "AI room
+analysis"), apply the migration once:
+
+```bash
+mysql -u root -p check_before_buy < database/migrations/001_user_items_ai_detection.sql
+```
+
+It's safe to re-run and never touches existing rows — a fresh `schema.sql`
+import already includes these columns, so new installs can skip this step.
+
 ## (Optional) Load demo seed data
 
 ```bash
@@ -91,6 +104,8 @@ for what the user experiences as one checked product.
 - `generated_images.status` tracks the lifecycle of a room visualization
   (`pending` → `completed`/`failed`) since image generation is async and may
   not be fully configured (see backend README).
+- `user_items.source` distinguishes `'ai'` (written by room analysis) from
+  `'manual'` (the historical default) rows.
 
 ## Verifying manually
 

@@ -86,6 +86,109 @@ function mimeTypeForPath(filePath) {
   return EXT_TO_MIME[path.extname(filePath).toLowerCase()] || 'image/jpeg';
 }
 
+const ROOM_ITEM_CATEGORIES = [
+  'seating',
+  'table',
+  'storage',
+  'lighting',
+  'electronics',
+  'bed',
+  'rug',
+  'decor',
+  'appliance',
+  'other',
+];
+
+const ROOM_ANALYSIS_TOOL = {
+  name: 'record_room_items',
+  description:
+    'Records the distinct physical furniture/objects recognizable across one or more photos of the same room.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Short common name of the object, e.g. "Sofa", "Coffee Table", "Floor Lamp".',
+            },
+            category: {
+              type: 'string',
+              enum: ROOM_ITEM_CATEGORIES,
+              description: 'General category of the object.',
+            },
+            description: {
+              type: 'string',
+              description:
+                'Short factual description if visibly notable (color, material, approximate size). Empty string if nothing notable.',
+            },
+          },
+          required: ['name', 'category'],
+        },
+        description:
+          'One entry per distinct physical object actually visible in the photos. If the same object appears in ' +
+          'multiple photos (e.g. the same sofa from two angles), list it only once. Do not invent objects you ' +
+          'cannot reasonably identify, and do not list structural elements like walls, floors, doors, or windows.',
+      },
+    },
+    required: ['items'],
+  },
+};
+
+const MOCK_ROOM_ITEMS = {
+  'Living Room': [
+    { name: 'Sofa', category: 'seating', description: 'Fabric three-seat sofa.' },
+    { name: 'Coffee Table', category: 'table', description: 'Rectangular wooden coffee table.' },
+    { name: 'TV', category: 'electronics', description: 'Flat-screen television.' },
+    { name: 'TV Stand', category: 'storage', description: 'Low storage unit under the TV.' },
+  ],
+  Bedroom: [
+    { name: 'Bed', category: 'bed', description: 'Double bed with headboard.' },
+    { name: 'Wardrobe', category: 'storage', description: 'Freestanding wardrobe.' },
+    { name: 'Nightstand', category: 'storage', description: 'Small bedside table.' },
+  ],
+  Kitchen: [
+    { name: 'Dining Table', category: 'table', description: 'Small kitchen table.' },
+    { name: 'Chairs', category: 'seating', description: 'Set of dining chairs.' },
+    { name: 'Refrigerator', category: 'appliance', description: 'Standard fridge-freezer.' },
+  ],
+  Bathroom: [
+    { name: 'Sink Cabinet', category: 'storage', description: 'Cabinet under the sink.' },
+    { name: 'Mirror', category: 'decor', description: 'Wall-mounted mirror.' },
+  ],
+  'Dining Room': [
+    { name: 'Dining Table', category: 'table', description: 'Table for four to six.' },
+    { name: 'Dining Chairs', category: 'seating', description: 'Matching dining chairs.' },
+  ],
+  Office: [
+    { name: 'Desk', category: 'table', description: 'Work desk.' },
+    { name: 'Office Chair', category: 'seating', description: 'Adjustable desk chair.' },
+    { name: 'Bookshelf', category: 'storage', description: 'Open bookshelf.' },
+  ],
+  'Gaming Room': [
+    { name: 'Gaming Chair', category: 'seating', description: 'Ergonomic gaming chair.' },
+    { name: 'Desk', category: 'table', description: 'Gaming/computer desk.' },
+    { name: 'Monitor', category: 'electronics', description: 'Desktop monitor.' },
+  ],
+};
+
+function mockRoomAnalysis({ roomType, existingItems }) {
+  const existingNames = new Set((existingItems || []).map((i) => i.name.toLowerCase()));
+  const candidates = MOCK_ROOM_ITEMS[roomType] || MOCK_ROOM_ITEMS['Living Room'];
+  const items = candidates.filter((item) => !existingNames.has(item.name.toLowerCase()));
+
+  return {
+    isMock: true,
+    provider: null,
+    model: null,
+    items,
+    raw: null,
+  };
+}
+
 function buildClient() {
   if (!env.ai.apiKey) return null;
   return new Anthropic({ apiKey: env.ai.apiKey });
@@ -208,4 +311,244 @@ async function analyzeProductImage({ absoluteImagePath, userPrice, userItems }) 
   };
 }
 
-module.exports = { analyzeProductImage };
+const ROOM_IMAGE_LIMIT = 5;
+
+/**
+ * Analyzes one or more photos of the same room and returns the distinct
+ * physical objects recognizable in them.
+ *
+ * @param {object} params
+ * @param {string[]} params.absoluteImagePaths - paths on disk to the room's photos (analyzes at most the first 5)
+ * @param {string} params.roomType - e.g. "Living Room", used for mock fallback and prompt context
+ * @param {Array<{name: string, category: string}>} [params.existingItems] - items already recorded for this room, so the AI can avoid re-listing them
+ */
+async function analyzeRoomImages({ absoluteImagePaths, roomType, existingItems }) {
+  const client = buildClient();
+
+  if (!client) {
+    return mockRoomAnalysis({ roomType, existingItems });
+  }
+
+  const imagePaths = (absoluteImagePaths || []).slice(0, ROOM_IMAGE_LIMIT);
+  if (imagePaths.length === 0) {
+    return { isMock: false, provider: 'anthropic', model: env.ai.model, items: [], raw: null };
+  }
+
+  const imageBlocks = imagePaths.map((imagePath) => ({
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: mimeTypeForPath(imagePath),
+      data: fs.readFileSync(imagePath).toString('base64'),
+    },
+  }));
+
+  const existingContext =
+    existingItems && existingItems.length
+      ? `Items already recorded for this room: ${existingItems
+          .map((i) => `${i.name} (${i.category})`)
+          .join(', ')}. Do not list these again unless you see a genuinely different object of the same kind (e.g. a second, different nightstand).`
+      : 'No items have been recorded for this room yet.';
+
+  let message;
+  try {
+    message = await client.messages.create({
+      model: env.ai.model,
+      max_tokens: 1024,
+      tools: [ROOM_ANALYSIS_TOOL],
+      tool_choice: { type: 'tool', name: ROOM_ANALYSIS_TOOL.name },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            ...imageBlocks,
+            {
+              type: 'text',
+              text:
+                `These are ${imageBlocks.length} photo(s) of the same "${roomType}". Identify the distinct pieces ` +
+                'of furniture and other recognizable objects actually visible. Only include objects you can ' +
+                'reasonably identify — never invent objects that are not visible. If the same physical object ' +
+                `appears in more than one photo, record it once. ${existingContext}`,
+            },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    const wrapped = new Error(`AI provider request failed: ${err.message}`);
+    wrapped.cause = err;
+    throw wrapped;
+  }
+
+  const toolUse = message.content.find((block) => block.type === 'tool_use');
+  if (!toolUse) {
+    throw new Error('AI provider did not return a structured room analysis.');
+  }
+
+  const items = Array.isArray(toolUse.input.items) ? toolUse.input.items : [];
+
+  return {
+    isMock: false,
+    provider: 'anthropic',
+    model: env.ai.model,
+    items: items.map((item) => ({
+      name: item.name || '',
+      category: item.category || 'other',
+      description: item.description || '',
+    })),
+    raw: toolUse.input,
+  };
+}
+
+const HOME_RECOMMENDATION_TOOL = {
+  name: 'record_home_recommendations',
+  description:
+    'Records which candidate products (by id) are genuinely useful additions to the user\'s home, and why, ' +
+    'given what they already own.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      summary: {
+        type: 'string',
+        description:
+          '2-4 sentence factual summary of what the user\'s home already has and what, if anything, would ' +
+          'meaningfully improve it. Honest and non-salesy — it is fine to say nothing more is needed.',
+      },
+      recommendations: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            productId: { type: 'string', description: 'id of the candidate product being recommended.' },
+            reason: {
+              type: 'string',
+              description:
+                'Short concrete reason this specific product suits this specific home (references what the ' +
+                'user already has, e.g. "Matches your existing wooden furniture" or "Your room has no rug yet").',
+            },
+          },
+          required: ['productId', 'reason'],
+        },
+        description:
+          'Only candidate products that are genuinely useful additions — do not include one for every category ' +
+          'just to fill the list. It is correct to return fewer recommendations than candidates, including zero.',
+      },
+    },
+    required: ['summary', 'recommendations'],
+  },
+};
+
+function mockHomeNeeds({ rooms, userItems, candidateProducts }) {
+  const roomCount = rooms.length;
+  const itemCount = userItems.length;
+
+  const summary =
+    roomCount === 0
+      ? 'Add a room to My Home so we can understand your space before recommending products.'
+      : itemCount === 0
+        ? `We found ${roomCount} room${roomCount === 1 ? '' : 's'} but no detected items yet — analyze your room photos so recommendations can reflect what you already own.`
+        : `Your home has ${itemCount} detected item${itemCount === 1 ? '' : 's'} across ${roomCount} room${roomCount === 1 ? '' : 's'}. AI product recommendations are not configured on this server yet, so the picks below are a mock illustration rather than a real personalized analysis.`;
+
+  const recommendations = candidateProducts.slice(0, 3).map((product) => ({
+    productId: product.id,
+    reason: 'Mock recommendation — AI reasoning is not configured on this server yet.',
+  }));
+
+  return { isMock: true, provider: null, model: null, summary, recommendations, raw: null };
+}
+
+/**
+ * Given the user's home context (rooms, detected items) and a list of real
+ * candidate products already fetched from productService, decides which
+ * candidates are genuinely useful and explains why — or recommends none.
+ *
+ * @param {object} params
+ * @param {Array<{name: string, roomType: string}>} params.rooms
+ * @param {Array<{name: string, category: string, roomName: string|null}>} params.userItems
+ * @param {Array<{id: string, name: string, category: string, price: number|null, store: string}>} params.candidateProducts
+ * @param {Array<{name: string, category: string}>} [params.recentProductChecks]
+ */
+async function analyzeHomeNeeds({ rooms, userItems, candidateProducts, recentProductChecks }) {
+  const client = buildClient();
+
+  if (!client || candidateProducts.length === 0) {
+    return mockHomeNeeds({ rooms, userItems, candidateProducts });
+  }
+
+  const roomsContext = rooms.length
+    ? rooms.map((r) => `${r.name} (${r.roomType})`).join(', ')
+    : 'No rooms added yet.';
+
+  const itemsContext = userItems.length
+    ? userItems.map((i) => `${i.name} (${i.category})${i.roomName ? ` in ${i.roomName}` : ''}`).join(', ')
+    : 'No items detected yet.';
+
+  const checksContext =
+    recentProductChecks && recentProductChecks.length
+      ? `Products the user recently checked (for context only, not necessarily owned): ${recentProductChecks
+          .map((c) => `${c.name} (${c.category})`)
+          .join(', ')}.`
+      : '';
+
+  const candidatesContext = candidateProducts
+    .map(
+      (p) =>
+        `id=${p.id} | ${p.name} | category: ${p.category} | store: ${p.store} | price: ${p.price != null ? `${p.price} ${p.currency}` : 'unknown'}`
+    )
+    .join('\n');
+
+  let message;
+  try {
+    message = await client.messages.create({
+      model: env.ai.model,
+      max_tokens: 1024,
+      tools: [HOME_RECOMMENDATION_TOOL],
+      tool_choice: { type: 'tool', name: HOME_RECOMMENDATION_TOOL.name },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text:
+                'You are the recommendation engine for "Check Before Buy", an app whose core principle is ' +
+                'discouraging unnecessary purchases and only suggesting products that genuinely complement what ' +
+                'a user already owns. Never recommend a product just because it exists — it is correct and ' +
+                'expected to recommend nothing, or say the user already has enough of something.\n\n' +
+                `User's rooms: ${roomsContext}\n` +
+                `User's detected items: ${itemsContext}\n` +
+                `${checksContext}\n\n` +
+                'Candidate products (only recommend from this list, referencing them by id — never invent a ' +
+                `product that isn't listed here):\n${candidatesContext}`,
+            },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    const wrapped = new Error(`AI provider request failed: ${err.message}`);
+    wrapped.cause = err;
+    throw wrapped;
+  }
+
+  const toolUse = message.content.find((block) => block.type === 'tool_use');
+  if (!toolUse) {
+    throw new Error('AI provider did not return structured home recommendations.');
+  }
+
+  const validIds = new Set(candidateProducts.map((p) => p.id));
+  const recommendations = (Array.isArray(toolUse.input.recommendations) ? toolUse.input.recommendations : [])
+    .filter((r) => validIds.has(String(r.productId)))
+    .map((r) => ({ productId: String(r.productId), reason: r.reason || '' }));
+
+  return {
+    isMock: false,
+    provider: 'anthropic',
+    model: env.ai.model,
+    summary: toolUse.input.summary || '',
+    recommendations,
+    raw: toolUse.input,
+  };
+}
+
+module.exports = { analyzeProductImage, analyzeRoomImages, analyzeHomeNeeds };
