@@ -11,7 +11,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { apiDelete, apiGet, apiUploadMultipart } from './api';
+import { apiDelete, apiGet, apiPatch, apiUploadMultipart } from './api';
 
 const GENERATED_IMAGES_CACHE_KEY = '@check_before_buy_generated_images_cache_v2';
 
@@ -23,6 +23,9 @@ export type GeneratedImage = {
   id: string;
   roomId: string;
   roomName: string | null;
+  roomType: string | null;
+  /** Links back to the product_checks row this came from, when there is one — lets "Generate Again" reuse that check's photo instead of needing a fresh local file. */
+  productCheckId: string | null;
   productImageUri: string | null;
   roomImageUri: string | null;
   productName: string | null;
@@ -55,19 +58,6 @@ async function writeCache(images: GeneratedImage[]): Promise<void> {
 
 // ── Read ─────────────────────────────────────────────────────────────────────
 
-export async function getGeneratedImages(): Promise<GeneratedImage[]> {
-  try {
-    const { generatedImages } = await apiGet<{ generatedImages: GeneratedImage[] }>(
-      '/generated-images'
-    );
-    await writeCache(generatedImages);
-    return generatedImages;
-  } catch (error) {
-    console.error('[generatedImages] Failed to load from backend, using cache:', error);
-    return readCache();
-  }
-}
-
 export async function getGeneratedImagesForRoom(
   roomId: string
 ): Promise<GeneratedImage[]> {
@@ -75,6 +65,15 @@ export async function getGeneratedImagesForRoom(
     const { generatedImages } = await apiGet<{ generatedImages: GeneratedImage[] }>(
       `/generated-images/room/${roomId}`
     );
+
+    // Merge into the cache (replacing this room's prior entries) so the
+    // offline fallback below stays useful room-by-room — visualizations are
+    // always viewed per-room now (inside My Home → a room), not as one
+    // global list.
+    const existing = await readCache();
+    const otherRooms = existing.filter((img) => img.roomId !== roomId);
+    await writeCache([...generatedImages, ...otherRooms]);
+
     return generatedImages;
   } catch (error) {
     console.error('[generatedImages] Failed to load room images from backend:', error);
@@ -116,6 +115,29 @@ export async function requestRoomVisualization(
   await writeCache([result, ...existing]);
 
   return result;
+}
+
+// ── Update ───────────────────────────────────────────────────────────────────
+
+/**
+ * Renames a visualization. This is not an independent label: on the backend
+ * it updates the canonical name (the linked product_checks row and its
+ * shared product, when there is one) so Saved Products / History / any
+ * other visualization of that same check all pick up the new name too —
+ * see backend/src/controllers/generatedImageController.js#updateGeneratedImage.
+ */
+export async function updateGeneratedImage(
+  imageId: string,
+  productName: string
+): Promise<GeneratedImage> {
+  const updated = await apiPatch<GeneratedImage>(`/generated-images/${imageId}`, {
+    productName: productName.trim(),
+  });
+
+  const existing = await readCache();
+  await writeCache(existing.map((img) => (img.id === imageId ? updated : img)));
+
+  return updated;
 }
 
 // ── Delete ───────────────────────────────────────────────────────────────────

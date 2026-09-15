@@ -106,6 +106,7 @@ On success you'll see:
 | GET | `/api/generated-images` | List room visualizations |
 | GET | `/api/generated-images/room/:roomId` | Visualizations for one room |
 | POST | `/api/generated-images` | Request a visualization (see status note below) |
+| PATCH | `/api/generated-images/:id` | Rename — updates the linked product check's (and shared product's) name when there is one, not just this row |
 | DELETE | `/api/generated-images/:id` | Delete |
 | POST | `/api/find-for-my-home` | AI product recommendations for the user's home (see "Find for My Home") |
 | GET | `/api/health` | Liveness check |

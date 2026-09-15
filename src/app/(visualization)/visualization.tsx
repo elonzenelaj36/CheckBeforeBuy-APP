@@ -101,7 +101,7 @@ export default function Visualization() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <ScreenHeader eyebrow="VISUALIZATION" title={roomType} />
+        <ScreenHeader eyebrow="MY HOME" title={roomType} />
 
         {/* Intro */}
         <View style={styles.intro}>
@@ -284,7 +284,7 @@ export default function Visualization() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.backgroundElevated,
   },
   content: {
     paddingHorizontal: 20,

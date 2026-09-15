@@ -2,6 +2,11 @@
  * BottomNavigation — Main app tab bar.
  *
  * Tabs: HOME | CHECK | SAVED | PROFILE
+ *
+ * My Home is intentionally not a tab here — it's reached from Home (see
+ * (main)/home.tsx's "My home" quick action) to avoid two navigation
+ * destinations for the same screen. It stays a fully working screen/route,
+ * just not duplicated in the tab bar.
  */
 
 import {

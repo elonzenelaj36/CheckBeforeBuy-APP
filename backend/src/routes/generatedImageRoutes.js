@@ -5,6 +5,7 @@ const {
   listGeneratedImages,
   listGeneratedImagesForRoom,
   createGeneratedImage,
+  updateGeneratedImage,
   deleteGeneratedImage,
 } = require('../controllers/generatedImageController');
 
@@ -22,6 +23,7 @@ router.post(
   ]),
   createGeneratedImage
 );
+router.patch('/:id', updateGeneratedImage);
 router.delete('/:id', deleteGeneratedImage);
 
 module.exports = router;

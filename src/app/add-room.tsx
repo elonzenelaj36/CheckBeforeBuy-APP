@@ -244,7 +244,7 @@ export default function AddRoom() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.backgroundElevated,
   },
   flex: {
     flex: 1,

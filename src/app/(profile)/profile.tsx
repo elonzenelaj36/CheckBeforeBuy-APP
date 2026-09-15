@@ -65,20 +65,6 @@ export default function Profile() {
               router.push('/notifications')
             }
           />
-
-          <MenuItem
-            title="My Home"
-            onPress={() =>
-              router.push('/my-home')
-            }
-          />
-
-          <MenuItem
-            title="My Items"
-            onPress={() =>
-              router.push('/my-items')
-            }
-          />
         </View>
 
         <TouchableOpacity

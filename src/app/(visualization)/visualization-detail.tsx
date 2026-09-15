@@ -7,29 +7,44 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import { saveImageToGallery } from '@/services/gallery';
+import { updateGeneratedImage } from '@/services/generatedImages';
 
 export default function VisualizationDetail() {
+  const router = useRouter();
+
   const params = useLocalSearchParams<{
+    id?: string;
     generatedImageUri?: string;
     productImageUri?: string;
     productName?: string;
     roomName?: string;
+    roomType?: string;
+    roomId?: string;
+    productCheckId?: string;
     createdAt?: string;
   }>();
 
   const imageUri = params.generatedImageUri || params.productImageUri;
-  const productName = params.productName || 'Visualization';
   const roomName = params.roomName;
+
+  // The name starts from whatever the previous screen already had (so it
+  // renders instantly), but a rename here is the source of truth going
+  // forward until this screen is left and reopened with fresh data.
+  const [currentName, setCurrentName] = React.useState(params.productName || 'Visualization');
+  const [isEditingName, setIsEditingName] = React.useState(false);
+  const [nameDraft, setNameDraft] = React.useState(currentName);
+  const [savingName, setSavingName] = React.useState(false);
 
   const [saving, setSaving] = React.useState(false);
 
@@ -43,13 +58,63 @@ export default function VisualizationDetail() {
     Alert.alert(isError ? "Couldn't save photo" : 'Gallery', result.message);
   };
 
+  const canGenerateAgain = !!params.roomId;
+
+  const handleGenerateAgain = () => {
+    router.push({
+      pathname: '/visualization',
+      params: {
+        roomId: params.roomId,
+        roomType: params.roomType || roomName || 'Room',
+        imageUri: params.productImageUri,
+        productImageUri: params.productImageUri,
+        productName: currentName,
+        productCheckId: params.productCheckId,
+        productMode: 'true',
+      },
+    });
+  };
+
+  const startEditingName = () => {
+    setNameDraft(currentName);
+    setIsEditingName(true);
+  };
+
+  const cancelEditingName = () => {
+    setIsEditingName(false);
+  };
+
+  const handleSaveName = async () => {
+    if (!params.id) return;
+
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      Alert.alert('Name required', 'Please enter a name for this visualization.');
+      return;
+    }
+
+    setSavingName(true);
+    try {
+      // Renames the visualization's canonical name — when it's linked to a
+      // product check, that also updates the shared product/check record,
+      // so Saved Products and History pick up the same new name.
+      const updated = await updateGeneratedImage(params.id, trimmed);
+      setCurrentName(updated.productName || trimmed);
+      setIsEditingName(false);
+    } catch (error: any) {
+      Alert.alert('Could not rename', error?.message ?? 'Please try again.');
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <ScreenHeader eyebrow="VISUALIZATION" title="Photo" />
+        <ScreenHeader eyebrow={roomName ? `MY HOME · ${roomName.toUpperCase()}` : 'VISUALIZATION'} title="Photo" />
 
         <View style={styles.imageContainer}>
           {imageUri ? (
@@ -62,13 +127,57 @@ export default function VisualizationDetail() {
         </View>
 
         <View style={styles.infoCard}>
-          <Text style={styles.productName}>{productName}</Text>
-          {roomName ? <Text style={styles.roomName}>{roomName}</Text> : null}
-          {params.createdAt ? (
-            <Text style={styles.dateText}>
-              {new Date(params.createdAt).toLocaleDateString()}
-            </Text>
-          ) : null}
+          {isEditingName ? (
+            <>
+              <TextInput
+                style={styles.nameInput}
+                value={nameDraft}
+                onChangeText={setNameDraft}
+                placeholder="Visualization name"
+                placeholderTextColor={Colors.textMuted}
+                autoFocus
+                editable={!savingName}
+              />
+
+              <View style={styles.nameEditActions}>
+                <TouchableOpacity
+                  style={styles.nameCancelBtn}
+                  onPress={cancelEditingName}
+                  disabled={savingName}
+                >
+                  <Text style={styles.nameCancelBtnText}>CANCEL</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.nameSaveBtn, savingName && styles.saveButtonDisabled]}
+                  onPress={handleSaveName}
+                  disabled={savingName}
+                >
+                  {savingName ? (
+                    <ActivityIndicator color={Colors.cardHighlightText} size="small" />
+                  ) : (
+                    <Text style={styles.nameSaveBtnText}>SAVE NAME</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.productName}>{currentName}</Text>
+              {roomName ? <Text style={styles.roomName}>{roomName}</Text> : null}
+              {params.createdAt ? (
+                <Text style={styles.dateText}>
+                  {new Date(params.createdAt).toLocaleDateString()}
+                </Text>
+              ) : null}
+
+              {params.id && (
+                <TouchableOpacity style={styles.editNameBtn} onPress={startEditingName}>
+                  <Text style={styles.editNameBtnText}>EDIT NAME</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
         </View>
 
         <TouchableOpacity
@@ -83,6 +192,16 @@ export default function VisualizationDetail() {
             <Text style={styles.saveButtonText}>SAVE TO GALLERY</Text>
           )}
         </TouchableOpacity>
+
+        {canGenerateAgain && (
+          <TouchableOpacity
+            style={styles.generateAgainButton}
+            onPress={handleGenerateAgain}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.generateAgainButtonText}>GENERATE AGAIN</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -91,7 +210,7 @@ export default function VisualizationDetail() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.backgroundElevated,
   },
   content: {
     paddingHorizontal: 20,
@@ -147,6 +266,67 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 6,
   },
+  editNameBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface2,
+  },
+  editNameBtnText: {
+    color: Colors.accentText,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  nameInput: {
+    height: 48,
+    backgroundColor: Colors.surface2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 14,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  nameEditActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  nameCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nameCancelBtnText: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  nameSaveBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.cardHighlight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nameSaveBtnText: {
+    color: Colors.cardHighlightText,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
   saveButton: {
     height: 56,
     borderRadius: 14,
@@ -161,6 +341,22 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: Colors.cardHighlight,
     fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  generateAgainButton: {
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  generateAgainButtonText: {
+    color: Colors.textPrimary,
+    fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
   },

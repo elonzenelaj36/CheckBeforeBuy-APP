@@ -46,22 +46,20 @@ async function writeCache(items: UserItem[]): Promise<void> {
 
 // ── Read ─────────────────────────────────────────────────────────────────────
 
-export async function getUserItems(): Promise<UserItem[]> {
-  try {
-    const { items } = await apiGet<{ items: UserItem[] }>('/items');
-    await writeCache(items);
-    return items;
-  } catch (error) {
-    console.error('[userItems] Failed to load from backend, using cache:', error);
-    return readCache();
-  }
-}
-
 export async function getUserItemsForRoom(roomId: string): Promise<UserItem[]> {
   try {
     const { items } = await apiGet<{ items: UserItem[] }>(
       `/items?roomId=${encodeURIComponent(roomId)}`
     );
+
+    // Merge into the cache (replacing this room's prior entries) so the
+    // offline fallback below stays useful room-by-room even though nothing
+    // fetches the user's full item list anymore — items are always viewed
+    // per-room now.
+    const existing = await readCache();
+    const otherRooms = existing.filter((item) => item.roomId !== roomId);
+    await writeCache([...items, ...otherRooms]);
+
     return items;
   } catch (error) {
     console.error('[userItems] Failed to load room items from backend:', error);

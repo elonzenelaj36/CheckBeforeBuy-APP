@@ -7,7 +7,13 @@
 
 export const Colors = {
   // ── Backgrounds ─────────────────────────────────────────
+  // Two navigation-depth tiers, not a free color choice: `background` is the
+  // root/tab level (Home, My Home, Saved, Profile). `backgroundElevated` is
+  // used one level deeper (a room, a flow step, a detail screen) together
+  // with stronger header/card treatment, so drilling into the app reads as
+  // going somewhere rather than four identical screens.
   background: '#0B1220',
+  backgroundElevated: '#0F172A',
   surface: '#111C2E',
   surface2: '#162238',
   surfaceRaised: '#1A2840',

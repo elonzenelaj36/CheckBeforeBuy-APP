@@ -1,6 +1,7 @@
 const { pool } = require('../db/connection');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
+const { requireString } = require('../utils/validate');
 const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { generateRoomVisualization } = require('../services/imageGenerationService');
@@ -11,7 +12,15 @@ function serialize(row) {
     id: String(row.id),
     roomId: String(row.room_id),
     roomName: row.room_name || null,
-    productName: row.product_name,
+    roomType: row.room_type || null,
+    productCheckId: row.product_check_id ? String(row.product_check_id) : null,
+    // Resolved at read time from the linked product_checks row (the
+    // canonical, always-current name — kept in sync with products.name),
+    // falling back to the denormalized column only when there is no linked
+    // check. This is what keeps a visualization's displayed name from going
+    // stale after a rename elsewhere (Saved Products, History, product
+    // check) — see updateGeneratedImage/updateProductCheck for the write side.
+    productName: row.resolved_product_name,
     productImageUri: toAbsoluteUrl(row.source_product_image_path),
     roomImageUri: toAbsoluteUrl(row.source_room_image_path),
     generatedImageUri: toAbsoluteUrl(row.generated_image_path),
@@ -21,9 +30,11 @@ function serialize(row) {
 }
 
 const SELECT_BASE = `
-  SELECT gi.*, r.name AS room_name
+  SELECT gi.*, r.name AS room_name, r.room_type AS room_type,
+         COALESCE(pc.detected_name, gi.product_name) AS resolved_product_name
   FROM generated_images gi
   JOIN rooms r ON r.id = gi.room_id
+  LEFT JOIN product_checks pc ON pc.id = gi.product_check_id
 `;
 
 /** GET /api/generated-images */
@@ -129,6 +140,64 @@ const createGeneratedImage = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * PATCH /api/generated-images/:id — body: { productName }
+ *
+ * Renames a visualization. There is no independent "visualization name" to
+ * edit in isolation: if this visualization is linked to a product check
+ * (product_check_id), the rename updates that check's detected_name — and
+ * the shared products row — exactly like PATCH /api/product-checks/:id
+ * does, so Saved Products/History/every other visualization sharing that
+ * same check all pick up the new name too. Only when there is no linked
+ * check (a visualization generated straight from a local photo, never
+ * checked) does this fall back to renaming just this one row.
+ *
+ * Always scoped by user_id first, so a rename can never touch another
+ * user's — or another *product's* — records; the update path is chosen
+ * purely from this row's own product_check_id, never by matching names.
+ */
+const updateGeneratedImage = asyncHandler(async (req, res) => {
+  const name = requireString(req.body.productName, 'Visualization name', { maxLength: 255 });
+
+  const [rows] = await pool.query('SELECT * FROM generated_images WHERE id = ? AND user_id = ?', [
+    req.params.id,
+    req.user.id,
+  ]);
+  if (rows.length === 0) throw new ApiError(404, 'Generated image not found.');
+  const generatedImage = rows[0];
+
+  if (generatedImage.product_check_id) {
+    await pool.query('UPDATE product_checks SET detected_name = ? WHERE id = ? AND user_id = ?', [
+      name,
+      generatedImage.product_check_id,
+      req.user.id,
+    ]);
+
+    const [checkRows] = await pool.query('SELECT product_id FROM product_checks WHERE id = ?', [
+      generatedImage.product_check_id,
+    ]);
+    if (checkRows[0]?.product_id) {
+      await pool.query('UPDATE products SET name = ? WHERE id = ?', [name, checkRows[0].product_id]);
+    }
+
+    // Keep every visualization sharing this check's denormalized copy fresh
+    // too (belt-and-suspenders — reads already resolve the live name above).
+    await pool.query('UPDATE generated_images SET product_name = ? WHERE product_check_id = ?', [
+      name,
+      generatedImage.product_check_id,
+    ]);
+  } else {
+    await pool.query('UPDATE generated_images SET product_name = ? WHERE id = ? AND user_id = ?', [
+      name,
+      req.params.id,
+      req.user.id,
+    ]);
+  }
+
+  const [updatedRows] = await pool.query(`${SELECT_BASE} WHERE gi.id = ?`, [req.params.id]);
+  res.json(serialize(updatedRows[0]));
+});
+
 /** DELETE /api/generated-images/:id */
 const deleteGeneratedImage = asyncHandler(async (req, res) => {
   const [result] = await pool.query('DELETE FROM generated_images WHERE id = ? AND user_id = ?', [
@@ -143,5 +212,6 @@ module.exports = {
   listGeneratedImages,
   listGeneratedImagesForRoom,
   createGeneratedImage,
+  updateGeneratedImage,
   deleteGeneratedImage,
 };

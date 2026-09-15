@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
@@ -30,7 +30,7 @@ import {
   Room,
   setRoomPrimaryPhoto,
 } from '@/services/rooms';
-import { getUserItemsForRoom, UserItem } from '@/services/userItems';
+import { deleteUserItem, getUserItemsForRoom, UserItem } from '@/services/userItems';
 
 export default function RoomDetail() {
   const router = useRouter();
@@ -60,9 +60,15 @@ export default function RoomDetail() {
     setLoading(false);
   }, [roomId]);
 
-  React.useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // useFocusEffect (not a plain mount-only useEffect) so returning here —
+  // e.g. after renaming a visualization, or saved-product/history name
+  // changes elsewhere — always shows current data instead of whatever was
+  // last rendered before navigating away.
+  useFocusEffect(
+    React.useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   if (loading) {
     return (
@@ -195,6 +201,37 @@ export default function RoomDetail() {
     ]);
   };
 
+  const openVisualization = (item: GeneratedImage) => {
+    router.push({
+      pathname: '/visualization-detail',
+      params: {
+        id: item.id,
+        generatedImageUri: item.generatedImageUri ?? undefined,
+        productImageUri: item.productImageUri ?? undefined,
+        productName: item.productName ?? undefined,
+        roomName: item.roomName ?? undefined,
+        roomType: item.roomType ?? undefined,
+        roomId: item.roomId,
+        productCheckId: item.productCheckId ?? undefined,
+        createdAt: item.createdAt,
+      },
+    });
+  };
+
+  const handleDeleteItem = (item: UserItem) => {
+    Alert.alert('Remove item?', `Remove "${item.name}" from this room's items?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteUserItem(item.id);
+          setUserItems((prev) => prev.filter((i) => i.id !== item.id));
+        },
+      },
+    ]);
+  };
+
   const handleDeleteRoom = () => {
     Alert.alert('Delete Room', `Are you sure you want to delete "${room.name}"?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -215,7 +252,7 @@ export default function RoomDetail() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <ScreenHeader eyebrow={room.roomType.toUpperCase()} title={room.name} />
+        <ScreenHeader eyebrow="MY HOME" title={room.name} />
 
         {/* Primary Photo Banner */}
         <View style={styles.bannerContainer}>
@@ -297,7 +334,12 @@ export default function RoomDetail() {
         ) : (
           <View style={styles.genGrid}>
             {generatedImages.map((item) => (
-              <View key={item.id} style={styles.genCard}>
+              <TouchableOpacity
+                key={item.id}
+                style={styles.genCard}
+                activeOpacity={0.85}
+                onPress={() => openVisualization(item)}
+              >
                 <Image
                   source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
                   style={styles.genImage}
@@ -316,7 +358,7 @@ export default function RoomDetail() {
                 >
                   <Text style={styles.genDeleteBtnText}>✕</Text>
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
@@ -340,28 +382,25 @@ export default function RoomDetail() {
           <View style={styles.itemsList}>
             {userItems.map((item) => (
               <View key={item.id} style={styles.itemRow}>
-                <Text style={styles.itemName}>{item.name}</Text>
-                <Text style={styles.itemCategory}>{item.category}</Text>
+                <View style={styles.itemRowText}>
+                  <Text style={styles.itemName}>{item.name}</Text>
+                  <Text style={styles.itemCategory}>{item.category}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.itemDeleteBtn}
+                  onPress={() => handleDeleteItem(item)}
+                >
+                  <Text style={styles.itemDeleteBtnText}>✕</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </View>
         )}
 
-        {/* Action Controls */}
+        {/* Action Controls — visualization generation lives in the Check
+            flow (Check Product → Product Captured → Generate Into My Room
+            → Select Room), not duplicated here. */}
         <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={styles.primaryActionBtn}
-            onPress={() =>
-              router.push({
-                pathname: '/visualization',
-                params: { roomType: room.roomType, roomId: room.id },
-              })
-            }
-            activeOpacity={0.85}
-          >
-            <Text style={styles.primaryActionBtnText}>GENERATE VISUALIZATION</Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.deleteRoomBtn}
             onPress={handleDeleteRoom}
@@ -380,7 +419,7 @@ export default function RoomDetail() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.backgroundElevated,
   },
   center: {
     flex: 1,
@@ -586,12 +625,16 @@ const styles = StyleSheet.create({
   },
   itemRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: Colors.surface,
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  itemRowText: {
+    flex: 1,
   },
   itemName: {
     color: Colors.textPrimary,
@@ -602,22 +645,22 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 12,
   },
+  itemDeleteBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
+  },
+  itemDeleteBtnText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+  },
   actionsContainer: {
     marginTop: 32,
     gap: 12,
-  },
-  primaryActionBtn: {
-    height: 56,
-    backgroundColor: Colors.accent,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryActionBtnText: {
-    color: Colors.cardHighlight,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
   },
   deleteRoomBtn: {
     height: 52,

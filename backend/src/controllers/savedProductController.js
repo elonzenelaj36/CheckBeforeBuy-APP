@@ -78,9 +78,14 @@ const createSavedProduct = asyncHandler(async (req, res) => {
     productCheckId = requestedProductCheckId;
 
     // Respect a name the user typed on this screen (e.g. they tweaked it
-    // right before saving) by keeping the shared product row in sync.
+    // right before saving) by keeping the shared product row — and any
+    // room visualization generated from this same check — in sync.
     await pool.query('UPDATE products SET name = ? WHERE id = ?', [name, productId]);
     await pool.query('UPDATE product_checks SET detected_name = ? WHERE id = ?', [
+      name,
+      requestedProductCheckId,
+    ]);
+    await pool.query('UPDATE generated_images SET product_name = ? WHERE product_check_id = ?', [
       name,
       requestedProductCheckId,
     ]);

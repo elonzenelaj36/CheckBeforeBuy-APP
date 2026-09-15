@@ -16,11 +16,6 @@ import BottomNavigation from '@/components/BottomNavigation';
 import EmptyState from '@/components/EmptyState';
 import { Colors } from '@/constants/colors';
 import {
-  deleteGeneratedImage,
-  getGeneratedImages,
-  GeneratedImage,
-} from '@/services/generatedImages';
-import {
   deleteSavedProduct,
   getSavedProducts,
   SavedProduct,
@@ -28,18 +23,11 @@ import {
 
 export default function Saved() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = React.useState<'products' | 'visualizations'>('products');
   const [products, setProducts] = React.useState<SavedProduct[]>([]);
-  const [visualizations, setVisualizations] = React.useState<GeneratedImage[]>([]);
 
   const loadData = async () => {
-    const [savedProducts, savedVisualizations] = await Promise.all([
-      getSavedProducts(),
-      getGeneratedImages(),
-    ]);
-
+    const savedProducts = await getSavedProducts();
     setProducts(savedProducts);
-    setVisualizations(savedVisualizations);
   };
 
   useFocusEffect(
@@ -64,37 +52,6 @@ export default function Saved() {
         },
       ]
     );
-  };
-
-  const handleDeleteVisualization = (vis: GeneratedImage) => {
-    Alert.alert(
-      'Remove visualization?',
-      `Remove visualization of "${vis.productName}" for ${vis.roomName}?`,
-      [
-        { text: 'CANCEL', style: 'cancel' },
-        {
-          text: 'REMOVE',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteGeneratedImage(vis.id);
-            loadData();
-          },
-        },
-      ]
-    );
-  };
-
-  const openVisualization = (vis: GeneratedImage) => {
-    router.push({
-      pathname: '/visualization-detail',
-      params: {
-        generatedImageUri: vis.generatedImageUri ?? undefined,
-        productImageUri: vis.productImageUri ?? undefined,
-        productName: vis.productName ?? undefined,
-        roomName: vis.roomName ?? undefined,
-        createdAt: vis.createdAt,
-      },
-    });
   };
 
   const openProduct = (product: SavedProduct) => {
@@ -124,11 +81,7 @@ export default function Saved() {
             <Text style={styles.headerTitle}>Saved</Text>
           </View>
 
-          <Text style={styles.count}>
-            {activeTab === 'products'
-              ? `${products.length} PRODUCTS`
-              : `${visualizations.length} VISUALIZATIONS`}
-          </Text>
+          <Text style={styles.count}>{products.length} PRODUCTS</Text>
         </View>
 
         {/* Intro */}
@@ -136,118 +89,48 @@ export default function Saved() {
           <Text style={styles.title}>Keep what matters.</Text>
 
           <Text style={styles.subtitle}>
-            Products and room visualizations you save will stay here so you can review them anytime.
+            Products you save will stay here so you can review them anytime. Room visualizations now live inside
+            My Home → each room.
           </Text>
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'products' && styles.tabActive]}
-            onPress={() => setActiveTab('products')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === 'products' && styles.tabTextActive]}>
-              PRODUCTS ({products.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'visualizations' && styles.tabActive]}
-            onPress={() => setActiveTab('visualizations')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === 'visualizations' && styles.tabTextActive]}>
-              VISUALIZATIONS ({visualizations.length})
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Content based on Active Tab */}
-        {activeTab === 'products' ? (
-          products.length === 0 ? (
-            <EmptyState
-              icon="♡"
-              title="Nothing saved yet"
-              description="When you find a product you want to remember, save it and it will appear here."
-              actionLabel="CHECK A PRODUCT"
-              onAction={() => router.push('/check-product')}
-            />
-          ) : (
-            <View style={styles.productList}>
-              {products.map((product) => (
-                <TouchableOpacity
-                  key={product.id}
-                  style={styles.productCard}
-                  activeOpacity={0.85}
-                  onPress={() => openProduct(product)}
-                >
-                  <Image source={{ uri: product.imageUri ?? undefined }} style={styles.productImage} />
-
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productName} numberOfLines={2}>
-                      {product.name}
-                    </Text>
-                    <Text style={styles.productLabel}>SAVED PRODUCT</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteProduct(product)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.deleteText}>×</Text>
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )
+        {/* Saved Products */}
+        {products.length === 0 ? (
+          <EmptyState
+            icon="♡"
+            title="Nothing saved yet"
+            description="When you find a product you want to remember, save it and it will appear here."
+            actionLabel="CHECK A PRODUCT"
+            onAction={() => router.push('/check-product')}
+          />
         ) : (
-          visualizations.length === 0 ? (
-            <EmptyState
-              icon="🎨"
-              title="No visualizations saved"
-              description="Generated room visualizations will be saved here so you can compare how items look in your home."
-              actionLabel="VISUALIZE A PRODUCT"
-              onAction={() => router.push('/check-product')}
-            />
-          ) : (
-            <View style={styles.productList}>
-              {visualizations.map((item) => (
+          <View style={styles.productList}>
+            {products.map((product) => (
+              <TouchableOpacity
+                key={product.id}
+                style={styles.productCard}
+                activeOpacity={0.85}
+                onPress={() => openProduct(product)}
+              >
+                <Image source={{ uri: product.imageUri ?? undefined }} style={styles.productImage} />
+
+                <View style={styles.productInfo}>
+                  <Text style={styles.productName} numberOfLines={2}>
+                    {product.name}
+                  </Text>
+                  <Text style={styles.productLabel}>SAVED PRODUCT</Text>
+                </View>
+
                 <TouchableOpacity
-                  key={item.id}
-                  style={styles.productCard}
-                  activeOpacity={0.85}
-                  onPress={() => openVisualization(item)}
+                  style={styles.deleteButton}
+                  onPress={() => handleDeleteProduct(product)}
+                  activeOpacity={0.8}
                 >
-                  <Image
-                    source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
-                    style={styles.productImage}
-                  />
-
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productName} numberOfLines={1}>
-                      {item.productName}
-                    </Text>
-                    <Text style={styles.productLabel}>
-                      ROOM: {item.roomName}
-                    </Text>
-                    <Text style={styles.dateText}>
-                      {new Date(item.createdAt).toLocaleDateString()}
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteVisualization(item)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.deleteText}>×</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.deleteText}>×</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          )
+              </TouchableOpacity>
+            ))}
+          </View>
         )}
 
         <TouchableOpacity
@@ -299,7 +182,7 @@ const styles = StyleSheet.create({
   },
   intro: {
     marginTop: 30,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   title: {
     color: Colors.textPrimary,
@@ -312,36 +195,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     marginTop: 8,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-  },
-  tabActive: {
-    backgroundColor: Colors.surface2,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  tabText: {
-    color: Colors.textMuted,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  tabTextActive: {
-    color: Colors.textPrimary,
   },
   productList: {
     gap: 12,
@@ -379,11 +232,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1,
     marginTop: 6,
-  },
-  dateText: {
-    color: Colors.textMuted,
-    fontSize: 10,
-    marginTop: 4,
   },
   deleteButton: {
     width: 32,

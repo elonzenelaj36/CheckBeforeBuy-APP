@@ -25,18 +25,15 @@ import {
   getRooms,
   Room,
 } from '@/services/rooms';
-import { getUserItems, UserItem } from '@/services/userItems';
 
 export default function MyHome() {
   const router = useRouter();
 
   const [rooms, setRooms] = React.useState<Room[]>([]);
-  const [items, setItems] = React.useState<UserItem[]>([]);
 
   const loadData = async () => {
-    const [savedRooms, detectedItems] = await Promise.all([getRooms(), getUserItems()]);
+    const savedRooms = await getRooms();
     setRooms(savedRooms);
-    setItems(detectedItems);
   };
 
   useFocusEffect(
@@ -70,7 +67,7 @@ export default function MyHome() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {/* Header */}
+        {/* Header — reached from Home, not a bottom-nav tab, so it needs its own back button */}
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -209,35 +206,6 @@ export default function MyHome() {
               </TouchableOpacity>
             ))}
           </View>
-        )}
-
-        {/* My Items */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>MY ITEMS</Text>
-
-          <TouchableOpacity onPress={() => router.push('/my-items')}>
-            <Text style={styles.viewAllText}>
-              {items.length} {items.length === 1 ? 'ITEM' : 'ITEMS'} · VIEW ALL
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {items.length === 0 ? (
-          <View style={styles.myItemsPreviewCard}>
-            <Text style={styles.myItemsPreviewText}>
-              Items detected in your rooms will show up here automatically — add a room photo to get started.
-            </Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.myItemsPreviewCard}
-            activeOpacity={0.85}
-            onPress={() => router.push('/my-items')}
-          >
-            <Text style={styles.myItemsPreviewText} numberOfLines={2}>
-              {items.slice(0, 6).map((item) => item.name).join(' · ')}
-            </Text>
-          </TouchableOpacity>
         )}
 
         {/* Find for My Home CTA */}
@@ -488,27 +456,6 @@ const styles = StyleSheet.create({
   chevron: {
     color: Colors.textMuted,
     fontSize: 24,
-  },
-
-  viewAllText: {
-    color: Colors.accent,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-
-  myItemsPreviewCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 16,
-  },
-
-  myItemsPreviewText: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
   },
 
   findCard: {

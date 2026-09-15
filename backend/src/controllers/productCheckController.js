@@ -201,6 +201,16 @@ const updateProductCheck = asyncHandler(async (req, res) => {
     );
   }
 
+  // Any room visualization generated from this check shares its name —
+  // generated_images.product_name is a denormalized copy that reads
+  // actually resolve live from product_checks (see
+  // generatedImageController.js), but this keeps the raw column itself
+  // truthful too.
+  await pool.query('UPDATE generated_images SET product_name = ? WHERE product_check_id = ?', [
+    name,
+    req.params.id,
+  ]);
+
   const [updatedRows] = await pool.query(
     'SELECT * FROM product_checks WHERE id = ? AND user_id = ? LIMIT 1',
     [req.params.id, req.user.id]
