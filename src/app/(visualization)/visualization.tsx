@@ -2,6 +2,7 @@ import React from 'react';
 
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
+import { saveImageToGallery } from '@/services/gallery';
 import { createRoom } from '@/services/rooms';
 import {
   GeneratedImageStatus,
@@ -41,6 +43,7 @@ export default function Visualization() {
   const [status, setStatus] = React.useState<'idle' | 'generating' | GeneratedImageStatus>('idle');
   const [generatedImageUri, setGeneratedImageUri] = React.useState<string | null>(null);
   const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
+  const [savingToGallery, setSavingToGallery] = React.useState(false);
 
   const generateVisualization = async () => {
     setStatus('generating');
@@ -83,6 +86,14 @@ export default function Visualization() {
 
   const goToHome = () => {
     router.replace('/my-home');
+  };
+
+  const handleSaveToGallery = async () => {
+    if (savingToGallery) return;
+    setSavingToGallery(true);
+    const result = await saveImageToGallery(generatedImageUri);
+    setSavingToGallery(false);
+    Alert.alert(result.success ? 'Saved' : "Couldn't save photo", result.message);
   };
 
   const isDone = status === 'pending' || status === 'completed' || status === 'failed';
@@ -208,14 +219,31 @@ export default function Visualization() {
           <>
             <View style={styles.resultCard}>
               <Text style={styles.resultEyebrow}>RESULT SAVED</Text>
-              <Text style={styles.resultTitle}>Saved to {roomType}</Text>
+              <Text style={styles.resultTitle}>Photo saved to Visualizations</Text>
               <Text style={styles.resultDescription}>
-                This visualization is now saved under My Home → {roomType}. You can inspect or remove it anytime.
+                This visualization is now saved under Saved → Visualizations, and under My Home → {roomType}.
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.saveButton} onPress={goToHome} activeOpacity={0.85}>
-              <Text style={styles.saveButtonText}>BACK TO MY HOME</Text>
+            <TouchableOpacity
+              style={[styles.generateButton, savingToGallery && styles.buttonDisabled]}
+              onPress={handleSaveToGallery}
+              activeOpacity={0.85}
+              disabled={savingToGallery}
+            >
+              {savingToGallery ? (
+                <ActivityIndicator color={Colors.cardHighlight} />
+              ) : (
+                <Text style={styles.generateButtonText}>SAVE TO GALLERY</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.saveButton} onPress={generateVisualization} activeOpacity={0.85}>
+              <Text style={styles.saveButtonText}>GENERATE AGAIN</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.backToHomeLink} onPress={goToHome} activeOpacity={0.7}>
+              <Text style={styles.backToHomeLinkText}>BACK TO MY HOME</Text>
             </TouchableOpacity>
           </>
         )}
@@ -504,6 +532,21 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: Colors.cardHighlightText,
     fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  backToHomeLink: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    paddingVertical: 6,
+  },
+  backToHomeLinkText: {
+    color: Colors.textSecondary,
+    fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
   },

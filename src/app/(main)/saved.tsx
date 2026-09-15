@@ -84,6 +84,19 @@ export default function Saved() {
     );
   };
 
+  const openVisualization = (vis: GeneratedImage) => {
+    router.push({
+      pathname: '/visualization-detail',
+      params: {
+        generatedImageUri: vis.generatedImageUri ?? undefined,
+        productImageUri: vis.productImageUri ?? undefined,
+        productName: vis.productName ?? undefined,
+        roomName: vis.roomName ?? undefined,
+        createdAt: vis.createdAt,
+      },
+    });
+  };
+
   const openProduct = (product: SavedProduct) => {
     router.push({
       pathname: '/product-captured',
@@ -201,7 +214,12 @@ export default function Saved() {
           ) : (
             <View style={styles.productList}>
               {visualizations.map((item) => (
-                <View key={item.id} style={styles.productCard}>
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.productCard}
+                  activeOpacity={0.85}
+                  onPress={() => openVisualization(item)}
+                >
                   <Image
                     source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
                     style={styles.productImage}
@@ -226,7 +244,7 @@ export default function Saved() {
                   >
                     <Text style={styles.deleteText}>×</Text>
                   </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )
