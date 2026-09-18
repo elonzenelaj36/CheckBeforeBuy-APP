@@ -3,19 +3,22 @@ import React from 'react';
 import {
   Alert,
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import ScreenHeader from '@/components/ScreenHeader';
+import BottomNavigation from '@/components/BottomNavigation';
 import { Colors } from '@/constants/colors';
+
+const tutorialVideoSource = require('@/assets/videos/Check-video.mov');
 
 export default function CheckProduct() {
   const router = useRouter();
@@ -23,6 +26,14 @@ export default function CheckProduct() {
   const [imageUri, setImageUri] = React.useState<
     string | null
   >(null);
+
+  const hasImage = Boolean(imageUri);
+
+  const tutorialPlayer = useVideoPlayer(tutorialVideoSource, (player) => {
+    player.loop = true;
+    player.muted = true;
+    player.play();
+  });
 
   const takePhoto = async () => {
     const permission =
@@ -94,101 +105,112 @@ export default function CheckProduct() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <ScreenHeader
-          eyebrow="CHECK"
-          title="Check a product"
-        />
+    
 
         {/* Intro */}
         <View style={styles.intro}>
           <Text style={styles.title}>
-            Before you buy,
+            Check the product.
           </Text>
-          <Text style={styles.title}>check it.</Text>
 
           <Text style={styles.subtitle}>
-            Take a photo of a product you're thinking
-            about buying. We'll help you understand it
+            Take a photo of a product you&apos;re thinking
+            about buying. We&apos;ll help you understand it
             before you spend your money.
           </Text>
         </View>
 
-        {/* Preview */}
-        <View style={styles.previewContainer}>
-          {imageUri ? (
-            <>
-              <Image
-                source={{ uri: imageUri }}
-                style={styles.previewImage}
-              />
+        {/* Capture area */}
+        <View style={styles.previewOuter}>
+          <View style={styles.previewContainer}>
+            {imageUri ? (
+              <>
+                <Image
+                  source={{ uri: imageUri }}
+                  style={styles.previewImage}
+                />
 
-              {/* Retake overlay */}
-              <TouchableOpacity
-                style={styles.retakeButton}
-                onPress={() => setImageUri(null)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.retakeText}>
-                  ✕ RETAKE
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <View style={styles.emptyPreview}>
-              <View style={styles.cameraCircle}>
-                <Text style={styles.cameraSymbol}>
-                  ◎
-                </Text>
-              </View>
+                <Pressable
+                  onPress={() => setImageUri(null)}
+                  style={({ pressed }) => [
+                    styles.retakeButton,
+                    pressed && styles.retakeButtonPressed,
+                  ]}
+                >
+                  <Text style={styles.retakeText}>
+                    ✕ RETAKE
+                  </Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <VideoView
+                  player={tutorialPlayer}
+                  style={styles.tutorialVideo}
+                  contentFit="cover"
+                  nativeControls={false}
+                  pointerEvents="none"
+                />
 
-              <Text style={styles.previewTitle}>
-                Take a photo
-              </Text>
-
-              <Text style={styles.previewDescription}>
-                Point your camera at the product you
-                want to check.
-              </Text>
-            </View>
-          )}
+                <View style={styles.cornerTL} pointerEvents="none" />
+                <View style={styles.cornerTR} pointerEvents="none" />
+                <View style={styles.cornerBL} pointerEvents="none" />
+                <View style={styles.cornerBR} pointerEvents="none" />
+              </>
+            )}
+          </View>
         </View>
 
+        {/* Continue — appears once a photo exists, becomes the primary action */}
+        {imageUri && (
+          <Pressable
+            onPress={continueWithProduct}
+            style={({ pressed }) => [
+              styles.pillPrimary,
+              pressed && styles.pillPrimaryPressed,
+            ]}
+          >
+            <Text style={styles.pillPrimaryText}>
+              CHECK THIS PRODUCT
+            </Text>
+            <Text style={styles.pillPrimaryArrow}>→</Text>
+          </Pressable>
+        )}
+
         {/* Camera */}
-        <TouchableOpacity
-          style={styles.primaryButton}
+        <Pressable
           onPress={takePhoto}
-          activeOpacity={0.85}
+          style={({ pressed }) => [
+            hasImage ? styles.pillSecondary : styles.pillPrimary,
+            pressed &&
+              (hasImage
+                ? styles.pillSecondaryPressed
+                : styles.pillPrimaryPressed),
+          ]}
         >
-          <Text style={styles.primaryButtonText}>
-            {imageUri
-              ? 'RETAKE PHOTO'
-              : 'TAKE PRODUCT PHOTO'}
+          <Text
+            style={
+              hasImage
+                ? styles.pillSecondaryText
+                : styles.pillPrimaryText
+            }
+          >
+            {hasImage ? '📷  RETAKE PHOTO' : '📷  TAKE PRODUCT PHOTO'}
           </Text>
-        </TouchableOpacity>
+        </Pressable>
 
         {/* Gallery */}
-        <TouchableOpacity
-          style={styles.secondaryButton}
+        <Pressable
           onPress={chooseFromGallery}
-          activeOpacity={0.85}
+          style={({ pressed }) => [
+            styles.pillSecondary,
+            pressed && styles.pillSecondaryPressed,
+          ]}
         >
-          <Text style={styles.secondaryButtonText}>
-            CHOOSE FROM GALLERY
+          <Text style={styles.pillSecondaryText}>
+            🖼️  CHOOSE FROM GALLERY
           </Text>
-        </TouchableOpacity>
-
-        {/* Continue */}
-        {imageUri && (
-          <TouchableOpacity
-            style={styles.continueButton}
-            onPress={continueWithProduct}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.continueButtonText}>
-              CHECK THIS PRODUCT →
-            </Text>
-          </TouchableOpacity>
-        )}
+        </Pressable>
 
         {/* What happens next */}
         <View style={styles.infoSection}>
@@ -230,6 +252,8 @@ export default function CheckProduct() {
           ))}
         </View>
       </ScrollView>
+
+      <BottomNavigation activeTab="check" />
     </SafeAreaView>
   );
 }
@@ -237,25 +261,26 @@ export default function CheckProduct() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.checkBackground,
   },
 
   content: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 40,
+    paddingBottom: 130,
   },
 
   intro: {
-    marginTop: 40,
-    marginBottom: 24,
+    marginTop: 36,
+    marginBottom: 28,
   },
 
   title: {
     color: Colors.textPrimary,
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 40,
+    fontSize: 32,
+    fontWeight: '800',
+    lineHeight: 38,
+    letterSpacing: 0.2,
   },
 
   subtitle: {
@@ -263,16 +288,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     marginTop: 12,
+    maxWidth: 320,
+  },
+
+  /* ── Capture area ──────────────────────────────────────── */
+
+  previewOuter: {
+    borderRadius: 30,
+    padding: 2,
+    backgroundColor: 'rgba(111, 173, 232, 0.28)',
+    shadowColor: Colors.checkAccent,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 8,
   },
 
   previewContainer: {
     width: '100%',
-    height: 280,
-    borderRadius: 20,
+    height: 300,
+    borderRadius: 28,
     overflow: 'hidden',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.checkSurface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.checkBorder,
   },
 
   previewImage: {
@@ -284,12 +323,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     right: 14,
-    backgroundColor: Colors.background,
+    backgroundColor: 'rgba(14, 27, 48, 0.78)',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.checkBorder,
+  },
+
+  retakeButtonPressed: {
+    opacity: 0.75,
   },
 
   retakeText: {
@@ -299,97 +342,121 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  emptyPreview: {
-    flex: 1,
+  tutorialVideo: {
+    width: '100%',
+    height: '100%',
+  },
+
+  cornerTL: {
+    position: 'absolute',
+    top: 18,
+    left: 18,
+    width: 22,
+    height: 22,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderTopLeftRadius: 8,
+    borderColor: 'rgba(180, 217, 247, 0.55)',
+  },
+
+  cornerTR: {
+    position: 'absolute',
+    top: 18,
+    right: 18,
+    width: 22,
+    height: 22,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderTopRightRadius: 8,
+    borderColor: 'rgba(180, 217, 247, 0.55)',
+  },
+
+  cornerBL: {
+    position: 'absolute',
+    bottom: 18,
+    left: 18,
+    width: 22,
+    height: 22,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderBottomLeftRadius: 8,
+    borderColor: 'rgba(180, 217, 247, 0.55)',
+  },
+
+  cornerBR: {
+    position: 'absolute',
+    bottom: 18,
+    right: 18,
+    width: 22,
+    height: 22,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderBottomRightRadius: 8,
+    borderColor: 'rgba(180, 217, 247, 0.55)',
+  },
+
+  /* ── Actions ───────────────────────────────────────────── */
+
+  pillPrimary: {
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.checkAccent,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 30,
+    gap: 8,
+    marginTop: 24,
+    shadowColor: Colors.checkAccent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 7,
   },
 
-  cameraCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.accentDim,
-    borderWidth: 1,
-    borderColor: Colors.accent,
+  pillPrimaryPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.92,
+  },
+
+  pillPrimaryText: {
+    color: Colors.textInverse,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+
+  pillPrimaryArrow: {
+    color: Colors.textInverse,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  pillSecondary: {
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(111, 173, 232, 0.10)',
+    borderWidth: 1.5,
+    borderColor: Colors.checkBorder,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginTop: 12,
   },
 
-  cameraSymbol: {
-    color: Colors.accent,
-    fontSize: 28,
+  pillSecondaryPressed: {
+    opacity: 0.75,
   },
 
-  previewTitle: {
-    color: Colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '600',
-  },
-
-  previewDescription: {
-    color: Colors.textSecondary,
+  pillSecondaryText: {
+    color: Colors.checkAccentText,
     fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'center',
-    marginTop: 7,
-    maxWidth: 280,
-  },
-
-  primaryButton: {
-    height: 56,
-    borderRadius: 14,
-    backgroundColor: Colors.cardHighlight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 18,
-  },
-
-  primaryButtonText: {
-    color: Colors.cardHighlightText,
-    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0.6,
   },
 
-  secondaryButton: {
-    height: 56,
-    borderRadius: 14,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-  },
-
-  secondaryButtonText: {
-    color: Colors.textPrimary,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-
-  continueButton: {
-    height: 56,
-    borderRadius: 14,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-  },
-
-  continueButtonText: {
-    color: Colors.cardHighlight,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
+  /* ── What happens next ─────────────────────────────────── */
 
   infoSection: {
-    marginTop: 36,
+    marginTop: 40,
   },
 
   sectionTitle: {
@@ -410,16 +477,16 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.checkSurface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.checkBorder,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
 
   number: {
-    color: Colors.accent,
+    color: Colors.checkAccentText,
     fontSize: 9,
     fontWeight: '700',
   },

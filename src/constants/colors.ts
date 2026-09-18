@@ -67,6 +67,21 @@ export const Colors = {
   homeCyan: '#38D6E0',
   homeCyanDim: '#123A44',
   homeCyanText: '#7FEAF0',
+
+  // ── Check Product (icy blue variant) ───────────────────────
+  // Additive only — used exclusively by the Check Product screen, which
+  // wants a lighter/icier blue feel than the rest of the app. No existing
+  // token above is modified, so every other screen is unaffected.
+  checkBackground: '#0E1B30',
+  checkSurface: '#1A2C4C',
+  checkSurfaceRaised: '#223A63',
+  checkBorder: '#3C5680',
+
+  // Refined toward a calmer, less-saturated "icy" blue (was a brighter
+  // cyan-leaning tone) — premium/trustworthy rather than neon or electric.
+  checkAccent: '#6FADE8',
+  checkAccentDim: '#15304A',
+  checkAccentText: '#B4D9F7',
 } as const;
 
 export type ColorKey = keyof typeof Colors;
