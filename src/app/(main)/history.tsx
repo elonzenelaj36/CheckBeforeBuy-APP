@@ -78,54 +78,59 @@ export default function History() {
             onAction={() => router.push('/check-product')}
           />
         ) : (
-          <View style={styles.list}>
-            {historyItems.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.card}
-                activeOpacity={0.85}
-                onPress={() =>
-                  router.push({
-                    pathname: '/product-captured',
-                    params: {
-                      imageUri: item.imageUri,
-                      productName: item.name,
-                      productCheckId: item.id,
-                    },
-                  })
-                }
-              >
-                <Image
-                  source={{ uri: item.imageUri ?? undefined }}
-                  style={styles.image}
-                />
+          <View style={styles.listPanel}>
+            {historyItems.map((item, index) => (
+              <View key={item.id}>
+                {index > 0 && <View style={styles.divider} />}
 
-                <View style={styles.info}>
-                  <Text style={styles.name} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-
-                  <Text style={styles.date}>
-                    Checked {new Date(item.checkedAt).toLocaleDateString()}
-                  </Text>
-
-                  <View style={styles.tags}>
-                    {item.hasAnalysis && (
-                      <View style={styles.tag}>
-                        <Text style={styles.tagText}>✓ Analyzed</Text>
-                      </View>
-                    )}
-
-                    {item.hasVisualization && (
-                      <View style={styles.tag}>
-                        <Text style={styles.tagText}>✓ Visualized</Text>
-                      </View>
-                    )}
+                <TouchableOpacity
+                  style={styles.card}
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/product-captured',
+                      params: {
+                        imageUri: item.imageUri,
+                        productName: item.name,
+                        productCheckId: item.id,
+                      },
+                    })
+                  }
+                >
+                  <View style={styles.imageFrame}>
+                    <Image
+                      source={{ uri: item.imageUri ?? undefined }}
+                      style={styles.image}
+                    />
                   </View>
-                </View>
 
-                <Text style={styles.arrow}>→</Text>
-              </TouchableOpacity>
+                  <View style={styles.info}>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+
+                    <Text style={styles.date}>
+                      Checked {new Date(item.checkedAt).toLocaleDateString()}
+                    </Text>
+
+                    <View style={styles.tags}>
+                      {item.hasAnalysis && (
+                        <View style={styles.tag}>
+                          <Text style={styles.tagText}>✓ Analyzed</Text>
+                        </View>
+                      )}
+
+                      {item.hasVisualization && (
+                        <View style={styles.tag}>
+                          <Text style={styles.tagText}>✓ Visualized</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <Text style={styles.arrow}>→</Text>
+                </TouchableOpacity>
+              </View>
             ))}
           </View>
         )}
@@ -139,7 +144,7 @@ export default function History() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.homeBackground,
   },
   content: {
     paddingHorizontal: 20,
@@ -151,25 +156,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  list: {
+  listPanel: {
     marginTop: 20,
-    gap: 10,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(143, 192, 255, 0.12)',
+    backgroundColor: 'rgba(34, 53, 92, 0.55)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(143, 192, 255, 0.08)',
   },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    gap: 14,
+  },
+  imageFrame: {
+    padding: 2,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 10,
-    gap: 12,
+    backgroundColor: 'rgba(143, 192, 255, 0.16)',
+    shadowColor: Colors.homeAccent,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 3,
   },
   image: {
     width: 64,
     height: 64,
-    borderRadius: 12,
-    backgroundColor: Colors.surface2,
+    borderRadius: 14,
+    backgroundColor: Colors.homeSurfaceRaised,
   },
   info: {
     flex: 1,
@@ -180,7 +200,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   date: {
-    color: Colors.textMuted,
+    color: Colors.textSecondary,
     fontSize: 11,
     marginTop: 4,
   },
@@ -190,18 +210,18 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   tag: {
-    backgroundColor: Colors.accentDim,
+    backgroundColor: Colors.homeAccentDim,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   tagText: {
-    color: Colors.accentText,
+    color: Colors.homeAccentText,
     fontSize: 9,
     fontWeight: '600',
   },
   arrow: {
-    color: Colors.accent,
+    color: Colors.homeAccentText,
     fontSize: 18,
     marginRight: 6,
   },
