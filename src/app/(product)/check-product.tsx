@@ -188,6 +188,9 @@ export default function CheckProduct() {
                 : styles.pillPrimaryPressed),
           ]}
         >
+          <Text style={hasImage ? styles.pillSecondaryIcon : styles.pillPrimaryIcon}>
+            ◎
+          </Text>
           <Text
             style={
               hasImage
@@ -195,7 +198,7 @@ export default function CheckProduct() {
                 : styles.pillPrimaryText
             }
           >
-            {hasImage ? '📷  RETAKE PHOTO' : '📷  TAKE PRODUCT PHOTO'}
+            {hasImage ? 'RETAKE PHOTO' : 'TAKE PRODUCT PHOTO'}
           </Text>
         </Pressable>
 
@@ -207,8 +210,9 @@ export default function CheckProduct() {
             pressed && styles.pillSecondaryPressed,
           ]}
         >
+          <Text style={styles.pillSecondaryIcon}>▦</Text>
           <Text style={styles.pillSecondaryText}>
-            🖼️  CHOOSE FROM GALLERY
+            CHOOSE FROM GALLERY
           </Text>
         </Pressable>
 
@@ -398,8 +402,9 @@ const styles = StyleSheet.create({
   /* ── Actions ───────────────────────────────────────────── */
 
   pillPrimary: {
-    height: 60,
-    borderRadius: 30,
+    height: 52,
+    borderRadius: 26,
+    marginHorizontal: 6,
     backgroundColor: Colors.checkAccent,
     flexDirection: 'row',
     alignItems: 'center',
@@ -425,6 +430,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
 
+  pillPrimaryIcon: {
+    color: Colors.textInverse,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
   pillPrimaryArrow: {
     color: Colors.textInverse,
     fontSize: 15,
@@ -432,14 +443,23 @@ const styles = StyleSheet.create({
   },
 
   pillSecondary: {
-    height: 56,
-    borderRadius: 28,
+    height: 48,
+    borderRadius: 24,
+    marginHorizontal: 6,
     backgroundColor: 'rgba(111, 173, 232, 0.10)',
     borderWidth: 1.5,
     borderColor: Colors.checkBorder,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     marginTop: 12,
+  },
+
+  pillSecondaryIcon: {
+    color: Colors.checkAccentText,
+    fontSize: 16,
+    fontWeight: '700',
   },
 
   pillSecondaryPressed: {
