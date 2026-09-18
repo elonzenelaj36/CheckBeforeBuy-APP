@@ -76,9 +76,15 @@ export default function Saved() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>YOUR COLLECTION</Text>
-            <Text style={styles.headerTitle}>Saved</Text>
+          <View style={styles.headerTitleRow}>
+            <View style={styles.heartBadge}>
+              <Text style={styles.heartBadgeIcon}>♡</Text>
+            </View>
+
+            <View>
+              <Text style={styles.eyebrow}>YOUR COLLECTION</Text>
+              <Text style={styles.headerTitle}>Saved</Text>
+            </View>
           </View>
 
           <Text style={styles.count}>{products.length} PRODUCTS</Text>
@@ -109,10 +115,12 @@ export default function Saved() {
               <TouchableOpacity
                 key={product.id}
                 style={styles.productCard}
-                activeOpacity={0.85}
+                activeOpacity={0.88}
                 onPress={() => openProduct(product)}
               >
-                <Image source={{ uri: product.imageUri ?? undefined }} style={styles.productImage} />
+                <View style={styles.imageFrame}>
+                  <Image source={{ uri: product.imageUri ?? undefined }} style={styles.productImage} />
+                </View>
 
                 <View style={styles.productInfo}>
                   <Text style={styles.productName} numberOfLines={2}>
@@ -150,7 +158,7 @@ export default function Saved() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.savedBackground,
   },
   content: {
     paddingHorizontal: 20,
@@ -162,6 +170,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heartBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: Colors.savedAccentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heartBadgeIcon: {
+    color: Colors.savedAccentText,
+    fontSize: 17,
+  },
   eyebrow: {
     color: Colors.textMuted,
     fontSize: 9,
@@ -170,24 +195,24 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: Colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    marginTop: 4,
+    fontSize: 25,
+    fontWeight: '800',
+    marginTop: 3,
   },
   count: {
-    color: Colors.textMuted,
+    color: Colors.savedAccentText,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
   },
   intro: {
     marginTop: 30,
-    marginBottom: 24,
+    marginBottom: 26,
   },
   title: {
     color: Colors.textPrimary,
     fontSize: 32,
-    fontWeight: '700',
+    fontWeight: '800',
     lineHeight: 38,
   },
   subtitle: {
@@ -197,23 +222,33 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   productList: {
-    gap: 12,
+    gap: 14,
   },
   productCard: {
     minHeight: 100,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+    backgroundColor: 'rgba(40, 55, 90, 0.55)',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(172, 163, 242, 0.20)',
     padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: Colors.savedAccent,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  imageFrame: {
+    padding: 2,
+    borderRadius: 16,
+    backgroundColor: 'rgba(172, 163, 242, 0.18)',
   },
   productImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: Colors.surface2,
+    width: 78,
+    height: 78,
+    borderRadius: 14,
+    backgroundColor: Colors.savedSurfaceRaised,
   },
   productInfo: {
     flex: 1,
@@ -223,11 +258,11 @@ const styles = StyleSheet.create({
   productName: {
     color: Colors.textPrimary,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 20,
   },
   productLabel: {
-    color: Colors.accentText,
+    color: Colors.savedAccentText,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
@@ -237,7 +272,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.surface2,
+    backgroundColor: Colors.savedSurfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -248,10 +283,10 @@ const styles = StyleSheet.create({
   },
   addMoreButton: {
     height: 52,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: Colors.savedBorder,
+    backgroundColor: Colors.savedSurface,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,

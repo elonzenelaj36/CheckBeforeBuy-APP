@@ -99,6 +99,20 @@ export const Colors = {
   myHomeAccent: '#5ED6C4',
   myHomeAccentDim: '#12332E',
   myHomeAccentText: '#A6EDE0',
+
+  // ── Saved (soft lavender / violet-blue variant) ────────────
+  // Additive only — used exclusively by the Saved screen. Background/
+  // surfaces stay on the same blue foundation as the rest of the app
+  // (not purple) — only the accent family carries the lavender hue, kept
+  // soft/desaturated rather than neon purple or magenta.
+  savedBackground: '#17233A',
+  savedSurface: '#202D4A',
+  savedSurfaceRaised: '#28375A',
+  savedBorder: '#3A4568',
+
+  savedAccent: '#ACA3F2',
+  savedAccentDim: '#241F3D',
+  savedAccentText: '#D3CDFA',
 } as const;
 
 export type ColorKey = keyof typeof Colors;
