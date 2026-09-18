@@ -194,7 +194,19 @@ function buildClient() {
   return new Anthropic({ apiKey: env.ai.apiKey });
 }
 
-function mockAnalysis() {
+/**
+ * Which provider analyzeProductImage() should use. An explicit AI_PROVIDER
+ * always wins; otherwise we prefer anthropic when a key is already
+ * configured (so existing deployments don't change behavior), and
+ * otherwise default to the free local ollama path.
+ */
+function resolveProductAnalysisProvider() {
+  if (env.ai.provider) return env.ai.provider;
+  if (env.ai.apiKey) return 'anthropic';
+  return 'ollama';
+}
+
+function mockAnalysis(reasonOverride) {
   return {
     isMock: true,
     provider: null,
@@ -206,7 +218,8 @@ function mockAnalysis() {
     },
     analysis: {
       description:
-        'AI analysis is not configured on this server yet. Set AI_API_KEY (and optionally AI_MODEL) in backend/.env to enable real product recognition via Claude. See backend/README.md.',
+        reasonOverride ||
+        'AI analysis is not configured on this server yet. Set AI_API_KEY (and optionally AI_MODEL) in backend/.env to enable real product recognition via Claude, or run Ollama locally and set OLLAMA_MODEL. See backend/README.md.',
       visibleSpecifications: [],
       estimatedPriceMin: null,
       estimatedPriceMax: null,
@@ -220,6 +233,102 @@ function mockAnalysis() {
   };
 }
 
+const OLLAMA_ANALYSIS_INSTRUCTIONS = `You are a careful product-recognition assistant for a "should I buy this?" app.
+Look at the photo and identify the product as best you can. Be honest about uncertainty: only give a
+specific price range if you are reasonably confident about typical pricing for this category of product,
+otherwise use null for the price fields. Never invent an exact price you cannot justify.
+
+Respond with ONLY a single JSON object (no markdown, no prose, no code fences) with exactly these fields:
+{
+  "productName": string,            // best guess, or "Unknown product" if not identifiable
+  "category": string,               // e.g. "Furniture", "Electronics"
+  "brand": string,                  // visible brand name, "" if not visible/unknown
+  "description": string,            // 2-4 factual sentences about what is visible
+  "visibleSpecifications": string[],// short factual specs (material, size cues, color), [] if none
+  "estimatedPriceMin": number|null, // lower bound of a realistic market price, null if not confident
+  "estimatedPriceMax": number|null, // upper bound, null if not confident
+  "currency": string,               // ISO 4217 code, default "EUR"
+  "priceAssessment": "fair"|"good_deal"|"overpriced"|"unknown",
+  "recommendation": "buy"|"consider"|"skip"|"unknown",
+  "reasoning": string,               // short explanation, mentioning uncertainty where relevant
+  "confidence": number               // 0 to 1, overall confidence in the identification
+}`;
+
+const OLLAMA_TIMEOUT_MS = 120000;
+
+/**
+ * Local, free product analysis via Ollama (e.g. llama3.2-vision, qwen2.5vl).
+ * Ollama's `format: "json"` guarantees syntactically valid JSON but not a
+ * specific schema, so the prompt spells out the exact shape explicitly —
+ * unlike Anthropic's tool-use, there's no server-side schema guarantee here.
+ */
+async function analyzeWithOllama({ absoluteImagePath, priceContext, ownedItemsContext }) {
+  const imageBuffer = fs.readFileSync(absoluteImagePath);
+  const base64Image = imageBuffer.toString('base64');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(`${env.ollama.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: env.ollama.model,
+        stream: false,
+        format: 'json',
+        messages: [
+          {
+            role: 'user',
+            content: `${OLLAMA_ANALYSIS_INSTRUCTIONS}\n\n${priceContext} ${ownedItemsContext}`,
+            images: [base64Image],
+          },
+        ],
+      }),
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    throw new Error(`Ollama request failed: ${response.status} ${await response.text()}`);
+  }
+
+  const data = await response.json();
+
+  let result;
+  try {
+    result = JSON.parse(data.message.content);
+  } catch (err) {
+    throw new Error(`Ollama returned a non-JSON response: ${err.message}`);
+  }
+
+  return {
+    isMock: false,
+    provider: 'ollama',
+    model: env.ollama.model,
+    product: {
+      name: result.productName || 'Unknown product',
+      category: result.category || 'Uncategorized',
+      brand: result.brand || null,
+    },
+    analysis: {
+      description: result.description || '',
+      visibleSpecifications: Array.isArray(result.visibleSpecifications) ? result.visibleSpecifications : [],
+      estimatedPriceMin: result.estimatedPriceMin ?? null,
+      estimatedPriceMax: result.estimatedPriceMax ?? null,
+      currency: result.currency || 'EUR',
+      priceAssessment: result.priceAssessment || 'unknown',
+      recommendation: result.recommendation || 'unknown',
+      reasoning: result.reasoning || '',
+      confidence: typeof result.confidence === 'number' ? result.confidence : null,
+    },
+    raw: result,
+  };
+}
+
 /**
  * @param {object} params
  * @param {string} params.absoluteImagePath - path on disk to the uploaded photo
@@ -227,6 +336,32 @@ function mockAnalysis() {
  * @param {Array<{name: string, category: string}>} [params.userItems] - items the user already owns, for redundancy checks
  */
 async function analyzeProductImage({ absoluteImagePath, userPrice, userItems }) {
+  const priceContext = userPrice
+    ? `The user says this product costs ${userPrice}. Compare your market estimate against that figure and set priceAssessment to "fair", "good_deal", or "overpriced" accordingly.`
+    : 'No user-supplied price was given. Set priceAssessment to "unknown" unless you are genuinely confident about typical market pricing for this exact kind of item.';
+
+  const ownedItemsContext =
+    userItems && userItems.length
+      ? `The user already owns: ${userItems.map((i) => `${i.name} (${i.category})`).join(', ')}. Mention in your reasoning if this product looks redundant with something they already have.`
+      : '';
+
+  const provider = resolveProductAnalysisProvider();
+
+  if (provider === 'ollama') {
+    try {
+      return await analyzeWithOllama({ absoluteImagePath, priceContext, ownedItemsContext });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[aiService] Ollama analysis failed, falling back to mock:', err.message);
+      return mockAnalysis(
+        `Local AI (Ollama) isn't reachable at ${env.ollama.baseUrl}, or the "${env.ollama.model}" model isn't pulled. ` +
+          'Run `ollama pull ' +
+          env.ollama.model +
+          '` and make sure `ollama serve` is running, or set AI_API_KEY to use Claude instead. See backend/README.md.'
+      );
+    }
+  }
+
   const client = buildClient();
 
   if (!client) {
@@ -236,15 +371,6 @@ async function analyzeProductImage({ absoluteImagePath, userPrice, userItems }) 
   const imageBuffer = fs.readFileSync(absoluteImagePath);
   const base64Image = imageBuffer.toString('base64');
   const mediaType = mimeTypeForPath(absoluteImagePath);
-
-  const priceContext = userPrice
-    ? `The user says this product costs ${userPrice}. Compare your market estimate against that figure and set priceAssessment to "fair", "good_deal", or "overpriced" accordingly.`
-    : 'No user-supplied price was given. Set priceAssessment to "unknown" unless you are genuinely confident about typical market pricing for this exact kind of item.';
-
-  const ownedItemsContext =
-    userItems && userItems.length
-      ? `The user already owns: ${userItems.map((i) => `${i.name} (${i.category})`).join(', ')}. Mention in your reasoning if this product looks redundant with something they already have.`
-      : '';
 
   let message;
   try {

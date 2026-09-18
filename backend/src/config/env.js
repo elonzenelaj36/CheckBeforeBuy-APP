@@ -30,8 +30,22 @@ const env = {
   },
 
   ai: {
+    // '' lets aiService.js pick a sensible default (anthropic if AI_API_KEY
+    // is set, otherwise the free local ollama path) — see resolveProvider().
+    provider: required('AI_PROVIDER', ''),
     apiKey: required('AI_API_KEY', ''),
     model: required('AI_MODEL', 'claude-sonnet-5'),
+  },
+
+  ollama: {
+    baseUrl: required('OLLAMA_BASE_URL', 'http://localhost:11434'),
+    model: required('OLLAMA_MODEL', 'llama3.2-vision'),
+  },
+
+  vision: {
+    // Google Cloud Vision API key, used only for Web Detection (finding
+    // real product pages that match a photo) — see productMatchService.js.
+    apiKey: required('VISION_API_KEY', ''),
   },
 
   imageAi: {

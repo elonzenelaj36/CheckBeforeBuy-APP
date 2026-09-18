@@ -7,7 +7,7 @@
  * and also becomes a History entry automatically.
  */
 
-import { apiGet, apiPatch, apiUploadImage } from './api';
+import { apiGet, apiPatch, apiPost, apiUploadImage } from './api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,4 +88,30 @@ export async function updateProductCheckName(
   return apiPatch<ProductCheckResult>(`/product-checks/${id}`, {
     name: name.trim(),
   });
+}
+
+// ── Find where to buy (external product matches) ───────────────────────────
+
+export type ProductMatch = {
+  store: string;
+  pageTitle: string | null;
+  url: string | null;
+};
+
+export type ProductMatchResult = {
+  isMock: boolean;
+  provider: string | null;
+  matches: ProductMatch[];
+};
+
+/**
+ * Searches the web (via the backend's Vision-based web detection) for real
+ * product pages matching this check's photo. Never scrapes or stores
+ * anything — an on-demand lookup that just returns links to the original
+ * pages so the user can open them.
+ */
+export async function findProductMatches(
+  checkId: string
+): Promise<ProductMatchResult> {
+  return apiPost<ProductMatchResult>(`/product-checks/${checkId}/matches`, {});
 }

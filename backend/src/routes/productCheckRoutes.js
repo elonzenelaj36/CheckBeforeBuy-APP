@@ -8,6 +8,7 @@ const {
   updateProductCheck,
   clearProductChecks,
 } = require('../controllers/productCheckController');
+const { findMatchesForCheck } = require('../controllers/productMatchController');
 
 const router = express.Router();
 
@@ -18,5 +19,6 @@ router.get('/', listProductChecks);
 router.delete('/', clearProductChecks);
 router.patch('/:id', updateProductCheck);
 router.get('/:id', getProductCheck);
+router.post('/:id/matches', findMatchesForCheck);
 
 module.exports = router;

@@ -2,6 +2,7 @@ import React from 'react';
 
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,7 +17,9 @@ import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import {
   analyzeProduct,
+  findProductMatches,
   ProductCheckResult,
+  ProductMatchResult,
 } from '@/services/productChecks';
 
 const RECOMMENDATION_LABEL: Record<string, string> = {
@@ -44,6 +47,28 @@ export default function ProductAnalysis() {
   const [result, setResult] = React.useState<ProductCheckResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+
+  const [matchState, setMatchState] = React.useState<{
+    loading: boolean;
+    error: string | null;
+    data: ProductMatchResult | null;
+  }>({ loading: false, error: null, data: null });
+
+  const handleFindMatches = React.useCallback(() => {
+    if (!result) return;
+
+    setMatchState({ loading: true, error: null, data: null });
+
+    findProductMatches(result.id)
+      .then((data) => setMatchState({ loading: false, error: null, data }))
+      .catch((err) =>
+        setMatchState({
+          loading: false,
+          error: err?.message ?? "We couldn't search for this product online.",
+          data: null,
+        })
+      );
+  }, [result]);
 
   const runAnalysis = React.useCallback(() => {
     if (!imageUri) {
@@ -240,6 +265,73 @@ export default function ProductAnalysis() {
           <Text style={styles.text}>
             {analysis.description || 'No description available.'}
           </Text>
+        </View>
+
+        {/* Find where to buy */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>WHERE TO FIND THIS</Text>
+
+          {!matchState.data && !matchState.loading && (
+            <>
+              <Text style={styles.text}>
+                Search the web for real product pages that match this photo.
+                We only link out — nothing is copied into the app.
+              </Text>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={handleFindMatches}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  FIND WHERE TO BUY THIS
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {matchState.loading && (
+            <View style={styles.matchLoadingRow}>
+              <ActivityIndicator size="small" color={Colors.accent} />
+              <Text style={styles.matchLoadingText}>Searching the web…</Text>
+            </View>
+          )}
+
+          {matchState.error && (
+            <Text style={styles.errorText}>{matchState.error}</Text>
+          )}
+
+          {matchState.data && (
+            <>
+              {matchState.data.isMock && (
+                <View style={styles.mockBanner}>
+                  <Text style={styles.mockBannerText}>
+                    ⚠ Web search isn&apos;t configured on this server yet —
+                    showing a placeholder result. See backend/README.md.
+                  </Text>
+                </View>
+              )}
+
+              {matchState.data.matches.length === 0 ? (
+                <Text style={styles.text}>No close matches found online.</Text>
+              ) : (
+                matchState.data.matches.map((match, index) => (
+                  <View
+                    key={`${match.url ?? match.store}-${index}`}
+                    style={styles.matchRow}
+                  >
+                    <Text style={styles.matchStore}>{match.store}</Text>
+                    {match.pageTitle && (
+                      <Text style={styles.matchTitle}>{match.pageTitle}</Text>
+                    )}
+                    {match.url && (
+                      <TouchableOpacity onPress={() => Linking.openURL(match.url!)}>
+                        <Text style={styles.matchLink}>VIEW PRODUCT →</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))
+              )}
+            </>
+          )}
         </View>
 
         {/* Actions */}
@@ -509,5 +601,44 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+
+  matchLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+
+  matchLoadingText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    marginLeft: 10,
+  },
+
+  matchRow: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
+    marginTop: 12,
+  },
+
+  matchStore: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  matchTitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
+  },
+
+  matchLink: {
+    color: Colors.accent,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginTop: 8,
   },
 });
