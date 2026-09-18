@@ -7,6 +7,8 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Colors } from '@/constants/colors';
+
 type ScreenProps = ViewProps & {
   children: React.ReactNode;
   scroll?: boolean;
@@ -51,7 +53,7 @@ export default function Screen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {

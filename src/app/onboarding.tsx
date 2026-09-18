@@ -6,6 +6,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { Colors } from '@/constants/colors';
 
 const onboardingData = [
   {
@@ -13,21 +16,21 @@ const onboardingData = [
     title: 'See it in your home',
     description:
       'Visualize products in your real space before you buy them.',
-    placeholder: 'YOUR ROOM',
+    icon: '🏠',
   },
   {
     number: '02 / 03',
     title: 'Compare what you own',
     description:
       'Check if a new product is actually different from what you already have.',
-    placeholder: 'YOUR FURNITURE',
+    icon: '📦',
   },
   {
     number: '03 / 03',
     title: 'Find the better deal',
     description:
       'Compare products and discover better or cheaper alternatives before spending your money.',
-    placeholder: 'BETTER OPTIONS',
+    icon: '✓',
   },
 ];
 
@@ -45,7 +48,7 @@ export default function OnboardingScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
 
       <View style={styles.top}>
         <Text style={styles.step}>
@@ -56,8 +59,8 @@ export default function OnboardingScreen() {
       <View style={styles.content}>
 
         <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>
-            {current.placeholder}
+          <Text style={styles.placeholderIcon}>
+            {current.icon}
           </Text>
         </View>
 
@@ -89,6 +92,7 @@ export default function OnboardingScreen() {
         <TouchableOpacity
           style={styles.button}
           onPress={handleNext}
+          activeOpacity={0.85}
         >
           <Text style={styles.buttonText}>
             {currentPage === onboardingData.length - 1
@@ -99,26 +103,27 @@ export default function OnboardingScreen() {
 
       </View>
 
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
     paddingHorizontal: 28,
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
 
   top: {
     alignItems: 'flex-end',
+    paddingTop: 10,
   },
 
   step: {
-    color: '#777777',
-    fontSize: 13,
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 1,
   },
 
@@ -128,31 +133,30 @@ const styles = StyleSheet.create({
   },
 
   placeholder: {
-    height: 300,
+    height: 260,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#333333',
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 35,
+    marginBottom: 36,
   },
 
-  placeholderText: {
-    color: '#555555',
-    fontSize: 14,
-    letterSpacing: 3,
+  placeholderIcon: {
+    fontSize: 56,
   },
 
   title: {
-    color: '#FFFFFF',
-    fontSize: 34,
+    color: Colors.textPrimary,
+    fontSize: 32,
     fontWeight: '700',
   },
 
   description: {
-    color: '#999999',
-    fontSize: 16,
-    lineHeight: 25,
+    color: Colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 23,
     marginTop: 12,
   },
 
@@ -168,7 +172,7 @@ const styles = StyleSheet.create({
   activeDot: {
     width: 28,
     height: 4,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     borderRadius: 2,
     marginRight: 6,
   },
@@ -176,22 +180,22 @@ const styles = StyleSheet.create({
   dot: {
     width: 8,
     height: 4,
-    backgroundColor: '#444444',
+    backgroundColor: Colors.border,
     borderRadius: 2,
     marginRight: 6,
   },
 
   button: {
     height: 58,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.cardHighlight,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   buttonText: {
-    color: '#111111',
-    fontSize: 15,
+    color: Colors.cardHighlightText,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
   },

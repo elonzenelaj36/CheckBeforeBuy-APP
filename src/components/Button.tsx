@@ -4,6 +4,8 @@ import {
     TouchableOpacity,
 } from 'react-native';
 
+import { Colors } from '@/constants/colors';
+
 type ButtonProps = {
   title: string;
   onPress: () => void;
@@ -17,6 +19,7 @@ export default function Button({
     <TouchableOpacity
       style={styles.button}
       onPress={onPress}
+      activeOpacity={0.85}
     >
       <Text style={styles.text}>
         {title}
@@ -27,16 +30,16 @@ export default function Button({
 
 const styles = StyleSheet.create({
   button: {
-    height: 58,
-    backgroundColor: '#FFFFFF',
+    height: 56,
+    backgroundColor: Colors.cardHighlight,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   text: {
-    color: '#111111',
-    fontSize: 15,
+    color: Colors.cardHighlightText,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
   },

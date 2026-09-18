@@ -4,6 +4,8 @@ import {
     View,
 } from 'react-native';
 
+import { Colors } from '@/constants/colors';
+
 type SectionTitleProps = {
   title: string;
   action?: string;
@@ -42,14 +44,14 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
   action: {
-    color: '#FFFFFF',
+    color: Colors.accent,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,

@@ -13,6 +13,8 @@ import {
   useRouter,
 } from 'expo-router';
 
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
 import { getProductById } from '@/services/products';
 
 export default function Comparison() {
@@ -33,24 +35,10 @@ export default function Comparison() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backArrow}>
-            ←
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.eyebrow}>
-          COMPARISON
-        </Text>
-
-        <Text style={styles.title}>
-          Is it right for you?
-        </Text>
+        <ScreenHeader eyebrow="COMPARISON" title="Is it right for you?" />
 
         <View style={styles.table}>
           <Row
@@ -81,6 +69,7 @@ export default function Comparison() {
           <Row
             label="Value"
             value="Excellent"
+            isLast
           />
         </View>
 
@@ -94,6 +83,7 @@ export default function Comparison() {
               },
             })
           }
+          activeOpacity={0.85}
         >
           <Text style={styles.buttonText}>
             SEE OUR DECISION
@@ -107,12 +97,14 @@ export default function Comparison() {
 function Row({
   label,
   value,
+  isLast,
 }: {
   label: string;
   value: string;
+  isLast?: boolean;
 }) {
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, isLast && styles.rowLast]}>
       <Text style={styles.rowLabel}>
         {label}
       </Text>
@@ -127,78 +119,52 @@ function Row({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 40,
   },
 
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 7,
-    marginBottom: 28,
-  },
-
   table: {
-    backgroundColor: '#181818',
-    borderRadius: 18,
+    marginTop: 28,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     overflow: 'hidden',
   },
 
   row: {
-    minHeight: 62,
+    minHeight: 58,
     paddingHorizontal: 18,
     borderBottomWidth: 1,
-    borderBottomColor: '#2D2D2D',
+    borderBottomColor: Colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
 
+  rowLast: {
+    borderBottomWidth: 0,
+  },
+
   rowLabel: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 13,
   },
 
   rowValue: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
 
   button: {
     height: 56,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -206,7 +172,7 @@ const styles = StyleSheet.create({
   },
 
   buttonText: {
-    color: '#111111',
+    color: Colors.cardHighlight,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,

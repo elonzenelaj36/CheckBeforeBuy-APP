@@ -6,6 +6,8 @@ import {
     View,
 } from 'react-native';
 
+import { Colors } from '@/constants/colors';
+
 export type Product = {
   id: string;
   name: string;
@@ -66,18 +68,18 @@ export default function ProductCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
-    borderRadius: 18,
+    borderColor: Colors.border,
+    borderRadius: 16,
     overflow: 'hidden',
-    marginBottom: 14,
+    marginBottom: 12,
   },
 
   image: {
     width: '100%',
     height: 190,
-    backgroundColor: '#222222',
+    backgroundColor: Colors.surface2,
   },
 
   info: {
@@ -85,23 +87,23 @@ const styles = StyleSheet.create({
   },
 
   brand: {
-    color: '#777777',
+    color: Colors.textMuted,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.3,
   },
 
   name: {
-    color: '#FFFFFF',
-    fontSize: 17,
+    color: Colors.textPrimary,
+    fontSize: 16,
     fontWeight: '600',
     marginTop: 5,
   },
 
   store: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
-    marginTop: 5,
+    marginTop: 4,
   },
 
   bottom: {
@@ -111,13 +113,13 @@ const styles = StyleSheet.create({
   },
 
   price: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
   },
 
   rating: {
-    color: '#AAAAAA',
+    color: Colors.textSecondary,
     fontSize: 12,
   },
 });

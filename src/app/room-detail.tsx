@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   removePhotoBadgeText: {
-    color: '#FFF',
+    color: Colors.cardHighlight,
     fontSize: 10,
     fontWeight: '700',
   },

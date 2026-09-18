@@ -9,6 +9,9 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
+
 export default function Alternatives() {
   const router = useRouter();
 
@@ -39,29 +42,7 @@ export default function Alternatives() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backArrow}>
-              ←
-            </Text>
-          </TouchableOpacity>
-
-          <View>
-            <Text style={styles.eyebrow}>
-              CHECK
-            </Text>
-
-            <Text style={styles.headerTitle}>
-              Alternatives
-            </Text>
-          </View>
-
-          <View style={styles.headerSpacer} />
-        </View>
+        <ScreenHeader eyebrow="CHECK" title="Alternatives" />
 
         {/* Intro */}
         <View style={styles.intro}>
@@ -97,48 +78,52 @@ export default function Alternatives() {
           POSSIBLE ALTERNATIVES
         </Text>
 
-        {alternatives.map((item) => (
-          <TouchableOpacity
-            key={item.name}
-            style={styles.alternativeCard}
-            activeOpacity={0.85}
-          >
-            <View style={styles.productPlaceholder}>
-              <Text style={styles.placeholderText}>
-                PRODUCT
-              </Text>
-            </View>
-
-            <View style={styles.alternativeContent}>
-              <Text style={styles.productName}>
-                {item.name}
-              </Text>
-
-              <Text style={styles.reason}>
-                {item.reason}
-              </Text>
-
-              <View style={styles.bottomRow}>
-                <Text style={styles.price}>
-                  {item.price}
-                </Text>
-
-                <Text style={styles.saving}>
-                  {item.saving}
+        <View style={styles.list}>
+          {alternatives.map((item) => (
+            <TouchableOpacity
+              key={item.name}
+              style={styles.alternativeCard}
+              activeOpacity={0.85}
+            >
+              <View style={styles.productPlaceholder}>
+                <Text style={styles.placeholderText}>
+                  {item.name.charAt(0)}
                 </Text>
               </View>
-            </View>
 
-            <Text style={styles.arrow}>
-              →
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <View style={styles.alternativeContent}>
+                <Text style={styles.productName}>
+                  {item.name}
+                </Text>
+
+                <Text style={styles.reason}>
+                  {item.reason}
+                </Text>
+
+                <View style={styles.bottomRow}>
+                  <Text style={styles.price}>
+                    {item.price}
+                  </Text>
+
+                  <View style={styles.savingBadge}>
+                    <Text style={styles.saving}>
+                      {item.saving}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <Text style={styles.arrow}>
+                →
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         {/* Info */}
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>
-            How we'll find alternatives
+            HOW WE&apos;LL FIND ALTERNATIVES
           </Text>
 
           <Text style={styles.infoText}>
@@ -167,7 +152,7 @@ export default function Alternatives() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
@@ -176,68 +161,27 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 3,
-    textAlign: 'center',
-  },
-
-  headerSpacer: {
-    width: 44,
-  },
-
   intro: {
-    marginTop: 42,
-    marginBottom: 26,
+    marginTop: 32,
+    marginBottom: 24,
   },
 
   title: {
-    color: '#FFFFFF',
-    fontSize: 34,
+    color: Colors.textPrimary,
+    fontSize: 32,
     fontWeight: '700',
+    lineHeight: 38,
   },
 
   subtitle: {
-    color: '#888888',
+    color: Colors.textSecondary,
     fontSize: 14,
     lineHeight: 21,
-    marginTop: 12,
+    marginTop: 10,
   },
 
   currentCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.cardHighlight,
     borderRadius: 18,
     padding: 20,
     flexDirection: 'row',
@@ -246,57 +190,60 @@ const styles = StyleSheet.create({
   },
 
   currentLabel: {
-    color: '#777777',
+    color: Colors.cardHighlightTextMuted,
     fontSize: 8,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
   currentName: {
-    color: '#111111',
+    color: Colors.cardHighlightText,
     fontSize: 17,
     fontWeight: '700',
     marginTop: 6,
   },
 
   currentPrice: {
-    color: '#111111',
+    color: Colors.cardHighlightText,
     fontSize: 24,
     fontWeight: '700',
   },
 
   sectionTitle: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginTop: 30,
+    marginTop: 28,
     marginBottom: 12,
+  },
+
+  list: {
+    gap: 10,
   },
 
   alternativeCard: {
-    backgroundColor: '#181818',
-    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
   },
 
   productPlaceholder: {
-    width: 76,
-    height: 76,
+    width: 64,
+    height: 64,
     borderRadius: 12,
-    backgroundColor: '#222222',
+    backgroundColor: Colors.surface2,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   placeholderText: {
-    color: '#666666',
-    fontSize: 8,
+    color: Colors.accentText,
+    fontSize: 18,
     fontWeight: '700',
   },
 
@@ -306,76 +253,84 @@ const styles = StyleSheet.create({
   },
 
   productName: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 
   reason: {
-    color: '#777777',
-    fontSize: 10,
-    lineHeight: 15,
-    marginTop: 5,
+    color: Colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
   },
 
   bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 9,
+    gap: 10,
   },
 
   price: {
-    color: '#FFFFFF',
-    fontSize: 17,
+    color: Colors.textPrimary,
+    fontSize: 16,
     fontWeight: '700',
+  },
+
+  savingBadge: {
+    backgroundColor: Colors.successDim,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
 
   saving: {
-    color: '#FFFFFF',
+    color: Colors.successText,
     fontSize: 9,
     fontWeight: '700',
-    marginLeft: 9,
   },
 
   arrow: {
-    color: '#FFFFFF',
+    color: Colors.accent,
     fontSize: 18,
     marginLeft: 8,
   },
 
   infoCard: {
-    marginTop: 20,
+    marginTop: 22,
     padding: 18,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
   },
 
   infoTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+    color: Colors.textMuted,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.2,
   },
 
   infoText: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 19,
-    marginTop: 7,
+    marginTop: 8,
   },
 
   button: {
     height: 56,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.cardHighlight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: 22,
   },
 
   buttonText: {
-    color: '#111111',
+    color: Colors.cardHighlightText,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,

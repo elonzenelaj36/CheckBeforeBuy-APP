@@ -10,6 +10,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
 import ProductCard from '@/components/ProductCard';
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
 import { products } from '@/services/products';
 
 export default function Recommendations() {
@@ -21,18 +23,17 @@ export default function Recommendations() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <Text style={styles.eyebrow}>
-          FOR YOU
-        </Text>
+        <ScreenHeader eyebrow="FOR YOU" title="Recommendations" />
 
-        <Text style={styles.title}>
-          Recommendations.
-        </Text>
+        <View style={styles.intro}>
+          <Text style={styles.title}>
+            Picked for your taste.
+          </Text>
 
-        <Text style={styles.subtitle}>
-          Products that could fit your preferences and
-          home.
-        </Text>
+          <Text style={styles.subtitle}>
+            Products that could fit your preferences and home.
+          </Text>
+        </View>
 
         <View style={styles.list}>
           {products.slice(0, 3).map((product) => (
@@ -60,35 +61,32 @@ export default function Recommendations() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 120,
   },
 
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginTop: 20,
+  intro: {
+    marginTop: 30,
+    marginBottom: 24,
   },
 
   title: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 32,
     fontWeight: '700',
-    marginTop: 7,
+    lineHeight: 38,
   },
 
   subtitle: {
-    color: '#888888',
+    color: Colors.textSecondary,
     fontSize: 14,
     lineHeight: 21,
-    marginTop: 10,
-    marginBottom: 28,
+    marginTop: 8,
   },
 
   list: {

@@ -50,6 +50,23 @@ export const Colors = {
   cardHighlight: '#FFFFFF',
   cardHighlightText: '#0B1220',
   cardHighlightTextMuted: '#556070',
+
+  // ── Home (bright variant) ─────────────────────────────────
+  // Additive only — used exclusively by the Home screen, which wants a
+  // noticeably brighter/more energetic foundation than the rest of the app.
+  // Every other screen keeps using the tokens above untouched.
+  homeBackground: '#101B30',
+  homeSurface: '#1B2B4A',
+  homeSurfaceRaised: '#22355C',
+  homeBorder: '#33487A',
+
+  homeAccent: '#3D82F7',
+  homeAccentDim: '#1D3B6E',
+  homeAccentText: '#8FC0FF',
+
+  homeCyan: '#38D6E0',
+  homeCyanDim: '#123A44',
+  homeCyanText: '#7FEAF0',
 } as const;
 
 export type ColorKey = keyof typeof Colors;

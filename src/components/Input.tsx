@@ -6,6 +6,8 @@ import {
     View,
 } from 'react-native';
 
+import { Colors } from '@/constants/colors';
+
 type InputProps = TextInputProps & {
   label: string;
 };
@@ -22,7 +24,7 @@ export default function Input({
 
       <TextInput
         style={styles.input}
-        placeholderTextColor="#666666"
+        placeholderTextColor={Colors.textMuted}
         {...props}
       />
     </View>
@@ -35,21 +37,21 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 1.3,
+    letterSpacing: 1.5,
     marginBottom: 8,
   },
 
   input: {
     height: 54,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     borderRadius: 14,
     paddingHorizontal: 16,
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
   },
 });

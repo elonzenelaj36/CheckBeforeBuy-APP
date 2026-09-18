@@ -5,19 +5,16 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useRouter } from 'expo-router';
-
 import BottomNavigation from '@/components/BottomNavigation';
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
 
 export default function Settings() {
-  const router = useRouter();
-
   const [notifications, setNotifications] =
     React.useState(true);
 
@@ -27,24 +24,16 @@ export default function Settings() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backArrow}>
-            ←
+        <ScreenHeader eyebrow="ACCOUNT" title="Settings" />
+
+        <View style={styles.intro}>
+          <Text style={styles.title}>
+            Your preferences.
           </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.eyebrow}>
-          ACCOUNT
-        </Text>
-
-        <Text style={styles.title}>
-          Settings.
-        </Text>
+        </View>
 
         <View style={styles.section}>
           <SettingRow
@@ -59,6 +48,7 @@ export default function Settings() {
             description="Use your activity to improve recommendations."
             value={personalization}
             onChange={setPersonalization}
+            isLast
           />
         </View>
 
@@ -87,14 +77,16 @@ function SettingRow({
   description,
   value,
   onChange,
+  isLast,
 }: {
   title: string;
   description: string;
   value: boolean;
   onChange: (value: boolean) => void;
+  isLast?: boolean;
 }) {
   return (
-    <View style={styles.settingRow}>
+    <View style={[styles.settingRow, isLast && styles.settingRowLast]}>
       <View style={styles.settingInfo}>
         <Text style={styles.settingTitle}>
           {title}
@@ -109,10 +101,10 @@ function SettingRow({
         value={value}
         onValueChange={onChange}
         trackColor={{
-          false: '#2D2D2D',
-          true: '#777777',
+          false: Colors.border,
+          true: Colors.accent,
         }}
-        thumbColor="#FFFFFF"
+        thumbColor={Colors.cardHighlight}
       />
     </View>
   );
@@ -121,105 +113,90 @@ function SettingRow({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 120,
   },
 
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
+  intro: {
+    marginTop: 28,
+    marginBottom: 24,
   },
 
   title: {
-    color: '#FFFFFF',
-    fontSize: 32,
+    color: Colors.textPrimary,
+    fontSize: 28,
     fontWeight: '700',
-    marginTop: 7,
   },
 
   section: {
-    marginTop: 30,
-    backgroundColor: '#181818',
-    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     overflow: 'hidden',
   },
 
   settingRow: {
-    minHeight: 82,
+    minHeight: 78,
     paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#2D2D2D',
+    borderBottomColor: Colors.border,
+  },
+
+  settingRowLast: {
+    borderBottomWidth: 0,
   },
 
   settingInfo: {
     flex: 1,
     paddingRight: 12,
+    paddingVertical: 14,
   },
 
   settingTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 
   settingDescription: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 11,
     lineHeight: 17,
     marginTop: 4,
   },
 
   infoCard: {
-    marginTop: 25,
+    marginTop: 20,
     padding: 18,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
   },
 
   infoTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 
   infoText: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
-    marginTop: 7,
+    marginTop: 6,
   },
 
   version: {
-    color: '#555555',
+    color: Colors.textMuted,
     fontSize: 10,
-    marginTop: 5,
+    marginTop: 6,
   },
 });

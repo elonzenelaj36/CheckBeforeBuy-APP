@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { Colors } from '@/constants/colors';
 import { login } from '@/services/auth';
 
 export default function LoginScreen() {
@@ -50,9 +51,9 @@ export default function LoginScreen() {
         {/* Logo */}
 
         <View style={styles.logoContainer}>
-          <Text style={styles.logo}>
-            CHECK
-          </Text>
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoCheck}>CHECK</Text>
+          </View>
 
           <Text style={styles.logoSubtitle}>
             Before Buy
@@ -82,7 +83,7 @@ export default function LoginScreen() {
             value={email}
             onChangeText={setEmail}
             placeholder="Enter your email"
-            placeholderTextColor="#666666"
+            placeholderTextColor={Colors.textMuted}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -101,7 +102,7 @@ export default function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             placeholder="Enter your password"
-            placeholderTextColor="#666666"
+            placeholderTextColor={Colors.textMuted}
             secureTextEntry
             autoCapitalize="none"
           />
@@ -121,12 +122,13 @@ export default function LoginScreen() {
           style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
           onPress={handleLogin}
           disabled={isLoading}
+          activeOpacity={0.85}
         >
           {isLoading ? (
-            <ActivityIndicator color="#111111" />
+            <ActivityIndicator color={Colors.cardHighlightText} />
           ) : (
             <Text style={styles.loginButtonText}>
-              LOGIN
+              LOG IN
             </Text>
           )}
         </TouchableOpacity>
@@ -147,7 +149,7 @@ export default function LoginScreen() {
 
         {/* Google */}
 
-        <TouchableOpacity style={styles.googleButton}>
+        <TouchableOpacity style={styles.googleButton} activeOpacity={0.85}>
           <Text style={styles.googleButtonText}>
             G
           </Text>
@@ -184,7 +186,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
     paddingHorizontal: 28,
     paddingTop: 60,
     paddingBottom: 30,
@@ -196,76 +198,83 @@ const styles = StyleSheet.create({
 
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 55,
+    marginBottom: 50,
   },
 
-  logo: {
-    color: '#FFFFFF',
-    fontSize: 30,
+  logoBadge: {
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+
+  logoCheck: {
+    color: Colors.cardHighlight,
+    fontSize: 24,
     fontWeight: '800',
     letterSpacing: 3,
   },
 
   logoSubtitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '300',
-    letterSpacing: 1,
-    marginTop: 2,
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '400',
+    letterSpacing: 0.5,
+    marginTop: 10,
   },
 
   title: {
-    color: '#FFFFFF',
-    fontSize: 34,
+    color: Colors.textPrimary,
+    fontSize: 32,
     fontWeight: '700',
   },
 
   description: {
-    color: '#888888',
-    fontSize: 15,
-    lineHeight: 23,
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
     marginTop: 10,
-    marginBottom: 35,
+    marginBottom: 32,
   },
 
   inputContainer: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
 
   label: {
-    color: '#777777',
-    fontSize: 11,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1.5,
     marginBottom: 8,
   },
 
   input: {
-    height: 55,
+    height: 54,
     borderWidth: 1,
-    borderColor: '#333333',
-    borderRadius: 12,
+    borderColor: Colors.border,
+    borderRadius: 14,
     paddingHorizontal: 16,
-    color: '#FFFFFF',
-    fontSize: 15,
-    backgroundColor: '#181818',
+    color: Colors.textPrimary,
+    fontSize: 14,
+    backgroundColor: Colors.surface,
   },
 
   forgotContainer: {
     alignItems: 'flex-end',
     marginTop: -4,
-    marginBottom: 25,
+    marginBottom: 24,
   },
 
   forgotText: {
-    color: '#AAAAAA',
+    color: Colors.textSecondary,
     fontSize: 13,
   },
 
   loginButton: {
     height: 56,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 13,
+    backgroundColor: Colors.cardHighlight,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -275,8 +284,8 @@ const styles = StyleSheet.create({
   },
 
   loginButtonText: {
-    color: '#111111',
-    fontSize: 14,
+    color: Colors.cardHighlightText,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -284,40 +293,43 @@ const styles = StyleSheet.create({
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 25,
+    marginVertical: 24,
   },
 
   divider: {
     flex: 1,
     height: 1,
-    backgroundColor: '#2D2D2D',
+    backgroundColor: Colors.border,
   },
 
   orText: {
-    color: '#666666',
-    fontSize: 11,
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
     marginHorizontal: 14,
   },
 
   googleButton: {
-    height: 55,
+    height: 54,
     borderWidth: 1,
-    borderColor: '#333333',
-    borderRadius: 13,
+    borderColor: Colors.border,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   googleButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    color: Colors.textPrimary,
+    fontSize: 16,
     fontWeight: '700',
     marginRight: 10,
   },
 
   googleText: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -329,12 +341,12 @@ const styles = StyleSheet.create({
   },
 
   signupText: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 13,
   },
 
   signupButton: {
-    color: '#FFFFFF',
+    color: Colors.accentText,
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 5,

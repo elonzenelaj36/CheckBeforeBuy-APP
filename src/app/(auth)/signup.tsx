@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { Colors } from '@/constants/colors';
 import { register } from '@/services/auth';
 
 export default function SignupScreen() {
@@ -62,12 +63,15 @@ export default function SignupScreen() {
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.backButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={styles.backText}>‹</Text>
+            <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
 
           <View style={styles.logoContainer}>
-            <Text style={styles.logo}>CHECK</Text>
+            <View style={styles.logoBadge}>
+              <Text style={styles.logoCheck}>CHECK</Text>
+            </View>
             <Text style={styles.logoSubtitle}>Before Buy</Text>
           </View>
         </View>
@@ -90,7 +94,7 @@ export default function SignupScreen() {
             <TextInput
               style={styles.input}
               placeholder="Your name"
-              placeholderTextColor="#666666"
+              placeholderTextColor={Colors.textMuted}
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
@@ -103,7 +107,7 @@ export default function SignupScreen() {
             <TextInput
               style={styles.input}
               placeholder="you@example.com"
-              placeholderTextColor="#666666"
+              placeholderTextColor={Colors.textMuted}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -118,7 +122,7 @@ export default function SignupScreen() {
             <TextInput
               style={styles.input}
               placeholder="Create a password"
-              placeholderTextColor="#666666"
+              placeholderTextColor={Colors.textMuted}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -132,7 +136,7 @@ export default function SignupScreen() {
             <TextInput
               style={styles.input}
               placeholder="Repeat your password"
-              placeholderTextColor="#666666"
+              placeholderTextColor={Colors.textMuted}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -144,9 +148,10 @@ export default function SignupScreen() {
             style={[styles.signupButton, isLoading && styles.signupButtonDisabled]}
             onPress={handleSignup}
             disabled={isLoading}
+            activeOpacity={0.85}
           >
             {isLoading ? (
-              <ActivityIndicator color="#111111" />
+              <ActivityIndicator color={Colors.cardHighlightText} />
             ) : (
               <Text style={styles.signupButtonText}>
                 CREATE ACCOUNT
@@ -177,7 +182,7 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
     paddingHorizontal: 28,
     paddingTop: 55,
     paddingBottom: 30,
@@ -190,58 +195,69 @@ const styles = StyleSheet.create({
   header: {
     position: 'relative',
     alignItems: 'center',
-    marginBottom: 45,
+    marginBottom: 40,
   },
 
   backButton: {
     position: 'absolute',
     left: 0,
-    top: 0,
-    width: 40,
-    height: 40,
+    top: -4,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
     justifyContent: 'center',
   },
 
   backText: {
-    color: '#FFFFFF',
-    fontSize: 36,
-    fontWeight: '300',
+    color: Colors.textPrimary,
+    fontSize: 20,
   },
 
   logoContainer: {
     alignItems: 'center',
   },
 
-  logo: {
-    color: '#FFFFFF',
-    fontSize: 28,
+  logoBadge: {
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 9,
+  },
+
+  logoCheck: {
+    color: Colors.cardHighlight,
+    fontSize: 20,
     fontWeight: '800',
     letterSpacing: 3,
   },
 
   logoSubtitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '300',
-    letterSpacing: 1,
-    marginTop: 2,
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '400',
+    letterSpacing: 0.5,
+    marginTop: 8,
   },
 
   titleContainer: {
-    marginBottom: 30,
+    marginBottom: 26,
   },
 
   title: {
-    color: '#FFFFFF',
-    fontSize: 32,
+    color: Colors.textPrimary,
+    fontSize: 30,
     fontWeight: '700',
   },
 
   subtitle: {
-    color: '#888888',
-    fontSize: 15,
-    lineHeight: 23,
-    marginTop: 10,
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 8,
   },
 
   form: {
@@ -249,31 +265,31 @@ const styles = StyleSheet.create({
   },
 
   inputContainer: {
-    marginBottom: 17,
+    marginBottom: 14,
   },
 
   label: {
-    color: '#888888',
-    fontSize: 11,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1.5,
     marginBottom: 8,
   },
 
   input: {
     height: 54,
     borderWidth: 1,
-    borderColor: '#333333',
-    borderRadius: 12,
-    backgroundColor: '#181818',
-    color: '#FFFFFF',
+    borderColor: Colors.border,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    color: Colors.textPrimary,
     paddingHorizontal: 16,
-    fontSize: 15,
+    fontSize: 14,
   },
 
   signupButton: {
-    height: 58,
-    backgroundColor: '#FFFFFF',
+    height: 56,
+    backgroundColor: Colors.cardHighlight,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -285,8 +301,8 @@ const styles = StyleSheet.create({
   },
 
   signupButtonText: {
-    color: '#111111',
-    fontSize: 14,
+    color: Colors.cardHighlightText,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -295,16 +311,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 25,
+    marginTop: 22,
   },
 
   loginText: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 13,
   },
 
   loginLink: {
-    color: '#FFFFFF',
+    color: Colors.accentText,
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 5,

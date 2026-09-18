@@ -2,6 +2,7 @@ import React from 'react';
 
 import {
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -61,132 +62,148 @@ export default function Home() {
           </TouchableOpacity>
         </View>
 
-        {/* Intro */}
-        <View style={styles.intro}>
-          <Text style={styles.title}>
-            Before you buy,
-          </Text>
-          <Text style={styles.title}>check it.</Text>
-
-          <Text style={styles.subtitle}>
-            Analyze products, see how they fit your home,
-            and make better buying decisions.
-          </Text>
-        </View>
-
-        {/* Check Product — Main CTA */}
-        <TouchableOpacity
-          style={styles.mainCard}
-          onPress={() => router.push('/check-product')}
-          activeOpacity={0.85}
+        {/* My Home — HERO: the destination */}
+        <Pressable
+          onPress={() => router.push('/my-home')}
+          style={({ pressed }) => [
+            styles.heroOuter,
+            pressed && styles.heroOuterPressed,
+          ]}
         >
-          <View>
-            <Text style={styles.mainCardEyebrow}>
-              MAIN TOOL
+          <View style={styles.heroCard}>
+            <View style={styles.heroGlow} pointerEvents="none" />
+            <View style={styles.heroGlowSmall} pointerEvents="none" />
+
+            <View style={styles.heroMarkRow}>
+              <View style={styles.heroMark}>
+                <Text style={styles.heroMarkIcon}>⌂</Text>
+              </View>
+              <Text style={styles.heroEyebrow}>YOUR SPACE</Text>
+            </View>
+
+            <Text style={styles.heroTitle}>My Home</Text>
+
+            <Text style={styles.heroSubtitle}>
+              Your rooms, your items, and every product visualized inside them — all in one place.
             </Text>
 
-            <Text style={styles.mainCardTitle}>
-              Check a product
-            </Text>
+            <View style={styles.heroChipRow}>
+              <View style={styles.heroChip}>
+                <Text style={styles.heroChipText}>🛋  Rooms</Text>
+              </View>
+              <View style={styles.heroChip}>
+                <Text style={styles.heroChipText}>📦  Items</Text>
+              </View>
+              <View style={styles.heroChip}>
+                <Text style={styles.heroChipText}>🎨  Visuals</Text>
+              </View>
+            </View>
 
-            <Text style={styles.mainCardDescription}>
-              Take a photo of something you&apos;re thinking
-              about buying. We&apos;ll help you decide.
-            </Text>
+            <View style={styles.heroCta}>
+              <Text style={styles.heroCtaText}>ENTER MY HOME</Text>
+              <Text style={styles.heroCtaArrow}>→</Text>
+            </View>
           </View>
+        </Pressable>
 
-          <View style={styles.arrowCircle}>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Quick Actions */}
-        <Text style={styles.sectionTitle}>
-          QUICK ACTIONS
+        {/* Check Product — TOOL: secondary and functional */}
+        <Text style={styles.toolIntro}>
+          Before you buy, check it.
         </Text>
 
-        <View style={styles.quickRow}>
-          <TouchableOpacity
-            style={styles.quickCardFull}
-            onPress={() => router.push('/my-home')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.quickIcon}>🏠</Text>
-
-            <Text style={styles.quickTitle}>
-              My home
-            </Text>
-
-            <Text style={styles.quickDescription}>
-              Manage your rooms, your detected items, and find products for your space.
-            </Text>
-
-            <Text style={styles.quickArrow}>→</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Recently Checked */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            RECENTLY CHECKED
-          </Text>
-
-          <TouchableOpacity
-            onPress={() => router.push('/history')}
-          >
-            <Text style={styles.viewAll}>VIEW ALL</Text>
-          </TouchableOpacity>
-        </View>
-
-        {recentHistory.length === 0 ? (
-          <TouchableOpacity
-            style={styles.emptyCard}
-            onPress={() => router.push('/check-product')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.emptyTitle}>
-              Nothing checked yet
-            </Text>
-
-            <Text style={styles.emptyDescription}>
-              Products you analyze will appear here.
-              Tap to check your first product.
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.historyList}>
-            {recentHistory.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.historyCard}
-                activeOpacity={0.85}
-              >
-                <Image
-                  source={{ uri: item.imageUri ?? undefined }}
-                  style={styles.historyImage}
-                />
-
-                <View style={styles.historyInfo}>
-                  <Text
-                    style={styles.historyName}
-                    numberOfLines={1}
-                  >
-                    {item.name}
-                  </Text>
-
-                  <Text style={styles.historyMeta}>
-                    {item.hasAnalysis
-                      ? '✓ Analyzed'
-                      : 'Not analyzed'}
-                    {item.hasVisualization
-                      ? '  ·  ✓ Visualized'
-                      : ''}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+        <Pressable
+          onPress={() => router.push('/check-product')}
+          style={({ pressed }) => [
+            styles.toolCard,
+            pressed && styles.toolCardPressed,
+          ]}
+        >
+          <View style={styles.toolIconCircle}>
+            <Text style={styles.toolIcon}>◎</Text>
           </View>
-        )}
+
+          <View style={styles.toolText}>
+            <Text style={styles.toolTitle}>Check a product</Text>
+            <Text style={styles.toolDescription}>
+              Take a photo before you buy it.
+            </Text>
+          </View>
+
+          <View style={styles.toolCta}>
+            <Text style={styles.toolCtaText}>CHECK</Text>
+            <Text style={styles.toolCtaArrow}>→</Text>
+          </View>
+        </Pressable>
+
+        {/* Recently Checked — its own translucent panel, secondary to My Home */}
+        <View style={styles.recentSection}>
+          <View style={styles.recentSectionHeader}>
+            <Text style={styles.recentSectionTitle}>
+              Recently Checked
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => router.push('/history')}
+            >
+              <Text style={styles.recentViewAll}>View all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recentHistory.length === 0 ? (
+            <TouchableOpacity
+              style={styles.recentEmptyCard}
+              onPress={() => router.push('/check-product')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.recentEmptyTitle}>
+                Nothing checked yet
+              </Text>
+
+              <Text style={styles.recentEmptyDescription}>
+                Products you analyze will appear here.
+                Tap to check your first product.
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.historyList}>
+              {recentHistory.map((item, index) => (
+                <View key={item.id}>
+                  {index > 0 && <View style={styles.historyDivider} />}
+
+                  <TouchableOpacity
+                    style={styles.historyCard}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.historyImageFrame}>
+                      <Image
+                        source={{ uri: item.imageUri ?? undefined }}
+                        style={styles.historyImage}
+                      />
+                    </View>
+
+                    <View style={styles.historyInfo}>
+                      <Text
+                        style={styles.historyName}
+                        numberOfLines={1}
+                      >
+                        {item.name}
+                      </Text>
+
+                      <Text style={styles.historyMeta}>
+                        {item.hasAnalysis
+                          ? '✓ Analyzed'
+                          : 'Not analyzed'}
+                        {item.hasVisualization
+                          ? '  ·  ✓ Visualized'
+                          : ''}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
 
         {/* Recommended */}
         <View style={styles.sectionHeader}>
@@ -230,13 +247,13 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.homeBackground,
   },
 
   content: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 120,
+    paddingBottom: 130,
   },
 
   header: {
@@ -263,80 +280,258 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.homeSurfaceRaised,
+    borderWidth: 1,
+    borderColor: Colors.homeBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   profileLetter: {
-    color: Colors.cardHighlight,
+    color: Colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
   },
 
-  intro: {
-    marginTop: 40,
-    marginBottom: 24,
+  /* ── My Home hero ─────────────────────────────────────── */
+
+  heroOuter: {
+    marginTop: 22,
+    borderRadius: 34,
+    padding: 2,
+    backgroundColor: 'rgba(61, 130, 247, 0.35)',
+    shadowColor: Colors.homeAccent,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 10,
   },
 
-  title: {
-    color: Colors.textPrimary,
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 40,
+  heroOuterPressed: {
+    transform: [{ scale: 0.985 }],
+    opacity: 0.95,
   },
 
-  subtitle: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 12,
-    maxWidth: 340,
+  heroCard: {
+    borderRadius: 32,
+    backgroundColor: Colors.homeSurface,
+    borderWidth: 1,
+    borderColor: Colors.homeBorder,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    overflow: 'hidden',
   },
 
-  mainCard: {
-    backgroundColor: Colors.cardHighlight,
-    borderRadius: 20,
-    padding: 22,
-    minHeight: 185,
-    justifyContent: 'space-between',
+  heroGlow: {
+    position: 'absolute',
+    top: -50,
+    right: -40,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: Colors.homeAccent,
+    opacity: 0.16,
   },
 
-  mainCardEyebrow: {
-    color: Colors.cardHighlightTextMuted,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1.5,
+  heroGlowSmall: {
+    position: 'absolute',
+    bottom: -30,
+    left: -30,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: Colors.homeCyan,
+    opacity: 0.1,
   },
 
-  mainCardTitle: {
-    color: Colors.cardHighlightText,
-    fontSize: 25,
-    fontWeight: '700',
-    marginTop: 10,
+  heroMarkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
 
-  mainCardDescription: {
-    color: Colors.cardHighlightTextMuted,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 8,
-    maxWidth: 290,
-  },
-
-  arrowCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: Colors.background,
+  heroMark: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: Colors.homeAccentDim,
+    borderWidth: 1,
+    borderColor: Colors.homeBorder,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'flex-end',
   },
 
-  arrow: {
+  heroMarkIcon: {
+    color: Colors.homeAccentText,
+    fontSize: 19,
+    fontWeight: '700',
+  },
+
+  heroEyebrow: {
+    color: Colors.homeAccentText,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+
+  heroTitle: {
     color: Colors.textPrimary,
+    fontSize: 38,
+    fontWeight: '800',
+    marginTop: 18,
+    letterSpacing: 0.2,
+  },
+
+  heroSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13.5,
+    lineHeight: 20,
+    marginTop: 10,
+    maxWidth: 280,
+  },
+
+  heroChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 20,
+  },
+
+  heroChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: Colors.homeSurfaceRaised,
+    borderWidth: 1,
+    borderColor: Colors.homeBorder,
+  },
+
+  heroChipText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
+  heroCta: {
+    marginTop: 26,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: Colors.homeAccent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: Colors.homeAccent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+
+  heroCtaText: {
+    color: Colors.cardHighlight,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.3,
+  },
+
+  heroCtaArrow: {
+    color: Colors.cardHighlight,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  /* ── Check Product tool ───────────────────────────────── */
+
+  toolIntro: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 24,
+    marginBottom: 10,
+    marginLeft: 2,
+  },
+
+  toolCard: {
+    backgroundColor: Colors.homeSurface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.homeBorder,
+    padding: 14,
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  toolCardPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.99 }],
+  },
+
+  toolIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: Colors.homeAccentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  toolIcon: {
+    color: Colors.homeAccentText,
     fontSize: 20,
+  },
+
+  toolText: {
+    flex: 1,
+  },
+
+  toolTitle: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  toolDescription: {
+    color: Colors.textSecondary,
+    fontSize: 11.5,
+    marginTop: 3,
+  },
+
+  toolCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.homeAccent,
+    flexShrink: 0,
+  },
+
+  toolCtaText: {
+    color: Colors.cardHighlight,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+
+  toolCtaArrow: {
+    color: Colors.cardHighlight,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  /* ── Shared sections ──────────────────────────────────── */
+
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 32,
+    marginBottom: 14,
   },
 
   sectionTitle: {
@@ -344,72 +539,21 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginTop: 30,
-  },
-
-  quickRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
-  },
-
-  quickCardFull: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    minHeight: 110,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    justifyContent: 'space-between',
-  },
-
-  quickIcon: {
-    fontSize: 22,
-    marginBottom: 4,
-  },
-
-  quickTitle: {
-    color: Colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-
-  quickDescription: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 6,
-  },
-
-  quickArrow: {
-    color: Colors.accent,
-    fontSize: 18,
-    marginTop: 14,
-  },
-
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 30,
-    marginBottom: 12,
   },
 
   viewAll: {
-    color: Colors.accent,
+    color: Colors.homeAccentText,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
   },
 
   emptyCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+    backgroundColor: Colors.homeSurface,
+    borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.homeBorder,
   },
 
   emptyTitle: {
@@ -425,26 +569,90 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
+  /* ── Recently Checked (translucent panel) ─────────────── */
+
+  recentSection: {
+    marginTop: 34,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(143, 192, 255, 0.12)',
+    backgroundColor: 'rgba(27, 43, 74, 0.45)',
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 8,
+  },
+
+  recentSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+
+  recentSectionTitle: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+  recentViewAll: {
+    color: Colors.homeAccentText,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+
+  recentEmptyCard: {
+    paddingTop: 4,
+    paddingBottom: 20,
+  },
+
+  recentEmptyTitle: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  recentEmptyDescription: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
+  },
+
   historyList: {
-    gap: 10,
+    paddingBottom: 10,
+  },
+
+  historyDivider: {
+    height: 1,
+    backgroundColor: 'rgba(143, 192, 255, 0.08)',
   },
 
   historyCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 10,
-    gap: 12,
+    paddingVertical: 12,
+    gap: 14,
+  },
+
+  historyImageFrame: {
+    padding: 2,
+    borderRadius: 16,
+    backgroundColor: 'rgba(143, 192, 255, 0.16)',
+    shadowColor: Colors.homeAccent,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 3,
   },
 
   historyImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 10,
-    backgroundColor: Colors.surface2,
+    width: 64,
+    height: 64,
+    borderRadius: 14,
+    backgroundColor: Colors.homeSurfaceRaised,
   },
 
   historyInfo: {
@@ -453,26 +661,26 @@ const styles = StyleSheet.create({
 
   historyName: {
     color: Colors.textPrimary,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
 
   historyMeta: {
-    color: Colors.textMuted,
+    color: Colors.textSecondary,
     fontSize: 11,
-    marginTop: 4,
+    marginTop: 5,
   },
 
   recommendationCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+    backgroundColor: Colors.homeSurface,
+    borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.homeBorder,
   },
 
   recommendationBadge: {
-    backgroundColor: Colors.accentDim,
+    backgroundColor: Colors.homeCyanDim,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
@@ -481,7 +689,7 @@ const styles = StyleSheet.create({
   },
 
   recommendationBadgeText: {
-    color: Colors.accentText,
+    color: Colors.homeCyanText,
     fontSize: 8,
     fontWeight: '700',
     letterSpacing: 1,

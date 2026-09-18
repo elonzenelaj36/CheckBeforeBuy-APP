@@ -13,6 +13,8 @@ import {
   useRouter,
 } from 'expo-router';
 
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
 import { getProductById } from '@/services/products';
 
 export default function ProductInfo() {
@@ -33,24 +35,10 @@ export default function ProductInfo() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backArrow}>
-            ←
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.brand}>
-          {product.brand}
-        </Text>
-
-        <Text style={styles.title}>
-          {product.name}
-        </Text>
+        <ScreenHeader eyebrow={product.brand} title={product.name} />
 
         <View style={styles.priceCard}>
           <Text style={styles.price}>
@@ -90,6 +78,7 @@ export default function ProductInfo() {
               },
             })
           }
+          activeOpacity={0.85}
         >
           <Text style={styles.buttonText}>
             COMPARE
@@ -103,75 +92,45 @@ export default function ProductInfo() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 40,
   },
 
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 40,
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  brand: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 8,
-  },
-
   priceCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.cardHighlight,
     borderRadius: 20,
     padding: 22,
     marginTop: 28,
   },
 
   price: {
-    color: '#111111',
+    color: Colors.cardHighlightText,
     fontSize: 30,
     fontWeight: '700',
   },
 
   store: {
-    color: '#666666',
+    color: Colors.cardHighlightTextMuted,
     fontSize: 12,
     marginTop: 7,
   },
 
   card: {
-    backgroundColor: '#181818',
-    borderRadius: 17,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 20,
     marginTop: 14,
   },
 
   label: {
-    color: '#777777',
+    color: Colors.textMuted,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -179,7 +138,7 @@ const styles = StyleSheet.create({
   },
 
   value: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 15,
     fontWeight: '600',
     marginTop: 6,
@@ -188,7 +147,7 @@ const styles = StyleSheet.create({
 
   button: {
     height: 56,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -196,7 +155,7 @@ const styles = StyleSheet.create({
   },
 
   buttonText: {
-    color: '#111111',
+    color: Colors.cardHighlight,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,

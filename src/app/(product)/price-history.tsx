@@ -2,68 +2,34 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useRouter } from 'expo-router';
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
 
 export default function PriceHistory() {
-  const router = useRouter();
-
   const prices = [
-    {
-      month: 'APR',
-      price: 229,
-    },
-    {
-      month: 'MAY',
-      price: 219,
-    },
-    {
-      month: 'JUN',
-      price: 205,
-    },
-    {
-      month: 'JUL',
-      price: 199,
-    },
-    {
-      month: 'AUG',
-      price: 189,
-    },
-    {
-      month: 'SEP',
-      price: 189,
-    },
+    { month: 'APR', price: 229 },
+    { month: 'MAY', price: 219 },
+    { month: 'JUN', price: 205 },
+    { month: 'JUL', price: 199 },
+    { month: 'AUG', price: 189 },
+    { month: 'SEP', price: 189 },
   ];
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backArrow}>
-            ←
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.eyebrow}>
-          PRICE TRACKING
-        </Text>
-
-        <Text style={styles.title}>
-          Price history.
-        </Text>
+        <ScreenHeader eyebrow="PRICE TRACKING" title="Price history" />
 
         <Text style={styles.subtitle}>
-          See how this product's price has changed.
+          See how this product&apos;s price has changed.
         </Text>
 
         <View style={styles.currentCard}>
@@ -75,9 +41,11 @@ export default function PriceHistory() {
             €189.99
           </Text>
 
-          <Text style={styles.good}>
-            Lowest price in the last 6 months
-          </Text>
+          <View style={styles.goodBadge}>
+            <Text style={styles.good}>
+              Lowest price in the last 6 months
+            </Text>
+          </View>
         </View>
 
         <View style={styles.historyCard}>
@@ -115,83 +83,62 @@ export default function PriceHistory() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 40,
   },
 
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 7,
-  },
-
   subtitle: {
-    color: '#888888',
+    color: Colors.textSecondary,
     fontSize: 14,
-    marginTop: 10,
+    marginTop: 24,
   },
 
   currentCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.cardHighlight,
     borderRadius: 20,
     padding: 22,
-    marginTop: 28,
+    marginTop: 20,
   },
 
   label: {
-    color: '#777777',
+    color: Colors.cardHighlightTextMuted,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
   currentPrice: {
-    color: '#111111',
+    color: Colors.cardHighlightText,
     fontSize: 32,
     fontWeight: '700',
     marginTop: 8,
   },
 
+  goodBadge: {
+    backgroundColor: Colors.successDim,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 10,
+  },
+
   good: {
-    color: '#555555',
-    fontSize: 12,
-    marginTop: 5,
+    color: Colors.successText,
+    fontSize: 11,
+    fontWeight: '600',
   },
 
   historyCard: {
-    backgroundColor: '#181818',
-    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 18,
     marginTop: 14,
   },
@@ -204,7 +151,7 @@ const styles = StyleSheet.create({
 
   month: {
     width: 35,
-    color: '#777777',
+    color: Colors.textMuted,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -212,7 +159,7 @@ const styles = StyleSheet.create({
   barContainer: {
     flex: 1,
     height: 8,
-    backgroundColor: '#2D2D2D',
+    backgroundColor: Colors.surface2,
     borderRadius: 4,
     overflow: 'hidden',
     marginHorizontal: 10,
@@ -220,14 +167,14 @@ const styles = StyleSheet.create({
 
   bar: {
     height: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     borderRadius: 4,
   },
 
   price: {
     width: 55,
     textAlign: 'right',
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 12,
   },
 });

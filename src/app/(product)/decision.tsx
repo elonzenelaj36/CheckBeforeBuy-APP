@@ -12,11 +12,14 @@ import {
 } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ScreenHeader from '@/components/ScreenHeader';
+import { Colors } from '@/constants/colors';
+
 const RECOMMENDATION_LABEL: Record<string, string> = {
-  buy: 'BUY',
-  consider: 'CONSIDER',
-  skip: 'SKIP',
-  unknown: 'UNCLEAR',
+  buy: 'Good Buy',
+  consider: 'Worth Considering',
+  skip: 'Consider Skipping',
+  unknown: 'Unclear',
 };
 
 const RECOMMENDATION_SUBTITLE: Record<string, string> = {
@@ -53,81 +56,61 @@ export default function Decision() {
       ? Math.round(confidenceValue * 100)
       : null;
 
+  const recommendationColor =
+    rec === 'buy'
+      ? Colors.success
+      : rec === 'consider'
+        ? Colors.warning
+        : rec === 'skip'
+          ? Colors.danger
+          : Colors.textSecondary;
+
+  const recommendationBg =
+    rec === 'buy'
+      ? Colors.successDim
+      : rec === 'consider'
+        ? Colors.warningDim
+        : rec === 'skip'
+          ? Colors.dangerDim
+          : Colors.surface2;
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backArrow}>
-              ←
-            </Text>
-          </TouchableOpacity>
-
-          <View>
-            <Text style={styles.eyebrow}>
-              CHECK
-            </Text>
-
-            <Text style={styles.headerTitle}>
-              Buying decision
-            </Text>
-          </View>
-
-          <View style={styles.headerSpacer} />
-        </View>
+        <ScreenHeader eyebrow="CHECK" title="Buying decision" />
 
         {/* Verdict */}
-        <View style={styles.verdictSection}>
-          <Text style={styles.verdictEyebrow}>
-            OUR RECOMMENDATION
-          </Text>
+        <View style={styles.scoreCard}>
+          <Text style={styles.scoreLabel}>OUR RECOMMENDATION</Text>
 
-          <Text style={styles.verdict}>
-            {RECOMMENDATION_LABEL[rec] ?? rec.toUpperCase()}
-          </Text>
+          <View style={[styles.recommendationBadge, { backgroundColor: recommendationBg }]}>
+            <Text style={[styles.recommendation, { color: recommendationColor }]}>
+              {RECOMMENDATION_LABEL[rec] ?? rec}
+            </Text>
+          </View>
 
           <Text style={styles.verdictSubtitle}>
             {RECOMMENDATION_SUBTITLE[rec] ?? RECOMMENDATION_SUBTITLE.unknown}
           </Text>
+
+          <View style={styles.confidenceRow}>
+            <Text style={styles.confidenceLabel}>CONFIDENCE</Text>
+            <Text style={styles.confidenceValue}>
+              {confidencePercent !== null ? `${confidencePercent}%` : '—'}
+            </Text>
+          </View>
         </View>
 
-        {/* Score */}
-        <View style={styles.scoreCard}>
-          <View>
-            <Text style={styles.scoreLabel}>
-              CONFIDENCE
-            </Text>
-
-            <Text style={styles.score}>
-              {confidencePercent !== null ? confidencePercent : '—'}
-              <Text style={styles.scoreOutOf}>
-                {confidencePercent !== null ? '%' : ''}
-              </Text>
-            </Text>
-          </View>
-
-          <View style={styles.scoreStatus}>
-            <Text style={styles.scoreStatusTitle}>
-              {productName || 'This product'}
-            </Text>
-
-            <Text style={styles.scoreStatusText}>
-              {PRICE_ASSESSMENT_NOTE[priceAssessment || 'unknown'] ?? PRICE_ASSESSMENT_NOTE.unknown}
-            </Text>
-          </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>PRODUCT</Text>
+          <Text style={styles.productName}>{productName || 'This product'}</Text>
         </View>
 
         {/* Reasons */}
-        <Text style={styles.sectionTitle}>
-          WHY
-        </Text>
+        <Text style={styles.sectionTitle}>WHY</Text>
 
         <View style={styles.reasonCard}>
           <View style={styles.reasonRow}>
@@ -170,37 +153,19 @@ export default function Decision() {
         </View>
 
         {/* What to do */}
-        <Text style={styles.sectionTitle}>
-          BEFORE YOU BUY
-        </Text>
+        <Text style={styles.sectionTitle}>BEFORE YOU BUY</Text>
 
         <View style={styles.tipCard}>
-          <Text style={styles.tipNumber}>
-            01
-          </Text>
-
-          <Text style={styles.tipText}>
-            Check the dimensions against your available
-            space.
-          </Text>
-
-          <Text style={styles.tipNumber}>
-            02
-          </Text>
-
-          <Text style={styles.tipText}>
-            Compare the material and build quality with
-            similar products.
-          </Text>
-
-          <Text style={styles.tipNumber}>
-            03
-          </Text>
-
-          <Text style={styles.tipText}>
-            Check whether a cheaper alternative offers the
-            same value.
-          </Text>
+          {[
+            'Check the dimensions against your available space.',
+            'Compare the material and build quality with similar products.',
+            'Check whether a cheaper alternative offers the same value.',
+          ].map((tip, index) => (
+            <View key={tip} style={styles.tipRow}>
+              <Text style={styles.tipNumber}>{String(index + 1).padStart(2, '0')}</Text>
+              <Text style={styles.tipText}>{tip}</Text>
+            </View>
+          ))}
         </View>
 
         {/* Actions */}
@@ -234,7 +199,7 @@ export default function Decision() {
         {/* Note */}
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>
-            How this recommendation is made
+            HOW THIS IS DECIDED
           </Text>
 
           <Text style={styles.infoText}>
@@ -252,7 +217,7 @@ export default function Decision() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111111',
+    backgroundColor: Colors.background,
   },
 
   content: {
@@ -261,218 +226,194 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#2D2D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  backArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-  },
-
-  eyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 3,
-    textAlign: 'center',
-  },
-
-  headerSpacer: {
-    width: 44,
-  },
-
-  verdictSection: {
-    marginTop: 48,
-    marginBottom: 30,
-  },
-
-  verdictEyebrow: {
-    color: '#777777',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-
-  verdict: {
-    color: '#FFFFFF',
-    fontSize: 58,
-    fontWeight: '700',
-    marginTop: 5,
-  },
-
-  verdictSubtitle: {
-    color: '#888888',
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 4,
-  },
-
   scoreCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.surface,
     borderRadius: 20,
-    padding: 22,
-    flexDirection: 'row',
+    padding: 24,
+    marginTop: 20,
     alignItems: 'center',
-    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
 
   scoreLabel: {
-    color: '#777777',
+    color: Colors.textMuted,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
-  score: {
-    color: '#111111',
-    fontSize: 40,
-    fontWeight: '700',
-    marginTop: 4,
+  recommendationBadge: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 14,
   },
 
-  scoreOutOf: {
-    color: '#777777',
+  recommendation: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+
+  verdictSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 12,
+    maxWidth: 280,
+  },
+
+  confidenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 18,
+  },
+
+  confidenceLabel: {
+    color: Colors.textMuted,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+
+  confidenceValue: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 18,
+    marginTop: 14,
+  },
+
+  cardTitle: {
+    color: Colors.textMuted,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+
+  productName: {
+    color: Colors.textPrimary,
     fontSize: 18,
-  },
-
-  scoreStatus: {
-    alignItems: 'flex-end',
-    maxWidth: 130,
-  },
-
-  scoreStatusTitle: {
-    color: '#111111',
-    fontSize: 11,
     fontWeight: '700',
-  },
-
-  scoreStatusText: {
-    color: '#777777',
-    fontSize: 10,
-    lineHeight: 15,
-    textAlign: 'right',
-    marginTop: 5,
+    marginTop: 8,
   },
 
   sectionTitle: {
-    color: '#777777',
-    fontSize: 10,
+    color: Colors.textMuted,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginTop: 30,
+    marginTop: 26,
     marginBottom: 12,
   },
 
   reasonCard: {
-    backgroundColor: '#181818',
-    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
-    paddingHorizontal: 18,
+    borderColor: Colors.border,
+    paddingHorizontal: 16,
   },
 
   reasonRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 18,
+    paddingVertical: 16,
+    gap: 14,
   },
 
   reasonIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFFFF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surface2,
+    borderWidth: 1,
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
 
   reasonIconText: {
-    color: '#111111',
-    fontSize: 16,
+    color: Colors.accent,
+    fontSize: 15,
     fontWeight: '700',
   },
 
   reasonText: {
     flex: 1,
-    marginLeft: 13,
   },
 
   reasonTitle: {
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 
   reasonDescription: {
-    color: '#777777',
-    fontSize: 11,
-    lineHeight: 17,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 4,
   },
 
   divider: {
     height: 1,
-    backgroundColor: '#2D2D2D',
+    backgroundColor: Colors.border,
   },
 
   tipCard: {
-    backgroundColor: '#181818',
-    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     padding: 18,
+    gap: 16,
+  },
+
+  tipRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
 
   tipNumber: {
-    color: '#777777',
-    fontSize: 9,
+    color: Colors.accent,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1.5,
-    marginTop: 4,
+    letterSpacing: 0.5,
+    marginTop: 1,
   },
 
   tipText: {
-    color: '#FFFFFF',
+    color: Colors.textSecondary,
     fontSize: 13,
     lineHeight: 19,
-    marginTop: 5,
-    marginBottom: 15,
+    flex: 1,
   },
 
   primaryButton: {
     height: 56,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 28,
+    marginTop: 26,
   },
 
   primaryButtonText: {
-    color: '#111111',
-    fontSize: 10,
+    color: Colors.cardHighlight,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -480,40 +421,41 @@ const styles = StyleSheet.create({
   secondaryButton: {
     height: 56,
     borderRadius: 14,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
   },
 
   secondaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 10,
+    color: Colors.textPrimary,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
   },
 
   infoCard: {
-    marginTop: 24,
+    marginTop: 22,
     padding: 18,
-    backgroundColor: '#181818',
+    backgroundColor: Colors.accentDim,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D2D2D',
+    borderColor: Colors.border,
   },
 
   infoTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+    color: Colors.accentText,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.2,
   },
 
   infoText: {
-    color: '#777777',
+    color: Colors.textSecondary,
     fontSize: 12,
-    lineHeight: 19,
-    marginTop: 7,
+    lineHeight: 18,
+    marginTop: 8,
   },
 });
