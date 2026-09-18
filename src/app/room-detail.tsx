@@ -255,18 +255,29 @@ export default function RoomDetail() {
         <ScreenHeader eyebrow="MY HOME" title={room.name} />
 
         {/* Primary Photo Banner */}
-        <View style={styles.bannerContainer}>
-          {primaryPhoto ? (
-            <Image source={{ uri: primaryPhoto }} style={styles.bannerImage} />
-          ) : (
-            <View style={styles.bannerPlaceholder}>
-              <Text style={styles.placeholderIcon}>🏠</Text>
-              <Text style={styles.placeholderText}>No room photo yet</Text>
+        <View style={styles.bannerOuter}>
+          <View style={styles.bannerContainer}>
+            {primaryPhoto ? (
+              <Image source={{ uri: primaryPhoto }} style={styles.bannerImage} />
+            ) : (
+              <View style={styles.bannerPlaceholder}>
+                <Text style={styles.placeholderIcon}>🏠</Text>
+                <Text style={styles.placeholderText}>No room photo yet</Text>
+              </View>
+            )}
+
+            <View style={styles.bannerScrim} pointerEvents="none" />
+
+            <View style={styles.bannerBadge}>
+              <Text style={styles.bannerBadgeText}>{room.roomType}</Text>
             </View>
-          )}
-          <View style={styles.bannerBadge}>
-            <Text style={styles.bannerBadgeText}>{room.roomType}</Text>
           </View>
+        </View>
+
+        {/* Room name — the strongest text on this screen */}
+        <View style={styles.roomNameBlock}>
+          <Text style={styles.roomNameTitle}>{room.name}</Text>
+          <Text style={styles.roomNameType}>{room.roomType}</Text>
         </View>
 
         {/* Room Photos Section */}
@@ -340,10 +351,12 @@ export default function RoomDetail() {
                 activeOpacity={0.85}
                 onPress={() => openVisualization(item)}
               >
-                <Image
-                  source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
-                  style={styles.genImage}
-                />
+                <View style={styles.genImageFrame}>
+                  <Image
+                    source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
+                    style={styles.genImage}
+                  />
+                </View>
                 <View style={styles.genInfo}>
                   <Text style={styles.genProductName} numberOfLines={1}>
                     {item.productName}
@@ -419,7 +432,7 @@ export default function RoomDetail() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundElevated,
+    backgroundColor: Colors.myHomeBackground,
   },
   center: {
     flex: 1,
@@ -436,17 +449,27 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 120,
   },
-  bannerContainer: {
-    height: 220,
-    width: '100%',
-    borderRadius: 20,
-    overflow: 'hidden',
+  bannerOuter: {
     marginTop: 24,
-    marginBottom: 24,
+    marginBottom: 22,
+    borderRadius: 26,
+    padding: 2,
+    backgroundColor: 'rgba(94, 214, 196, 0.28)',
+    shadowColor: Colors.myHomeAccent,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 6,
+  },
+  bannerContainer: {
+    height: 230,
+    width: '100%',
+    borderRadius: 24,
+    overflow: 'hidden',
     position: 'relative',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
   },
   bannerImage: {
     width: '100%',
@@ -456,7 +479,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.surface2,
+    backgroundColor: Colors.myHomeSurfaceRaised,
   },
   placeholderIcon: {
     fontSize: 40,
@@ -466,22 +489,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 8,
   },
+  bannerScrim: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    backgroundColor: 'rgba(13, 27, 44, 0.4)',
+  },
   bannerBadge: {
     position: 'absolute',
-    bottom: 12,
-    left: 12,
-    backgroundColor: 'rgba(11, 18, 32, 0.85)',
+    bottom: 14,
+    left: 14,
+    backgroundColor: 'rgba(13, 27, 44, 0.72)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(166, 237, 224, 0.3)',
   },
   bannerBadgeText: {
-    color: Colors.accentText,
+    color: Colors.myHomeAccentText,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  roomNameBlock: {
+    marginBottom: 22,
+  },
+  roomNameTitle: {
+    color: Colors.textPrimary,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  roomNameType: {
+    color: Colors.myHomeAccentText,
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 4,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -497,7 +543,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   actionText: {
-    color: Colors.accent,
+    color: Colors.myHomeAccentText,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
@@ -509,13 +555,13 @@ const styles = StyleSheet.create({
   photoItem: {
     width: 140,
     height: 140,
-    borderRadius: 14,
+    borderRadius: 16,
     overflow: 'hidden',
     marginHorizontal: 4,
     position: 'relative',
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: Colors.myHomeBorder,
+    backgroundColor: Colors.myHomeSurface,
   },
   photoThumb: {
     width: '100%',
@@ -525,13 +571,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 6,
     left: 6,
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.myHomeAccent,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
   primaryBadgeText: {
-    color: Colors.cardHighlight,
+    color: Colors.textInverse,
     fontSize: 8,
     fontWeight: '700',
   },
@@ -539,7 +585,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 6,
     left: 6,
-    backgroundColor: 'rgba(11, 18, 32, 0.85)',
+    backgroundColor: 'rgba(13, 27, 44, 0.85)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -561,7 +607,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   removePhotoBadgeText: {
-    color: Colors.cardHighlight,
+    color: Colors.textPrimary,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -571,18 +617,23 @@ const styles = StyleSheet.create({
   genCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
     padding: 10,
     gap: 12,
+  },
+  genImageFrame: {
+    padding: 2,
+    borderRadius: 14,
+    backgroundColor: 'rgba(94, 214, 196, 0.18)',
   },
   genImage: {
     width: 60,
     height: 60,
-    borderRadius: 10,
-    backgroundColor: Colors.surface2,
+    borderRadius: 12,
+    backgroundColor: Colors.myHomeSurfaceRaised,
   },
   genInfo: {
     flex: 1,
@@ -601,7 +652,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: Colors.surface2,
+    backgroundColor: Colors.myHomeSurfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -610,10 +661,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   subtleInfoCard: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
     padding: 14,
   },
   subtleInfoText: {
@@ -627,11 +678,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
   },
   itemRowText: {
     flex: 1,
@@ -649,7 +700,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: Colors.surface2,
+    backgroundColor: Colors.myHomeSurfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
@@ -678,11 +729,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   notFoundCard: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     padding: 24,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
     alignItems: 'center',
     marginTop: 40,
     width: '100%',
@@ -700,13 +751,13 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     marginTop: 18,
-    backgroundColor: Colors.cardHighlight,
+    backgroundColor: Colors.myHomeAccent,
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
   },
   backBtnText: {
-    color: Colors.cardHighlightText,
+    color: Colors.textInverse,
     fontSize: 11,
     fontWeight: '700',
   },

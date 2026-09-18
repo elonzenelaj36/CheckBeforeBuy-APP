@@ -86,7 +86,7 @@ export default function MyHome() {
 
         {/* Intro */}
         <View style={styles.intro}>
-          <Text style={styles.title}>Build your home.</Text>
+          <Text style={styles.title}>These are your spaces.</Text>
 
           <Text style={styles.subtitle}>
             Add your rooms so we can make every product
@@ -94,10 +94,10 @@ export default function MyHome() {
           </Text>
         </View>
 
-        {/* Add Room CTA */}
+        {/* Add Room CTA — its own special, accent-lit treatment */}
         <TouchableOpacity
           style={styles.addRoomCard}
-          activeOpacity={0.85}
+          activeOpacity={0.88}
           onPress={() => router.push('/add-room')}
         >
           <View style={styles.addRoomIcon}>
@@ -145,7 +145,7 @@ export default function MyHome() {
               <TouchableOpacity
                 key={room.id}
                 style={styles.roomCard}
-                activeOpacity={0.85}
+                activeOpacity={0.92}
                 onPress={() =>
                   router.push({
                     pathname: '/room-detail',
@@ -153,55 +153,61 @@ export default function MyHome() {
                   })
                 }
               >
-                {room.primaryImageUri ? (
-                  <Image
-                    source={{
-                      uri: room.primaryImageUri,
-                    }}
-                    style={styles.roomImage}
-                  />
-                ) : (
-                  <View style={styles.roomImagePlaceholder}>
-                    <Text
-                      style={
-                        styles.roomImagePlaceholderText
-                      }
-                    >
-                      🏠
+                <View style={styles.roomImageWrap}>
+                  {room.primaryImageUri ? (
+                    <Image
+                      source={{
+                        uri: room.primaryImageUri,
+                      }}
+                      style={styles.roomImage}
+                    />
+                  ) : (
+                    <View style={styles.roomImagePlaceholder}>
+                      <Text
+                        style={
+                          styles.roomImagePlaceholderText
+                        }
+                      >
+                        🏠
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Photo-count pill */}
+                  <View style={styles.roomPhotosPill}>
+                    <Text style={styles.roomPhotosPillText}>
+                      {room.imageUris.length}{' '}
+                      {room.imageUris.length === 1
+                        ? 'photo'
+                        : 'photos'}
                     </Text>
                   </View>
-                )}
 
-                <View style={styles.roomInfo}>
-                  <Text style={styles.roomName}>
-                    {room.name}
-                  </Text>
-
-                  <Text style={styles.roomType}>
-                    {room.roomType}
-                  </Text>
-
-                  <Text style={styles.roomPhotos}>
-                    {room.imageUris.length}{' '}
-                    {room.imageUris.length === 1
-                      ? 'photo'
-                      : 'photos'}
-                  </Text>
-                </View>
-
-                <View style={styles.roomActions}>
+                  {/* Delete */}
                   <TouchableOpacity
-                    style={styles.deleteButton}
+                    style={styles.roomDeleteButton}
                     onPress={() =>
                       handleDeleteRoom(room)
                     }
                   >
-                    <Text style={styles.deleteText}>
+                    <Text style={styles.roomDeleteText}>
                       ×
                     </Text>
                   </TouchableOpacity>
 
-                  <Text style={styles.chevron}>›</Text>
+                  {/* Soft bottom fade + caption */}
+                  <View style={styles.roomScrimUpper} pointerEvents="none" />
+                  <View style={styles.roomScrimLower} pointerEvents="none" />
+
+                  <View style={styles.roomCaption} pointerEvents="none">
+                    <Text style={styles.roomName} numberOfLines={1}>
+                      {room.name}
+                    </Text>
+
+                    <Text style={styles.roomType}>
+                      {room.roomType}
+                    </Text>
+                  </View>
                 </View>
               </TouchableOpacity>
             ))}
@@ -211,7 +217,7 @@ export default function MyHome() {
         {/* Find for My Home CTA */}
         <TouchableOpacity
           style={styles.findCard}
-          activeOpacity={0.85}
+          activeOpacity={0.88}
           onPress={() => router.push('/find-for-my-home')}
         >
           <View style={styles.findText}>
@@ -221,7 +227,7 @@ export default function MyHome() {
             </Text>
           </View>
 
-          <Text style={styles.addRoomArrow}>→</Text>
+          <Text style={styles.findArrow}>→</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -233,7 +239,7 @@ export default function MyHome() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.myHomeBackground,
   },
 
   content: {
@@ -252,9 +258,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -285,14 +291,15 @@ const styles = StyleSheet.create({
   },
 
   intro: {
-    marginTop: 40,
-    marginBottom: 24,
+    marginTop: 36,
+    marginBottom: 26,
   },
 
   title: {
     color: Colors.textPrimary,
     fontSize: 32,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 
   subtitle: {
@@ -304,27 +311,34 @@ const styles = StyleSheet.create({
   },
 
   addRoomCard: {
-    backgroundColor: Colors.cardHighlight,
-    borderRadius: 20,
+    backgroundColor: 'rgba(94, 214, 196, 0.10)',
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: 'rgba(94, 214, 196, 0.4)',
     padding: 18,
     minHeight: 110,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+    shadowColor: Colors.myHomeAccent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 5,
   },
 
   addRoomIcon: {
     width: 48,
     height: 48,
-    borderRadius: 14,
-    backgroundColor: Colors.background,
+    borderRadius: 15,
+    backgroundColor: Colors.myHomeAccentDim,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
 
   plus: {
-    color: Colors.textPrimary,
+    color: Colors.myHomeAccentText,
     fontSize: 26,
     fontWeight: '300',
   },
@@ -334,29 +348,30 @@ const styles = StyleSheet.create({
   },
 
   addRoomTitle: {
-    color: Colors.cardHighlightText,
+    color: Colors.textPrimary,
     fontSize: 17,
     fontWeight: '700',
   },
 
   addRoomDescription: {
-    color: Colors.cardHighlightTextMuted,
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
   },
 
   addRoomArrow: {
-    color: Colors.cardHighlightText,
+    color: Colors.myHomeAccentText,
     fontSize: 20,
+    fontWeight: '700',
   },
 
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 30,
-    marginBottom: 12,
+    marginTop: 32,
+    marginBottom: 14,
   },
 
   sectionTitle: {
@@ -374,95 +389,129 @@ const styles = StyleSheet.create({
   },
 
   roomsList: {
-    gap: 10,
+    gap: 16,
   },
 
+  /* ── Room card — image-first "space preview" ──────────── */
+
   roomCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: Colors.myHomeSurface,
     borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    borderColor: Colors.myHomeBorder,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+
+  roomImageWrap: {
+    width: '100%',
+    height: 190,
+    position: 'relative',
   },
 
   roomImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    flexShrink: 0,
+    width: '100%',
+    height: '100%',
   },
 
   roomImagePlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: Colors.surface2,
+    width: '100%',
+    height: '100%',
+    backgroundColor: Colors.myHomeSurfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
   },
 
   roomImagePlaceholderText: {
-    fontSize: 28,
+    fontSize: 34,
   },
 
-  roomInfo: {
-    flex: 1,
+  roomPhotosPill: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(13, 27, 44, 0.68)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(166, 237, 224, 0.3)',
+  },
+
+  roomPhotosPillText: {
+    color: Colors.myHomeAccentText,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  roomDeleteButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(13, 27, 44, 0.68)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  roomDeleteText: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '300',
+    lineHeight: 20,
+  },
+
+  roomScrimUpper: {
+    position: 'absolute',
+    bottom: 46,
+    left: 0,
+    right: 0,
+    height: 46,
+    backgroundColor: 'rgba(13, 27, 44, 0.32)',
+  },
+
+  roomScrimLower: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 66,
+    backgroundColor: 'rgba(13, 27, 44, 0.72)',
+  },
+
+  roomCaption: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 12,
   },
 
   roomName: {
     color: Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '700',
   },
 
   roomType: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    marginTop: 3,
+    color: Colors.myHomeAccentText,
+    fontSize: 12,
     fontWeight: '500',
-  },
-
-  roomPhotos: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    marginTop: 4,
-  },
-
-  roomActions: {
-    alignItems: 'center',
-    gap: 8,
-  },
-
-  deleteButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surface2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  deleteText: {
-    color: Colors.textMuted,
-    fontSize: 20,
-    fontWeight: '300',
-    lineHeight: 22,
-  },
-
-  chevron: {
-    color: Colors.textMuted,
-    fontSize: 24,
+    marginTop: 3,
   },
 
   findCard: {
     marginTop: 30,
     marginBottom: 10,
-    backgroundColor: Colors.cardHighlight,
+    backgroundColor: Colors.myHomeSurfaceRaised,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.myHomeBorder,
     padding: 18,
     minHeight: 90,
     flexDirection: 'row',
@@ -475,15 +524,21 @@ const styles = StyleSheet.create({
   },
 
   findTitle: {
-    color: Colors.cardHighlightText,
+    color: Colors.textPrimary,
     fontSize: 17,
     fontWeight: '700',
   },
 
   findDescription: {
-    color: Colors.cardHighlightTextMuted,
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
+  },
+
+  findArrow: {
+    color: Colors.myHomeAccentText,
+    fontSize: 20,
+    fontWeight: '700',
   },
 });

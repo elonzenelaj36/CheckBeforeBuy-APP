@@ -182,14 +182,16 @@ export default function AddRoom() {
           <Text style={styles.label}>ROOM PHOTO (OPTIONAL)</Text>
           <View style={styles.photoContainer}>
             {imageUri ? (
-              <View style={styles.previewWrapper}>
-                <Image source={{ uri: imageUri }} style={styles.previewImage} />
-                <TouchableOpacity
-                  style={styles.removePhotoButton}
-                  onPress={() => setImageUri(null)}
-                >
-                  <Text style={styles.removePhotoText}>✕ Remove</Text>
-                </TouchableOpacity>
+              <View style={styles.previewOuter}>
+                <View style={styles.previewWrapper}>
+                  <Image source={{ uri: imageUri }} style={styles.previewImage} />
+                  <TouchableOpacity
+                    style={styles.removePhotoButton}
+                    onPress={() => setImageUri(null)}
+                  >
+                    <Text style={styles.removePhotoText}>✕ Remove</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               <View style={styles.photoActions}>
@@ -244,7 +246,7 @@ export default function AddRoom() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundElevated,
+    backgroundColor: Colors.myHomeBackground,
   },
   flex: {
     flex: 1,
@@ -261,7 +263,7 @@ const styles = StyleSheet.create({
   title: {
     color: Colors.textPrimary,
     fontSize: 32,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   subtitle: {
     color: Colors.textSecondary,
@@ -279,10 +281,10 @@ const styles = StyleSheet.create({
   },
   input: {
     height: 54,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
     paddingHorizontal: 16,
     color: Colors.textPrimary,
     fontSize: 14,
@@ -296,13 +298,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
   },
   typeChipSelected: {
-    backgroundColor: Colors.accentDim,
-    borderColor: Colors.accent,
+    backgroundColor: Colors.myHomeAccentDim,
+    borderColor: Colors.myHomeAccent,
   },
   typeChipText: {
     color: Colors.textSecondary,
@@ -310,22 +312,28 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   typeChipTextSelected: {
-    color: Colors.accentText,
+    color: Colors.myHomeAccentText,
     fontWeight: '700',
   },
   photoContainer: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.myHomeSurface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  previewOuter: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 2,
+    backgroundColor: 'rgba(94, 214, 196, 0.3)',
+  },
   previewWrapper: {
     width: '100%',
     height: 200,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -337,7 +345,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 10,
     right: 10,
-    backgroundColor: 'rgba(11, 18, 32, 0.8)',
+    backgroundColor: 'rgba(13, 27, 44, 0.8)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -356,10 +364,10 @@ const styles = StyleSheet.create({
   photoButton: {
     flex: 1,
     height: 90,
-    backgroundColor: Colors.surface2,
+    backgroundColor: Colors.myHomeSurfaceRaised,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.myHomeBorder,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
@@ -374,19 +382,24 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     height: 56,
-    backgroundColor: Colors.cardHighlight,
-    borderRadius: 14,
+    backgroundColor: Colors.myHomeAccent,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 32,
+    shadowColor: Colors.myHomeAccent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 6,
   },
   disabledButton: {
     opacity: 0.6,
   },
   saveButtonText: {
-    color: Colors.cardHighlightText,
+    color: Colors.textInverse,
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 1,
   },
   analyzingHint: {

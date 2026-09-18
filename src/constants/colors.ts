@@ -82,6 +82,20 @@ export const Colors = {
   checkAccent: '#6FADE8',
   checkAccentDim: '#15304A',
   checkAccentText: '#B4D9F7',
+
+  // ── My Home (soft aqua / mint-blue variant) ────────────────
+  // Additive only — used exclusively by the My Home / Add Room / Room Detail
+  // flow, which wants its own calm, personal "home" identity distinct from
+  // Home's vivid blue and Check Product's icy blue. Background/surfaces stay
+  // deep navy (not green) — only the accent family carries the aqua/mint hue.
+  myHomeBackground: '#0D1B2C',
+  myHomeSurface: '#16283A',
+  myHomeSurfaceRaised: '#1E3548',
+  myHomeBorder: '#2C4657',
+
+  myHomeAccent: '#5ED6C4',
+  myHomeAccentDim: '#12332E',
+  myHomeAccentText: '#A6EDE0',
 } as const;
 
 export type ColorKey = keyof typeof Colors;
