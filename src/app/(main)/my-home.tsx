@@ -77,8 +77,7 @@ export default function MyHome() {
           </TouchableOpacity>
 
           <View>
-            <Text style={styles.eyebrow}>YOUR SPACE</Text>
-            <Text style={styles.headerTitle}>My Home</Text>
+            <Text style={styles.headerTitle}>MY HOME</Text>
           </View>
 
           <View style={styles.headerSpacer} />

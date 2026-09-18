@@ -88,10 +88,13 @@ export const Colors = {
   // flow, which wants its own calm, personal "home" identity distinct from
   // Home's vivid blue and Check Product's icy blue. Background/surfaces stay
   // deep navy (not green) — only the accent family carries the aqua/mint hue.
-  myHomeBackground: '#0D1B2C',
-  myHomeSurface: '#16283A',
-  myHomeSurfaceRaised: '#1E3548',
-  myHomeBorder: '#2C4657',
+  // Lightened as a family (background raised the most) so the screen reads
+  // as a softer blue-gray rather than near-black, while keeping the same
+  // relative contrast steps between background → surface → surfaceRaised.
+  myHomeBackground: '#182A3A',
+  myHomeSurface: '#223648',
+  myHomeSurfaceRaised: '#2A4052',
+  myHomeBorder: '#365062',
 
   myHomeAccent: '#5ED6C4',
   myHomeAccentDim: '#12332E',

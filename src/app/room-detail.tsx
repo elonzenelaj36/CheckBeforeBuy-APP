@@ -327,88 +327,92 @@ export default function RoomDetail() {
           </ScrollView>
         )}
 
-        {/* Generated Images Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            GENERATED VISUALIZATIONS ({generatedImages.length})
-          </Text>
-        </View>
-
-        {generatedImages.length === 0 ? (
-          <EmptyState
-            icon="🎨"
-            title="No visualizations yet"
-            description="Check a product and generate it into this room to see visualizations here."
-            actionLabel="CHECK A PRODUCT"
-            onAction={() => router.push('/check-product')}
-          />
-        ) : (
-          <View style={styles.genGrid}>
-            {generatedImages.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.genCard}
-                activeOpacity={0.85}
-                onPress={() => openVisualization(item)}
-              >
-                <View style={styles.genImageFrame}>
-                  <Image
-                    source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
-                    style={styles.genImage}
-                  />
-                </View>
-                <View style={styles.genInfo}>
-                  <Text style={styles.genProductName} numberOfLines={1}>
-                    {item.productName}
-                  </Text>
-                  <Text style={styles.genDate}>
-                    {new Date(item.createdAt).toLocaleDateString()}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.genDeleteBtn}
-                  onPress={() => handleDeleteGenImage(item.id)}
-                >
-                  <Text style={styles.genDeleteBtnText}>✕</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Items detected in this room */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>ITEMS DETECTED ({userItems.length})</Text>
-        </View>
-
-        {analyzing ? (
-          <View style={styles.subtleInfoCard}>
-            <Text style={styles.subtleInfoText}>Analyzing your room photo...</Text>
-          </View>
-        ) : userItems.length === 0 ? (
-          <View style={styles.subtleInfoCard}>
-            <Text style={styles.subtleInfoText}>
-              No items detected in this room yet. Add a room photo and AI will look for recognizable furniture.
+        {/* Generated Images Section — creative / visual treatment */}
+        <View style={styles.vizSectionCard}>
+          <View style={styles.vizSectionHeader}>
+            <Text style={styles.sectionTitle}>
+              GENERATED VISUALIZATIONS ({generatedImages.length})
             </Text>
           </View>
-        ) : (
-          <View style={styles.itemsList}>
-            {userItems.map((item) => (
-              <View key={item.id} style={styles.itemRow}>
-                <View style={styles.itemRowText}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemCategory}>{item.category}</Text>
-                </View>
+
+          {generatedImages.length === 0 ? (
+            <EmptyState
+              icon="🎨"
+              title="No visualizations yet"
+              description="Check a product and generate it into this room to see visualizations here."
+              actionLabel="CHECK A PRODUCT"
+              onAction={() => router.push('/check-product')}
+            />
+          ) : (
+            <View style={styles.genGrid}>
+              {generatedImages.map((item) => (
                 <TouchableOpacity
-                  style={styles.itemDeleteBtn}
-                  onPress={() => handleDeleteItem(item)}
+                  key={item.id}
+                  style={styles.genCard}
+                  activeOpacity={0.85}
+                  onPress={() => openVisualization(item)}
                 >
-                  <Text style={styles.itemDeleteBtnText}>✕</Text>
+                  <View style={styles.genImageFrame}>
+                    <Image
+                      source={{ uri: item.generatedImageUri ?? item.productImageUri ?? undefined }}
+                      style={styles.genImage}
+                    />
+                  </View>
+                  <View style={styles.genInfo}>
+                    <Text style={styles.genProductName} numberOfLines={1}>
+                      {item.productName}
+                    </Text>
+                    <Text style={styles.genDate}>
+                      {new Date(item.createdAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.genDeleteBtn}
+                    onPress={() => handleDeleteGenImage(item.id)}
+                  >
+                    <Text style={styles.genDeleteBtnText}>✕</Text>
+                  </TouchableOpacity>
                 </TouchableOpacity>
-              </View>
-            ))}
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Items detected in this room — clean / structured treatment */}
+        <View style={styles.itemsSectionCard}>
+          <View style={styles.itemsSectionHeader}>
+            <Text style={styles.sectionTitle}>ITEMS DETECTED ({userItems.length})</Text>
           </View>
-        )}
+
+          {analyzing ? (
+            <View style={styles.subtleInfoCard}>
+              <Text style={styles.subtleInfoText}>Analyzing your room photo...</Text>
+            </View>
+          ) : userItems.length === 0 ? (
+            <View style={styles.subtleInfoCard}>
+              <Text style={styles.subtleInfoText}>
+                No items detected in this room yet. Add a room photo and AI will look for recognizable furniture.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.itemsList}>
+              {userItems.map((item) => (
+                <View key={item.id} style={styles.itemRow}>
+                  <View style={styles.itemRowText}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    <Text style={styles.itemCategory}>{item.category}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.itemDeleteBtn}
+                    onPress={() => handleDeleteItem(item)}
+                  >
+                    <Text style={styles.itemDeleteBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
 
         {/* Action Controls — visualization generation lives in the Check
             flow (Check Product → Product Captured → Generate Into My Room
@@ -611,6 +615,27 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
+  /* Generated Visualizations — creative / visual: aqua-tinted glass panel,
+     softer/larger radius, gentle glow. */
+  vizSectionCard: {
+    marginTop: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(94, 214, 196, 0.25)',
+    backgroundColor: 'rgba(94, 214, 196, 0.06)',
+    padding: 14,
+    shadowColor: Colors.myHomeAccent,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  vizSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   genGrid: {
     gap: 10,
   },
@@ -618,7 +643,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.myHomeSurface,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.myHomeBorder,
     padding: 10,
@@ -661,8 +686,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   subtleInfoCard: {
-    backgroundColor: Colors.myHomeSurface,
-    borderRadius: 14,
+    backgroundColor: Colors.myHomeSurfaceRaised,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: Colors.myHomeBorder,
     padding: 14,
@@ -671,6 +696,22 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 12,
   },
+  /* Items Detected — clean / structured: neutral blue-gray panel, sharper
+     radius, no glow. */
+  itemsSectionCard: {
+    marginTop: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.myHomeBorder,
+    backgroundColor: Colors.myHomeSurface,
+    padding: 14,
+  },
+  itemsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   itemsList: {
     gap: 8,
   },
@@ -678,9 +719,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.myHomeSurface,
+    backgroundColor: Colors.myHomeSurfaceRaised,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: Colors.myHomeBorder,
   },
