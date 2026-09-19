@@ -61,7 +61,7 @@ export default function Recommendations() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {
@@ -76,14 +76,14 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '700',
     lineHeight: 38,
   },
 
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: 8,

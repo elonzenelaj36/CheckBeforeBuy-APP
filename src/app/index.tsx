@@ -75,7 +75,7 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
   },
 
   inner: {
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   },
 
   logoSubtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 16,
     fontWeight: '400',
     marginTop: 10,
@@ -118,14 +118,14 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 42,
     fontWeight: '700',
     textAlign: 'center',
   },
 
   description: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 16,
     lineHeight: 25,
     textAlign: 'center',
@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
   },
 
   loginButtonText: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.5,

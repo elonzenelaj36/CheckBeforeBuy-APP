@@ -92,7 +92,7 @@ export default function ProductInfo() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {

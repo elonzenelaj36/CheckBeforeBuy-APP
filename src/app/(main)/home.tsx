@@ -263,7 +263,7 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.homeBackground,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {
@@ -294,14 +294,14 @@ const styles = StyleSheet.create({
   },
 
   eyebrow: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
   name: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 24,
     fontWeight: '700',
     marginTop: 4,
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
   /* ── Check Product tool ───────────────────────────────── */
 
   toolIntro: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     fontWeight: '600',
     marginTop: 24,
@@ -566,14 +566,14 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
   viewAll: {
-    color: Colors.homeAccentText,
+    color: Colors.lightAccentText,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
@@ -607,7 +607,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(143, 192, 255, 0.12)',
-    backgroundColor: 'rgba(34, 53, 92, 0.55)',
+    backgroundColor: '#D8E3F0',
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 8,
@@ -621,14 +621,14 @@ const styles = StyleSheet.create({
   },
 
   recentSectionTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextStrong,
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
 
   recentViewAll: {
-    color: Colors.homeAccentText,
+    color: Colors.lightAccentText,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.2,
@@ -640,13 +640,13 @@ const styles = StyleSheet.create({
   },
 
   recentEmptyTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextStrong,
     fontSize: 14,
     fontWeight: '600',
   },
 
   recentEmptyDescription: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextBody,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 6,
@@ -691,13 +691,13 @@ const styles = StyleSheet.create({
   },
 
   historyName: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextStrong,
     fontSize: 15,
     fontWeight: '600',
   },
 
   historyMeta: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextBody,
     fontSize: 11,
     marginTop: 5,
   },

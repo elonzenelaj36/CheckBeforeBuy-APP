@@ -113,6 +113,75 @@ export const Colors = {
   savedAccent: '#ACA3F2',
   savedAccentDim: '#241F3D',
   savedAccentText: '#D3CDFA',
+
+  // ── Light theme (Home, Check Product, Saved, My Home, Room) ───
+  // Additive only — the dark navy system above stays exactly as-is for
+  // every screen not explicitly migrated to these tokens (Profile,
+  // History, Search, Recommendations, the product-detail/visualization
+  // flow, etc).
+  //
+  // Depth ladder: same soft blue-gray family throughout, but each
+  // navigation depth gets a fractionally darker background, mirroring the
+  // dark theme's `background` → `backgroundElevated` idea above — just
+  // within a light palette instead of a dark one, so drilling in
+  // (Home → My Home → Room) still reads as going somewhere:
+  //   tier 0 (root/tab level)  — Home, Check Product, Saved
+  //   tier 1 (one level in)    — My Home hub
+  //   tier 2 (two levels in)   — Room / Room Detail / Add Room
+  //   tier 3 (three levels in) — Product Captured
+  //   tier 4 (four levels in)  — Visualisation
+  // Cards stay white and text stays dark navy at every tier — only the
+  // page background steps down, and only by a few points of lightness, so
+  // it stays "light + premium", never dark.
+  lightBackground: '#EAF0F7',
+  lightBackgroundElevated: '#E1E9F2',
+  lightBackgroundDeep: '#D7E1EC',
+  lightBackgroundDeeper: '#CDD9E6',
+  lightBackgroundDeepest: '#C4D0DD',
+
+  lightSurface: '#FFFFFF',
+  lightSurfaceRaised: '#F1F5F9',
+  lightBorder: '#E2E8F0',
+
+  lightTextPrimary: '#0F172A',
+  lightTextSecondary: '#64748B',
+  lightTextMuted: '#94A3B8',
+  // Stronger ladder for dense list areas (Recently Checked, History).
+  lightTextStrong: '#0B1220',
+  lightTextBody: '#334155',
+
+  // Home + Check Product identity — refined blue.
+  lightAccent: '#3B82F6',
+  lightAccentDim: '#DBEAFE',
+  lightAccentText: '#2563EB',
+
+  lightCyan: '#38BDF8',
+  lightCyanDim: '#E0F2FE',
+  lightCyanText: '#0369A1',
+
+  // My Home + Room + Add Room identity — soft aqua/mint-blue, kept from
+  // the dark theme's `myHome*` family, just re-tuned for light surfaces.
+  lightMyHomeAccent: '#14B8A6',
+  lightMyHomeAccentDim: '#D9F5F0',
+  lightMyHomeAccentText: '#0D9488',
+
+  // Saved identity — soft lavender/violet-blue, kept from the dark
+  // theme's `saved*` family, re-tuned for light surfaces.
+  lightSavedAccent: '#8B7FE8',
+  lightSavedAccentDim: '#EEECFB',
+  lightSavedAccentText: '#6D5FD1',
+
+  // Light-surface semantic banners — for standalone warning/danger/success
+  // cards that sit directly on a light page (not an overlay on a photo,
+  // where the existing dark-theme `warning*`/`danger*`/`success*` above
+  // already read fine as-is). Borders reuse `Colors.warning`/`Colors.danger`/
+  // `Colors.success` directly, which work unchanged on a light background.
+  lightWarningBg: '#FFFBEB',
+  lightWarningText: '#B45309',
+  lightDangerBg: '#FEF2F2',
+  lightDangerText: '#B91C1C',
+  lightSuccessBg: '#F0FDF4',
+  lightSuccessText: '#15803D',
 } as const;
 
 export type ColorKey = keyof typeof Colors;

@@ -94,7 +94,7 @@ export default function Search() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,

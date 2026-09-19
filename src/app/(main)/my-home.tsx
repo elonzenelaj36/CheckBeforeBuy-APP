@@ -238,7 +238,7 @@ export default function MyHome() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.myHomeBackground,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
   },
 
   eyebrow: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   },
 
   headerTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 18,
     fontWeight: '700',
     marginTop: 3,
@@ -295,14 +295,14 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
 
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: 10,
@@ -347,20 +347,20 @@ const styles = StyleSheet.create({
   },
 
   addRoomTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 17,
     fontWeight: '700',
   },
 
   addRoomDescription: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
   },
 
   addRoomArrow: {
-    color: Colors.myHomeAccentText,
+    color: Colors.lightMyHomeAccentText,
     fontSize: 20,
     fontWeight: '700',
   },
@@ -374,14 +374,14 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
 
   roomCount: {
-    color: Colors.textMuted,
+    color: Colors.lightTextMuted,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,

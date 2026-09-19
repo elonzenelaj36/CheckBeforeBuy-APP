@@ -381,7 +381,7 @@ export default function RoomDetail() {
         {/* Items detected in this room — clean / structured treatment */}
         <View style={styles.itemsSectionCard}>
           <View style={styles.itemsSectionHeader}>
-            <Text style={styles.sectionTitle}>ITEMS DETECTED ({userItems.length})</Text>
+            <Text style={[styles.sectionTitle, { color: Colors.textMuted }]}>ITEMS DETECTED ({userItems.length})</Text>
           </View>
 
           {analyzing ? (
@@ -436,7 +436,7 @@ export default function RoomDetail() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.myHomeBackground,
+    backgroundColor: Colors.lightBackground,
   },
   center: {
     flex: 1,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingText: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
   },
   content: {
@@ -522,13 +522,13 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
   roomNameTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 28,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
   roomNameType: {
-    color: Colors.myHomeAccentText,
+    color: Colors.lightMyHomeAccentText,
     fontSize: 13,
     fontWeight: '500',
     marginTop: 4,
@@ -541,13 +541,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
   actionText: {
-    color: Colors.myHomeAccentText,
+    color: Colors.lightMyHomeAccentText,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,

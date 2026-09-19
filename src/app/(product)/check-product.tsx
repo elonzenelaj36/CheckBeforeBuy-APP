@@ -266,7 +266,7 @@ export default function CheckProduct() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.checkBackground,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '800',
     lineHeight: 38,
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: 12,
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
   },
 
   pillSecondaryIcon: {
-    color: Colors.checkAccentText,
+    color: Colors.lightAccentText,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   },
 
   pillSecondaryText: {
-    color: Colors.checkAccentText,
+    color: Colors.lightAccentText,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.6,
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -518,13 +518,13 @@ const styles = StyleSheet.create({
   },
 
   infoTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 
   infoDescription: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,

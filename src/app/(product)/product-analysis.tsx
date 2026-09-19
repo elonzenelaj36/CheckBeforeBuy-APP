@@ -377,7 +377,7 @@ export default function ProductAnalysis() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
   },
 
   centerState: {
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
   },
 
   loadingText: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 17,
     fontWeight: '600',
     marginTop: 20,
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   },
 
   loadingSubtext: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     marginTop: 8,
     textAlign: 'center',

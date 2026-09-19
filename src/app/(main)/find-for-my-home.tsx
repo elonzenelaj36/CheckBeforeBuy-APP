@@ -231,7 +231,7 @@ function ProductRecommendationCard({ product }: { product: RecommendedProduct })
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundElevated,
+    backgroundColor: Colors.lightBackground,
   },
   content: {
     paddingHorizontal: 20,
@@ -243,19 +243,19 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '700',
     lineHeight: 38,
   },
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: 10,
   },
   label: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   hint: {
-    color: Colors.textMuted,
+    color: Colors.lightTextMuted,
     fontSize: 11,
     lineHeight: 16,
     marginTop: 8,
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   loadingHint: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 14,
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   locationText: {
-    color: Colors.textMuted,
+    color: Colors.lightTextMuted,
     fontSize: 11,
     marginTop: 4,
   },

@@ -158,7 +158,7 @@ export default function Saved() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.savedBackground,
+    backgroundColor: Colors.lightBackground,
   },
   content: {
     paddingHorizontal: 20,
@@ -188,19 +188,19 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
   eyebrow: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
   headerTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 25,
     fontWeight: '800',
     marginTop: 3,
   },
   count: {
-    color: Colors.savedAccentText,
+    color: Colors.lightSavedAccentText,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
@@ -210,13 +210,13 @@ const styles = StyleSheet.create({
     marginBottom: 26,
   },
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '800',
     lineHeight: 38,
   },
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: 8,

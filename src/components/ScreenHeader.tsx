@@ -29,6 +29,9 @@ type ScreenHeaderProps = {
    * Default: true
    */
   showBack?: boolean;
+  /** Optional text color overrides. Defaults to the standard header colors. */
+  titleColor?: string;
+  eyebrowColor?: string;
 };
 
 export default function ScreenHeader({
@@ -37,6 +40,8 @@ export default function ScreenHeader({
   onBack,
   rightElement,
   showBack = true,
+  titleColor,
+  eyebrowColor,
 }: ScreenHeaderProps) {
   const router = useRouter();
 
@@ -64,9 +69,9 @@ export default function ScreenHeader({
 
       <View style={styles.center}>
         {eyebrow ? (
-          <Text style={styles.eyebrow}>{eyebrow}</Text>
+          <Text style={[styles.eyebrow, eyebrowColor ? { color: eyebrowColor } : null]}>{eyebrow}</Text>
         ) : null}
-        <Text style={styles.title}>{title}</Text>
+        <Text style={[styles.title, titleColor ? { color: titleColor } : null]}>{title}</Text>
       </View>
 
       {rightElement ? (
@@ -111,7 +116,7 @@ const styles = StyleSheet.create({
   },
 
   eyebrow: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -119,7 +124,7 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 18,
     fontWeight: '700',
     marginTop: 3,

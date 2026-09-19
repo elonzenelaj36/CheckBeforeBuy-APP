@@ -11,6 +11,7 @@ export default function RootLayout() {
         screenOptions={{
           headerShown: false,
           animation: 'fade',
+          contentStyle: { backgroundColor: '#EAF0F7' },
         }}
       />
     </SafeAreaProvider>

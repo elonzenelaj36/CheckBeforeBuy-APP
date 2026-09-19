@@ -246,7 +246,7 @@ export default function AddRoom() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.myHomeBackground,
+    backgroundColor: Colors.lightBackground,
   },
   flex: {
     flex: 1,
@@ -261,18 +261,18 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '800',
   },
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 20,
     marginTop: 8,
   },
   label: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   analyzingHint: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',

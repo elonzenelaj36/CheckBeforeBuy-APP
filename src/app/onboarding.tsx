@@ -110,7 +110,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
     paddingHorizontal: 28,
     paddingBottom: 20,
   },
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   },
 
   step: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
@@ -148,13 +148,13 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '700',
   },
 
   description: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 15,
     lineHeight: 23,
     marginTop: 12,

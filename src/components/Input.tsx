@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,

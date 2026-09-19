@@ -83,7 +83,7 @@ export default function PriceHistory() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     marginTop: 24,
   },

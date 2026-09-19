@@ -182,7 +182,7 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
     paddingHorizontal: 28,
     paddingTop: 55,
     paddingBottom: 30,
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   },
 
   logoSubtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 13,
     fontWeight: '400',
     letterSpacing: 0.5,
@@ -248,13 +248,13 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 30,
     fontWeight: '700',
   },
 
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: 8,
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -315,12 +315,12 @@ const styles = StyleSheet.create({
   },
 
   loginText: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 13,
   },
 
   loginLink: {
-    color: Colors.accentText,
+    color: Colors.lightAccentText,
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 5,

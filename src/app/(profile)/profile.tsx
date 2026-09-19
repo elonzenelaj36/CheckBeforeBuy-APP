@@ -108,7 +108,7 @@ function MenuItem({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
   },
 
   content: {
@@ -134,14 +134,14 @@ const styles = StyleSheet.create({
   },
 
   name: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 24,
     fontWeight: '700',
     marginTop: 15,
   },
 
   email: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 13,
     marginTop: 5,
   },
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
   },
 
   logoutText: {
-    color: Colors.dangerText,
+    color: Colors.lightDangerText,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.3,

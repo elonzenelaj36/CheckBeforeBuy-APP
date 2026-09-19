@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,

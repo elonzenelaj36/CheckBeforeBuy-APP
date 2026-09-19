@@ -60,6 +60,8 @@ export default function History() {
         <ScreenHeader
           eyebrow="ACTIVITY"
           title="Check History"
+          titleColor={Colors.lightTextStrong}
+          eyebrowColor={Colors.lightTextBody}
           rightElement={
             historyItems.length > 0 ? (
               <TouchableOpacity onPress={handleClear}>
@@ -144,7 +146,7 @@ export default function History() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.homeBackground,
+    backgroundColor: Colors.lightBackground,
   },
   content: {
     paddingHorizontal: 20,
@@ -152,7 +154,7 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   clearText: {
-    color: Colors.dangerText,
+    color: Colors.lightDangerText,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -161,7 +163,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(143, 192, 255, 0.12)',
-    backgroundColor: 'rgba(34, 53, 92, 0.55)',
+    backgroundColor: '#D8E3F0',
     paddingHorizontal: 16,
     paddingVertical: 6,
   },
@@ -195,12 +197,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   name: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextStrong,
     fontSize: 15,
     fontWeight: '600',
   },
   date: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 11,
     marginTop: 4,
   },
@@ -221,7 +223,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   arrow: {
-    color: Colors.homeAccentText,
+    color: Colors.lightAccentText,
     fontSize: 18,
     marginRight: 6,
   },

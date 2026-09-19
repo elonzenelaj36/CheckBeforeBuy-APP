@@ -210,7 +210,7 @@ export default function VisualizationDetail() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundElevated,
+    backgroundColor: Colors.lightBackground,
   },
   content: {
     paddingHorizontal: 20,

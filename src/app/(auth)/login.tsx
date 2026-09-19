@@ -186,7 +186,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.lightBackground,
     paddingHorizontal: 28,
     paddingTop: 60,
     paddingBottom: 30,
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
 
   logoSubtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     fontWeight: '400',
     letterSpacing: 0.5,
@@ -224,13 +224,13 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 32,
     fontWeight: '700',
   },
 
   description: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: 10,
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
   },
 
   forgotText: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 13,
   },
 
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   },
 
   orText: {
-    color: Colors.textMuted,
+    color: Colors.lightTextMuted,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
@@ -341,12 +341,12 @@ const styles = StyleSheet.create({
   },
 
   signupText: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 13,
   },
 
   signupButton: {
-    color: Colors.accentText,
+    color: Colors.lightAccentText,
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 5,

@@ -330,17 +330,17 @@ export default function ProductCaptured() {
             </View>
 
             <View style={styles.actionText}>
-              <Text style={styles.actionTitle}>
+              <Text style={[styles.actionTitle, { color: Colors.textPrimary }]}>
                 Analyze this product
               </Text>
 
-              <Text style={styles.actionDescription}>
+              <Text style={[styles.actionDescription, { color: Colors.textSecondary }]}>
                 Check the price, specifications, and
                 whether it is worth buying.
               </Text>
             </View>
 
-            <Text style={styles.arrow}>
+            <Text style={[styles.arrow, { color: Colors.savedAccentText }]}>
               →
             </Text>
           </TouchableOpacity>
@@ -367,7 +367,7 @@ export default function ProductCaptured() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.savedBackground,
+    backgroundColor: Colors.lightBackground,
   },
 
   flex: {
@@ -386,13 +386,13 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 20,
     fontWeight: '600',
   },
 
   subtitle: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 13,
     lineHeight: 19,
     marginTop: 6,
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   },
 
   inputLabel: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -499,7 +499,7 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    color: Colors.textMuted,
+    color: Colors.lightTextSecondary,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
@@ -576,20 +576,20 @@ const styles = StyleSheet.create({
   },
 
   actionTitle: {
-    color: Colors.textPrimary,
+    color: Colors.lightTextPrimary,
     fontSize: 15,
     fontWeight: '700',
   },
 
   actionDescription: {
-    color: Colors.textSecondary,
+    color: Colors.lightTextSecondary,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
   },
 
   arrow: {
-    color: Colors.savedAccentText,
+    color: Colors.lightSavedAccentText,
     fontSize: 20,
     fontWeight: '700',
   },
