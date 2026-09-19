@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
+import BrandLogo from '@/components/BrandLogo';
 import { Colors } from '@/constants/colors';
 import { AuthUser, getCurrentUser } from '@/services/auth';
 import { CheckedProduct, getHistory } from '@/services/history';
@@ -55,6 +56,15 @@ export default function Home() {
               WELCOME BACK
             </Text>
             <Text style={styles.name}>{displayName}</Text>
+          </View>
+
+          <View style={styles.headerLogoWrap} pointerEvents="none">
+            <BrandLogo
+              minSize={28}
+              maxSize={36}
+              widthRatio={0.09}
+              style={styles.headerLogo}
+            />
           </View>
 
           <TouchableOpacity
@@ -266,6 +276,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    position: 'relative',
+  },
+
+  headerLogoWrap: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  headerLogo: {
+    marginBottom: 0,
   },
 
   eyebrow: {

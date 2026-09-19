@@ -16,6 +16,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
+import BrandLogo from '@/components/BrandLogo';
 import { Colors } from '@/constants/colors';
 
 const tutorialVideoSource = require('@/assets/videos/Check-video.mov');
@@ -105,7 +106,7 @@ export default function CheckProduct() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-    
+        <BrandLogo />
 
         {/* Intro */}
         <View style={styles.intro}>
