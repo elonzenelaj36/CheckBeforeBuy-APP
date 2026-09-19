@@ -238,7 +238,7 @@ export default function MyHome() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.lightBackground,
+    backgroundColor: '#d7f0ff',
   },
 
   content: {
@@ -310,10 +310,10 @@ const styles = StyleSheet.create({
   },
 
   addRoomCard: {
-    backgroundColor: 'rgba(94, 214, 196, 0.10)',
+    backgroundColor: 'rgba(24, 139, 122, 0.17)',
     borderRadius: 22,
     borderWidth: 1.5,
-    borderColor: 'rgba(94, 214, 196, 0.4)',
+    borderColor: 'rgba(63, 134, 124, 0.4)',
     padding: 18,
     minHeight: 110,
     flexDirection: 'row',
