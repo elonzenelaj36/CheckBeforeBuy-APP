@@ -1,5 +1,4 @@
 import React from 'react';
-
 import {
   Image,
   Pressable,
@@ -18,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
 import { Colors } from '@/constants/colors';
+import { AuthUser, getCurrentUser } from '@/services/auth';
 import { CheckedProduct, getHistory } from '@/services/history';
 
 export default function Home() {
@@ -26,10 +26,12 @@ export default function Home() {
   const [recentHistory, setRecentHistory] = React.useState<
     CheckedProduct[]
   >([]);
+  const [user, setUser] = React.useState<AuthUser | null>(null);
 
   const loadData = async () => {
     const history = await getHistory();
     setRecentHistory(history.slice(0, 3));
+    setUser(getCurrentUser());
   };
 
   useFocusEffect(
@@ -37,6 +39,8 @@ export default function Home() {
       loadData();
     }, [])
   );
+
+  const displayName = user?.name || 'there';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -50,7 +54,7 @@ export default function Home() {
             <Text style={styles.eyebrow}>
               WELCOME BACK
             </Text>
-            <Text style={styles.name}>Elon</Text>
+            <Text style={styles.name}>{displayName}</Text>
           </View>
 
           <TouchableOpacity
@@ -58,7 +62,9 @@ export default function Home() {
             onPress={() => router.push('/profile')}
             activeOpacity={0.8}
           >
-            <Text style={styles.profileLetter}>E</Text>
+            <Text style={styles.profileLetter}>
+              {displayName.charAt(0).toUpperCase()}
+            </Text>
           </TouchableOpacity>
         </View>
 

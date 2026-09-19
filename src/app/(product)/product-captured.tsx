@@ -218,23 +218,25 @@ export default function ProductCaptured() {
             </Text>
           </View>
 
-          {/* Product Image */}
+          {/* Product Image — the hero */}
 
-          {imageUri ? (
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.productImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.noImage}>
-              <Text style={styles.noImageText}>
-                Product photo unavailable
-              </Text>
-            </View>
-          )}
+          <View style={styles.imageOuter}>
+            {imageUri ? (
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.productImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.noImage}>
+                <Text style={styles.noImageText}>
+                  Product photo unavailable
+                </Text>
+              </View>
+            )}
+          </View>
 
-          {/* Name Input */}
+          {/* Name — the title of this item */}
 
           <Text style={styles.inputLabel}>
             PRODUCT NAME
@@ -250,11 +252,11 @@ export default function ProductCaptured() {
             returnKeyType="done"
           />
 
-          {/* Save / Update Button */}
+          {/* Save / Update — small + secondary when updating an existing item */}
 
           <TouchableOpacity
             style={[
-              styles.saveButton,
+              isHistoryItem ? styles.updateNameButton : styles.saveButton,
               (isSaving || isUpdating) &&
                 styles.saveButtonDisabled,
             ]}
@@ -266,7 +268,13 @@ export default function ProductCaptured() {
             disabled={isSaving || isUpdating}
             activeOpacity={0.85}
           >
-            <Text style={styles.saveButtonText}>
+            <Text
+              style={
+                isHistoryItem
+                  ? styles.updateNameButtonText
+                  : styles.saveButtonText
+              }
+            >
               {isHistoryItem
                 ? (isUpdating
                     ? 'UPDATING...'
@@ -284,13 +292,13 @@ export default function ProductCaptured() {
           </Text>
 
           <TouchableOpacity
-            style={styles.actionCard}
+            style={styles.generateCard}
             onPress={visualizeProduct}
-            activeOpacity={0.85}
+            activeOpacity={0.88}
           >
-            <View style={styles.actionIconCircle}>
-              <Text style={styles.actionIcon}>
-                🏠
+            <View style={styles.generateIconCircle}>
+              <Text style={styles.generateIcon}>
+                ⌂
               </Text>
             </View>
 
@@ -311,13 +319,13 @@ export default function ProductCaptured() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.actionCard}
+            style={styles.analyzeCard}
             onPress={analyzeProduct}
-            activeOpacity={0.85}
+            activeOpacity={0.88}
           >
-            <View style={styles.actionIconCircle}>
-              <Text style={styles.actionIcon}>
-                📊
+            <View style={styles.analyzeIconCircle}>
+              <Text style={styles.analyzeIcon}>
+                ◎
               </Text>
             </View>
 
@@ -341,7 +349,7 @@ export default function ProductCaptured() {
 
           <View style={styles.infoCard}>
             <Text style={styles.infoTitle}>
-              💡 NEXT STEP
+              NEXT STEP
             </Text>
 
             <Text style={styles.infoText}>
@@ -359,7 +367,7 @@ export default function ProductCaptured() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.savedBackground,
   },
 
   flex: {
@@ -373,38 +381,48 @@ const styles = StyleSheet.create({
   },
 
   intro: {
-    marginTop: 36,
-    marginBottom: 22,
+    marginTop: 30,
+    marginBottom: 20,
   },
 
   title: {
     color: Colors.textPrimary,
-    fontSize: 32,
-    fontWeight: '700',
-    lineHeight: 38,
+    fontSize: 20,
+    fontWeight: '600',
   },
 
   subtitle: {
     color: Colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 10,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+  },
+
+  imageOuter: {
+    borderRadius: 28,
+    padding: 3,
+    backgroundColor: 'rgba(172, 163, 242, 0.28)',
+    shadowColor: Colors.savedAccent,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 6,
   },
 
   productImage: {
     width: '100%',
-    height: 280,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
+    height: 300,
+    borderRadius: 25,
+    backgroundColor: Colors.savedSurface,
   },
 
   noImage: {
     width: '100%',
-    height: 280,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
+    height: 300,
+    borderRadius: 25,
+    backgroundColor: Colors.savedSurface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.savedBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -419,28 +437,34 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginTop: 22,
+    marginTop: 24,
     marginBottom: 10,
   },
 
   input: {
-    height: 54,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
+    height: 58,
+    backgroundColor: 'rgba(40, 55, 90, 0.5)',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.savedBorder,
     paddingHorizontal: 16,
     color: Colors.textPrimary,
-    fontSize: 14,
+    fontSize: 20,
+    fontWeight: '700',
   },
 
   saveButton: {
     height: 56,
-    backgroundColor: Colors.cardHighlight,
-    borderRadius: 14,
+    backgroundColor: Colors.savedAccent,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
+    marginTop: 14,
+    shadowColor: Colors.savedAccent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 6,
   },
 
   saveButtonDisabled: {
@@ -448,10 +472,30 @@ const styles = StyleSheet.create({
   },
 
   saveButtonText: {
-    color: Colors.cardHighlightText,
+    color: Colors.textInverse,
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 1,
+  },
+
+  updateNameButton: {
+    alignSelf: 'center',
+    height: 30,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(172, 163, 242, 0.12)',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(172, 163, 242, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+
+  updateNameButtonText: {
+    color: Colors.savedAccentText,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
 
   sectionTitle: {
@@ -459,36 +503,72 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginTop: 30,
+    marginTop: 28,
     marginBottom: 12,
   },
 
-  actionCard: {
+  generateCard: {
     minHeight: 84,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    backgroundColor: 'rgba(172, 163, 242, 0.10)',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(172, 163, 242, 0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    gap: 12,
+    marginBottom: 12,
+    gap: 14,
+    shadowColor: Colors.savedAccent,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 4,
   },
 
-  actionIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.surface2,
+  generateIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: Colors.savedAccent,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
 
-  actionIcon: {
-    fontSize: 20,
+  generateIcon: {
+    color: Colors.textInverse,
+    fontSize: 21,
+    fontWeight: '700',
+  },
+
+  analyzeCard: {
+    minHeight: 84,
+    backgroundColor: Colors.savedSurface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.savedBorder,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 14,
+  },
+
+  analyzeIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: Colors.savedAccentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  analyzeIcon: {
+    color: Colors.savedAccentText,
+    fontSize: 19,
   },
 
   actionText: {
@@ -497,8 +577,8 @@ const styles = StyleSheet.create({
 
   actionTitle: {
     color: Colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   actionDescription: {
@@ -509,21 +589,22 @@ const styles = StyleSheet.create({
   },
 
   arrow: {
-    color: Colors.accent,
+    color: Colors.savedAccentText,
     fontSize: 20,
+    fontWeight: '700',
   },
 
   infoCard: {
     marginTop: 20,
     padding: 16,
-    backgroundColor: Colors.accentDim,
+    backgroundColor: Colors.savedAccentDim,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.savedBorder,
   },
 
   infoTitle: {
-    color: Colors.accentText,
+    color: Colors.savedAccentText,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.2,
