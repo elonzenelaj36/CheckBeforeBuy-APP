@@ -48,6 +48,12 @@ const env = {
     apiKey: required('VISION_API_KEY', ''),
   },
 
+  search: {
+    // Web product search (SerpApi) — see webSearchService.js. Backend-only.
+    provider: required('SEARCH_PROVIDER', 'serpapi'),
+    apiKey: required('SEARCH_API_KEY', ''),
+  },
+
   imageAi: {
     provider: required('IMAGE_AI_PROVIDER', ''),
     apiKey: required('IMAGE_AI_API_KEY', ''),
