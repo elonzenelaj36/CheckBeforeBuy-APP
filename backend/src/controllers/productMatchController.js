@@ -37,7 +37,12 @@ const findMatchesForCheck = asyncHandler(async (req, res) => {
   if (webSearch.isConfigured()) {
     const row = rows[0];
     let city = req.body?.city ? String(req.body.city).trim().slice(0, 60) : null;
-    if (!city) city = (await getApproximateLocationFromIp(getClientIp(req)))?.city || null;
+    let country = null;
+    if (!city) {
+      const geo = await getApproximateLocationFromIp(getClientIp(req));
+      city = geo?.city || null;
+      country = geo?.country || null;
+    }
 
     try {
       return res.json(
@@ -47,6 +52,7 @@ const findMatchesForCheck = asyncHandler(async (req, res) => {
           category: row.detected_category,
           confidence: row.confidence !== null ? Number(row.confidence) : null,
           city,
+          country,
         })
       );
     } catch (err) {

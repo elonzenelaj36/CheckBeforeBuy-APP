@@ -89,7 +89,12 @@ const createProductCheck = asyncHandler(async (req, res) => {
         // Coarse city only: one the client sent, else best-effort IP lookup
         // (null on private/dev IPs). Never stored; only a word in the query.
         let city = req.body.city ? String(req.body.city).trim().slice(0, 60) : null;
-        if (!city) city = (await getApproximateLocationFromIp(getClientIp(req)))?.city || null;
+        let country = req.body.country ? String(req.body.country).trim().slice(0, 60) : null;
+        if (!city) {
+          const geo = await getApproximateLocationFromIp(getClientIp(req));
+          city = geo?.city || null;
+          country = geo?.country || country;
+        }
 
         const found = await webSearch.searchProductWeb({
           name: finalProductName,
@@ -97,6 +102,7 @@ const createProductCheck = asyncHandler(async (req, res) => {
           category: product.category,
           confidence: analysis.confidence,
           city,
+          country,
           characteristics,
         });
         matches = found.matches;

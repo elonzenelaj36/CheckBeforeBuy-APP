@@ -5,17 +5,20 @@
  * search query, asks SerpApi for real Google results, and returns links to
  * the ORIGINAL pages — nothing is scraped, proxied, stored or cataloged.
  *
- * Location: search widens step by step (city -> Kosovo -> plain web) and
- * stops widening once enough LOCAL results were found. Geography is
- * expressed only as words in the query (city/country name); no coordinates
- * or IP are ever sent to SerpApi. SerpApi has no Kosovo `gl` code, and its
- * `location` parameter was tested and gave worse, unstable results, so
- * neither is used. What does work: Albanian product terms + "Kosovë" — they
- * surface real Kosovo retailers that English queries never reach.
+ * Location (progressive, never mixed early): CITY -> COUNTRY (Kosovo) ->
+ * REGION (Albania, North Macedonia, Montenegro, one at a time) -> broad.
+ * A level is searched only if the previous ones did not yield enough
+ * useful results, and results from levels beyond the one we stopped at are
+ * not returned. Geography is expressed as words in the query only (city /
+ * country name); no coordinates or IP go to SerpApi. SerpApi's `location`
+ * parameter was tested (Kosovo, Prizren District) and returned unrelated or
+ * US results, and there is no Kosovo `gl` code, so neither is used.
  *
- * Each result gets a `locality` (city | kosovo | regional | unknown |
- * international) based only on evidence in the result itself (domain
- * country code, title/snippet text). Results are ordered local-first.
+ * Each result gets a `locality` from evidence in the result itself
+ * (title, snippet, URL path, structured location):
+ *   city | kosovo (= COUNTRY) | regional | international | unknown
+ * A TLD alone never decides locality, and a query containing "Prizren"
+ * never makes a result "from Prizren".
  *
  * Prices are only returned when SerpApi supplies one for that result
  * (shopping results / rich-snippet offers); otherwise null.
@@ -27,8 +30,9 @@ const { extractPrice } = require('./priceExtraction');
 const SERPAPI_ENDPOINT = 'https://serpapi.com/search.json';
 const TIMEOUT_MS = 15000;
 const MAX_RESULTS = 10;
-const MIN_LOCAL_RESULTS = 3;
-const MIN_PRICED_RESULTS = 2;
+const ENOUGH_RESULTS = 3; // useful results at a level that make widening unnecessary
+const MAX_SEARCHES = 6; // SerpApi calls per analysis
+const BROAD_CAP = 6; // total list size once the broad fallback was needed
 const STRONG_CONFIDENCE = 0.7;
 
 // Aggregators that rarely give a direct product page.
@@ -117,21 +121,26 @@ function albanianTerm(base) {
 const GEO_WORDS = /(?<!\p{L})(kosovo|kosova|kosov[eë]|prizren|prishtina|prishtin[eë]|pristina|peja|pej[eë]|gjakova|gjakov[eë]|ferizaj|gjilan|mitrovica|mitrovic[eë])(?!\p{L})/iu;
 
 /**
- * Ordered search attempts, most local first. Each step is a wider net; the
- * caller stops once enough local results were found.
+ * Geographic levels, searched in this order and only as far as needed.
+ * Each level has one or two queries; the product query itself is never
+ * rewritten — only a place name is appended. An Albanian-language variant of
+ * the same level is tried second, because English queries mostly surface
+ * foreign shops while Albanian ones reach Kosovo/Albanian retailers.
  */
-function buildQueryPlan(base, city, brand) {
-  if (GEO_WORDS.test(base)) return [{ scope: 'as-is', q: base }];
+function buildLevels(base, city, brand) {
+  if (GEO_WORDS.test(base)) return [{ id: 'country', queries: [{ q: base }] }]; // query already names a place
   const sq = albanianTerm(base);
   const sqQuery = sq ? `${brand && base.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ` : ''}${sq}` : null;
+  const variant = (place, sqPlace) => [{ q: `${base} ${place}` }, ...(sqQuery ? [{ q: `${sqQuery} ${sqPlace}`, hl: 'sq' }] : [])];
 
-  const plan = [];
-  if (city && sqQuery) plan.push({ scope: 'city', q: `${sqQuery} ${city}`, hl: 'sq' });
-  if (sqQuery) plan.push({ scope: 'kosovo', q: `${sqQuery} Kosovë`, hl: 'sq' });
-  if (city && !sqQuery) plan.push({ scope: 'city', q: `${base} ${city} Kosovo` });
-  plan.push({ scope: 'kosovo', q: `${base} Kosovo` });
-  plan.push({ scope: 'web', q: base });
-  return plan;
+  const levels = [];
+  if (city) levels.push({ id: 'city', queries: variant(city, city) });
+  levels.push({ id: 'country', queries: variant('Kosovo', 'Kosovë') });
+  levels.push({ id: 'albania', queries: variant('Albania', 'Shqipëri') });
+  levels.push({ id: 'north-macedonia', queries: [{ q: `${base} North Macedonia` }] });
+  levels.push({ id: 'montenegro', queries: [{ q: `${base} Montenegro` }] });
+  levels.push({ id: 'broad', queries: [{ q: base }] });
+  return levels;
 }
 
 // ── Locality evidence ──────────────────────────────────────────────────────
@@ -145,15 +154,36 @@ const FOREIGN_TLDS = /\.(ae|sa|de|uk|us|fr|it|es|nl|be|at|ch|pl|cz|ro|bg|gr|tr|g
 const ALBANIAN_MARKERS = /(karrig|tavolin|divan|shtrat|dyshek|[cç]mim|blej|shitje|shpallje|porosit|mobilje|shtëpi|shtepi|zyr[eë]|kolltuk|dollap|televizor|\/sq(\/|$|\?))/i;
 const REGIONAL_NAMES = /(?<!\p{L})(shqip[eë]ri|albania|tirana|tiran[eë]|durr[eë]s|shkup|skopje|maqedoni|north macedonia|tetovo|podgorica|mali i zi|montenegro)(?!\p{L})/iu;
 
+function cityRegex(city) {
+  return new RegExp(`(?<!\\p{L})${city.replace(/[^\p{L}0-9 ]/gu, '')}(?!\\p{L})`, 'iu');
+}
+
+function safeDecode(url) {
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Evidence-based locality. Evidence sources: title, snippet, structured
+ * location, and the result's own URL (host/path). A TLD by itself is not
+ * evidence of where a store is: .al/.mk/.me only count together with a
+ * second signal; only clearly foreign country-code TLDs push a result down
+ * to "international" (which can only lower its ranking).
+ */
 function localityOf({ url, title, snippet, location }, city) {
   const host = hostnameFromUrl(url) || '';
-  const text = `${title || ''} ${snippet || ''} ${location || ''}`;
+  const text = `${title || ''} ${snippet || ''} ${location || ''} ${safeDecode(url || '')}`;
 
-  if (city && new RegExp(`(?<!\\p{L})${city.replace(/[^\p{L}0-9 ]/gu, '')}(?!\\p{L})`, 'iu').test(text)) return 'city';
-  if (KOSOVO_TLDS.test(host) || KOSOVO_HOST_HINT.test(host) || GEO_WORDS.test(text)) return 'kosovo';
-  if (REGIONAL_TLDS.test(host) || REGIONAL_NAMES.test(text) || ALBANIAN_MARKERS.test(`${text} ${url}`)) return 'regional';
+  if (city && cityRegex(city).test(text)) return 'city';
+  if (KOSOVO_TLDS.test(host) || KOSOVO_HOST_HINT.test(host) || GEO_WORDS.test(text) || /\+383/.test(text)) return 'kosovo';
+  const regionalName = REGIONAL_NAMES.test(text);
+  const weakRegional = REGIONAL_TLDS.test(host) && (regionalName || ALBANIAN_MARKERS.test(text));
+  if (regionalName || weakRegional) return 'regional';
   if (FOREIGN_TLDS.test(host)) return 'international';
-  return 'unknown';
+  return 'unknown'; // includes Albanian-language pages with no stated location
 }
 
 // Words that describe a kind of product rather than a specific model.
@@ -301,11 +331,11 @@ function normalize(body, product, city) {
  * @param {string[]} [params.characteristics] - short facts from the photo analysis (material, features)
  * @param {number} [params.deadlineMs] - stop starting new searches after this long
  */
-async function searchProductWeb({ name, brand, category, confidence, city, characteristics = [], deadlineMs = 20000 }) {
+async function searchProductWeb({ name, brand, category, confidence, city, country, characteristics = [], deadlineMs = 25000 }) {
   const product = { name, brand, category, confidence };
   const base = buildBaseQuery(product);
   if (!base) {
-    return { isMock: false, provider: 'serpapi', query: null, matches: [] };
+    return { isMock: false, provider: 'serpapi', query: null, matches: [], levels: [] };
   }
 
   // Add up to two short characteristic words (e.g. "mesh", "headrest") the
@@ -320,60 +350,115 @@ async function searchProductWeb({ name, brand, category, confidence, city, chara
   const typeWords = productTypeWords(name, category);
   const startedAt = Date.now();
 
-  const LOCAL = new Set(['city', 'kosovo']);
+  // Kosovo is the default market. A city from a different country is not
+  // usable for the city step, and we never invent a country.
+  const userCity = city && (!country || /kosov/i.test(country)) ? city : null;
+
   const seen = new Set();
-  const matches = [];
-  const scopesUsed = [];
+  const pool = [];
+  const levelLog = [];
+  let searches = 0;
   let lastError = null;
+  let reached = null;
+  let stop = false;
 
-  for (const step of buildQueryPlan(enriched, city, brand)) {
-    if (Date.now() - startedAt > deadlineMs) {
-      console.warn('[webSearch] time budget reached; not starting more searches');
-      break;
-    }
-    let body;
-    try {
-      body = await callSerpApi(step.q, step.hl);
-    } catch (err) {
-      console.error(`[webSearch] "${step.scope}" search failed:`, err.message);
-      lastError = err;
-      if (err.fatal) break;
-      continue;
-    }
-    scopesUsed.push(step.scope);
+  const count = (...localities) => pool.filter((m) => localities.includes(m.locality)).length;
+  const enough = (levelId) => {
+    if (levelId === 'city') return count('city') >= ENOUGH_RESULTS;
+    if (levelId === 'country') return count('city', 'kosovo') >= ENOUGH_RESULTS;
+    if (levelId === 'broad') return true;
+    return count('city', 'kosovo', 'regional') >= ENOUGH_RESULTS;
+  };
 
-    for (const m of normalize(body, product, city)) {
-      const key = m.url.replace(/[#?].*$/, '');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      matches.push({ ...m, searchScope: step.scope });
+  for (const level of buildLevels(enriched, userCity, brand)) {
+    if (stop) break;
+    const entry = { level: level.id, queries: [], foundAtLevel: 0 };
+    levelLog.push(entry);
+
+    for (const step of level.queries) {
+      if (searches >= MAX_SEARCHES || Date.now() - startedAt > deadlineMs) {
+        console.warn('[webSearch] search budget reached; not widening further');
+        stop = true;
+        break;
+      }
+      let body;
+      try {
+        searches += 1;
+        body = await callSerpApi(step.q, step.hl);
+      } catch (err) {
+        console.error(`[webSearch] "${level.id}" search failed:`, err.message);
+        lastError = err;
+        if (err.fatal) {
+          stop = true;
+          break;
+        }
+        continue;
+      }
+      entry.queries.push(step.q);
+      reached = level.id; // a level counts as reached only once one of its searches actually ran
+
+      for (const m of normalize(body, product, userCity)) {
+        const key = m.url.replace(/[#?].*$/, '');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // Only relevant products enter the pool, so counting them is meaningful.
+        if (m.matchType === 'general' || !isRelevantResult(m, typeWords)) continue;
+        pool.push({ ...m, searchScope: level.id });
+        entry.foundAtLevel += 1;
+      }
+      if (enough(level.id)) {
+        stop = true; // enough at this level: do not widen
+        break;
+      }
     }
-    // Enough local results AND enough of them with a usable price to compare against.
-    const local = matches.filter((m) => LOCAL.has(m.locality));
-    const priced = matches.filter((m) => m.price !== null && m.priceConfidence !== 'none').length;
-    if (local.length >= MIN_LOCAL_RESULTS && priced >= MIN_PRICED_RESULTS) break;
   }
 
-  if (matches.length === 0 && lastError) throw lastError;
+  if (pool.length === 0 && lastError) throw lastError;
 
-  // Local first; within a locality, better product match first. Results
-  // whose title/snippet barely correspond to the product ("general") are
-  // dropped entirely — a short list of useful results beats a padded one.
+  // Return only what belongs to the levels actually needed: results of a
+  // wider level than the one we stopped at are never mixed in.
+  const ALLOWED = {
+    city: ['city'],
+    country: ['city', 'kosovo'],
+    albania: ['city', 'kosovo', 'regional'],
+    'north-macedonia': ['city', 'kosovo', 'regional'],
+    montenegro: ['city', 'kosovo', 'regional'],
+    broad: ['city', 'kosovo', 'regional', 'unknown', 'international'],
+  };
+  const allowed = new Set(ALLOWED[reached] || ALLOWED.broad);
+  const confident = pool.filter((m) => allowed.has(m.locality));
+  // Results whose location can't be established are shown (as "unknown")
+  // only while there are too few confidently located ones.
+  const levelOrder = ['city', 'country', 'albania', 'north-macedonia', 'montenegro', 'broad'];
+  const unknown =
+    confident.length < ENOUGH_RESULTS && reached !== 'broad'
+      ? pool
+          .filter((m) => m.locality === 'unknown')
+          .sort((a, b) => levelOrder.indexOf(a.searchScope) - levelOrder.indexOf(b.searchScope))
+          .slice(0, ENOUGH_RESULTS - confident.length) // fill only up to the minimum, never flood
+      : [];
+
   const localityRank = { city: 0, kosovo: 1, regional: 2, unknown: 3, international: 4 };
   const matchRank = { strong: 0, similar: 1, general: 2 };
-  const useful = matches.filter((m) => m.matchType !== 'general' && isRelevantResult(m, typeWords));
-  useful.sort((a, b) => localityRank[a.locality] - localityRank[b.locality] || matchRank[a.matchType] - matchRank[b.matchType]);
-  matches.length = 0;
-  matches.push(...useful);
+  let final = [...confident, ...unknown].sort(
+    (a, b) => localityRank[a.locality] - localityRank[b.locality] || matchRank[a.matchType] - matchRank[b.matchType]
+  );
+  if (reached === 'broad') final = final.slice(0, BROAD_CAP);
 
-  console.log(`[webSearch] "${base}" -> ${matches.length} results [${['city','kosovo','regional','unknown','international'].map((l) => `${l}:${matches.filter((m) => m.locality === l).length}`).join(' ')}] (scopes: ${scopesUsed.join(', ') || 'none'})`);
+  console.log(
+    `[webSearch] "${enriched}" city=${userCity || '-'} stopped at "${reached}" after ${searches} search(es) -> ${final.length} results [` +
+      ['city', 'kosovo', 'regional', 'unknown', 'international'].map((l) => `${l}:${final.filter((m) => m.locality === l).length}`).join(' ') +
+      ']'
+  );
 
   return {
     isMock: false,
     provider: 'serpapi',
     query: enriched,
-    matches: matches.slice(0, MAX_RESULTS),
+    matches: final.slice(0, MAX_RESULTS),
+    levels: levelLog.filter((l) => l.queries.length > 0),
+    stoppedAt: reached,
   };
 }
 
-module.exports = { isConfigured, searchProductWeb, buildBaseQuery, buildQueryPlan };
+module.exports = { isConfigured, searchProductWeb, buildBaseQuery, buildLevels, localityOf };
