@@ -26,6 +26,19 @@ function formatMoney(amount: number, currency: string | null): string {
   return !currency || currency === 'EUR' ? `€${value}` : `${value} ${currency}`;
 }
 
+function priceLabel(item: ProductAlternative): string {
+  if (item.price !== null) {
+    return item.originalPrice !== null
+      ? `${formatMoney(item.price, item.currency)} (was ${formatMoney(item.originalPrice, item.currency)})`
+      : formatMoney(item.price, item.currency);
+  }
+  if (item.priceMin !== null && item.priceMax !== null) {
+    return `${formatMoney(item.priceMin, item.currency)} – ${formatMoney(item.priceMax, item.currency)}`;
+  }
+  if (item.variantDependent) return 'Price varies by size/variant';
+  return 'Price unavailable';
+}
+
 function AlternativeCard({ item }: { item: ProductAlternative }) {
   return (
     <View style={styles.matchRow}>
@@ -33,11 +46,7 @@ function AlternativeCard({ item }: { item: ProductAlternative }) {
         {[item.source, item.localityLabel].filter(Boolean).join(' · ')}
       </Text>
       {item.title && <Text style={styles.matchTitle}>{item.title}</Text>}
-      <Text style={styles.priceRange}>
-        {item.price !== null
-          ? `Listed price: ${formatMoney(item.price, item.currency)}`
-          : 'Price not listed'}
-      </Text>
+      <Text style={styles.priceRange}>{priceLabel(item)}</Text>
       <Text style={styles.text}>{item.reason}</Text>
       <TouchableOpacity onPress={() => Linking.openURL(item.url)}>
         <Text style={styles.matchLink}>VIEW PRODUCT →</Text>
@@ -209,6 +218,20 @@ export default function ProductAnalysis() {
             </View>
 
             <Text style={styles.text}>{comparison.summary}</Text>
+
+            {comparison.highlight && (
+              <View style={{ marginTop: 10 }}>
+                <Text style={styles.text}>
+                  Your price: {formatMoney(comparison.highlight.userPrice, comparison.highlight.currency)}
+                </Text>
+                <Text style={styles.text}>
+                  Similar option: {formatMoney(comparison.highlight.similarPrice, comparison.highlight.currency)}
+                </Text>
+                <Text style={styles.text}>
+                  Potential difference: {formatMoney(comparison.highlight.difference, comparison.highlight.currency)}
+                </Text>
+              </View>
+            )}
 
             {comparison.reasoning.length > 0 && (
               <>

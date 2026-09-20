@@ -22,11 +22,13 @@
  */
 
 const env = require('../config/env');
+const { extractPrice } = require('./priceExtraction');
 
 const SERPAPI_ENDPOINT = 'https://serpapi.com/search.json';
 const TIMEOUT_MS = 15000;
 const MAX_RESULTS = 10;
 const MIN_LOCAL_RESULTS = 3;
+const MIN_PRICED_RESULTS = 2;
 const STRONG_CONFIDENCE = 0.7;
 
 // Aggregators that rarely give a direct product page.
@@ -154,64 +156,6 @@ function localityOf({ url, title, snippet, location }, city) {
   return 'unknown';
 }
 
-// ── Price extraction (only clear prices attached to the result itself) ──────
-const CURRENCY_SYMBOLS = { '€': 'EUR', '$': 'USD', '£': 'GBP' };
-const CURRENCY_CODES = ['EUR', 'USD', 'GBP', 'CHF', 'MKD', 'ALL'];
-
-function parseAmount(raw) {
-  let t = String(raw).replace(/\s/g, '');
-  const lastComma = t.lastIndexOf(',');
-  const lastDot = t.lastIndexOf('.');
-  if (lastComma > -1 && lastDot > -1) {
-    // both present: the later one is the decimal separator
-    t = lastComma > lastDot ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
-  } else if (lastComma > -1) {
-    t = /,\d{1,2}$/.test(t) ? t.replace(',', '.') : t.replace(/,/g, '');
-  } else if (lastDot > -1 && /\.\d{3}$/.test(t)) {
-    t = t.replace(/\./g, '');
-  }
-  const n = Number(t);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-const NUM = '(\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)';
-const PRICE_RE = new RegExp(
-  `([€$£])\\s?${NUM}|${NUM}\\s?([€$£]|(?:${CURRENCY_CODES.join('|')})\\b)|\\b(${CURRENCY_CODES.join('|')})\\s?${NUM}`,
-  'gi'
-);
-
-/**
- * A price is returned only when the result's own title/snippet contains
- * exactly ONE distinct amount with a currency marker — so it can be reliably
- * tied to this result. Anything ambiguous (ranges, "from X", several
- * prices, "was/now") yields null.
- */
-function priceFromText(text) {
-  if (!text) return { price: null, currency: null };
-  const found = new Map();
-  for (const m of text.matchAll(PRICE_RE)) {
-    const marker = (m[1] || m[4] || m[6] || '').toUpperCase();
-    const amount = parseAmount(m[2] || m[3] || m[5] || m[7] || '');
-    const currency = CURRENCY_SYMBOLS[marker] || marker;
-    if (amount && currency) found.set(`${currency}${amount}`, { price: amount, currency });
-  }
-  return found.size === 1 ? [...found.values()][0] : { price: null, currency: null };
-}
-
-function priceFromOffer(item) {
-  // Only trust prices SerpApi returned as structured data on that result.
-  const offer = item.rich_snippet?.top?.detected_extensions?.price != null
-    ? {
-        value: item.rich_snippet.top.detected_extensions.price,
-        currency: item.rich_snippet.top.detected_extensions.currency || null,
-      }
-    : null;
-  if (offer && Number.isFinite(Number(offer.value))) {
-    return { price: Number(offer.value), currency: offer.currency };
-  }
-  return { price: null, currency: null };
-}
-
 // Words that describe a kind of product rather than a specific model.
 const GENERIC_WORDS = new Set([
   'black', 'white', 'grey', 'gray', 'brown', 'blue', 'red', 'green', 'beige', 'silver', 'gold', 'pink',
@@ -290,6 +234,18 @@ async function callSerpApi(q, hl = 'en') {
   return body;
 }
 
+function debugResult(item, price) {
+  if (!process.env.SEARCH_DEBUG) return;
+  console.log(
+    `[search] ${item.source} | ${(item.title || '').slice(0, 60)}\n` +
+      `[search]   url: ${item.link}\n` +
+      `[search]   rich_snippet: ${JSON.stringify(item.rich_snippet || null)}\n` +
+      `[search]   snippet: ${(item.snippet || '').slice(0, 160)}\n` +
+      `[search]   -> price=${price.price} orig=${price.originalPrice} range=${price.priceMin}-${price.priceMax} ${price.currency} ` +
+      `variant=${price.variantDependent} src=${price.priceSource} conf=${price.priceConfidence}`
+  );
+}
+
 function normalize(body, product, city) {
   const out = [];
 
@@ -297,14 +253,13 @@ function normalize(body, product, city) {
   for (const item of body.shopping_results || []) {
     const url = item.product_link || item.link;
     if (!isHttpUrl(url)) continue;
+    const price = extractPrice(item);
     out.push({
       store: item.source || hostnameFromUrl(url),
       pageTitle: item.title || null,
       url,
       snippet: null,
-      ...(Number.isFinite(Number(item.extracted_price))
-        ? { price: Number(item.extracted_price), currency: priceFromText(item.price).currency } // currency only if the display string states it
-        : { price: null, currency: null }),
+      ...price,
       priceText: item.price || null,
       imageUrl: item.thumbnail || null,
       location: item.location || null,
@@ -317,18 +272,15 @@ function normalize(body, product, city) {
     if (!isHttpUrl(item.link)) continue;
     const host = hostnameFromUrl(item.link);
     if (!host || SKIPPED_DOMAINS.test(host)) continue;
-    const structured = priceFromOffer(item);
-    const { price, currency } =
-      structured.price !== null ? structured : priceFromText(`${item.title || ''} ${item.snippet || ''}`);
+    const price = extractPrice(item);
+    debugResult(item, price);
     out.push({
       store: item.source || host,
       pageTitle: item.title || null,
       url: item.link,
       snippet: item.snippet || null,
-      price,
-      currency,
+      ...price,
       priceText: null,
-      priceSource: price === null ? null : structured.price !== null ? 'structured' : 'snippet',
       imageUrl: item.thumbnail || null,
       location: null,
       matchType: classifyMatch(item.title, item.snippet, product),
@@ -396,7 +348,10 @@ async function searchProductWeb({ name, brand, category, confidence, city, chara
       seen.add(key);
       matches.push({ ...m, searchScope: step.scope });
     }
-    if (matches.filter((m) => LOCAL.has(m.locality)).length >= MIN_LOCAL_RESULTS) break; // enough local results
+    // Enough local results AND enough of them with a usable price to compare against.
+    const local = matches.filter((m) => LOCAL.has(m.locality));
+    const priced = matches.filter((m) => m.price !== null && m.priceConfidence !== 'none').length;
+    if (local.length >= MIN_LOCAL_RESULTS && priced >= MIN_PRICED_RESULTS) break;
   }
 
   if (matches.length === 0 && lastError) throw lastError;
@@ -421,4 +376,4 @@ async function searchProductWeb({ name, brand, category, confidence, city, chara
   };
 }
 
-module.exports = { isConfigured, searchProductWeb, buildBaseQuery, buildQueryPlan, priceFromText };
+module.exports = { isConfigured, searchProductWeb, buildBaseQuery, buildQueryPlan };

@@ -55,14 +55,25 @@ function confirmedCharacteristics(characteristics, alt) {
 
 function describeAlternative(rawAlt, userPrice, currency, characteristics) {
   const alt = { ...rawAlt, price: rawAlt.price ?? null, currency: rawAlt.currency ?? null };
-  const comparablePrice = alt.price !== null && userPrice !== null && (alt.currency || null) === currency;
+  // Only an exact, same-currency price with at least medium confidence is comparable.
+  const comparablePrice =
+    alt.price !== null &&
+    userPrice !== null &&
+    alt.currency === currency &&
+    (alt.priceConfidence === 'high' || alt.priceConfidence === 'medium');
   const features = confirmedCharacteristics(characteristics, alt);
 
   const out = {
     title: alt.pageTitle,
     price: alt.price,
-    currency: alt.price !== null ? alt.currency : null,
+    originalPrice: alt.originalPrice ?? null,
+    priceMin: alt.priceMin ?? null,
+    priceMax: alt.priceMax ?? null,
+    currency: alt.price !== null || alt.priceMin != null ? alt.currency : null,
     priceSource: alt.priceSource || null,
+    priceConfidence: alt.priceConfidence || 'none',
+    variantDependent: !!alt.variantDependent,
+    priceComparisonAvailable: comparablePrice,
     url: alt.url,
     source: alt.store,
     locality: alt.locality,
@@ -104,9 +115,13 @@ function describeAlternative(rawAlt, userPrice, currency, characteristics) {
   } else if (alt.price !== null && !alt.currency) {
     parts.push('price listed without a currency (not compared)');
   } else if (alt.price !== null && alt.currency !== currency) {
-    parts.push(`listed in ${alt.currency} (not compared)`);
+    parts.push(`listed in ${alt.currency} (not compared with your ${currency} price)`);
   } else if (alt.price !== null) {
     parts.push(`listed price ${formatMoney(alt.price, alt.currency)}`);
+  } else if (alt.priceMin != null) {
+    parts.push(`listed from ${formatMoney(alt.priceMin, alt.currency)} to ${formatMoney(alt.priceMax, alt.currency)} (range, not compared)`);
+  } else if (alt.variantDependent) {
+    parts.push('several prices listed (depends on size/variant, not compared)');
   } else {
     parts.push('price not listed');
   }
@@ -144,7 +159,7 @@ function buildComparison({ userPrice, currency = 'EUR', characteristics = [], ma
   const alternatives = pickAlternatives(described);
   const exact = alternatives.find((a) => a.category === 'same') || null;
 
-  const comparable = described.filter((a) => a.priceDifference !== null && a.matchType !== 'general');
+  const comparable = described.filter((a) => a.priceComparisonAvailable && a.matchType !== 'general');
   const comparablePrices = comparable.map((a) => a.price);
   const stats = comparablePrices.length
     ? {
@@ -174,6 +189,15 @@ function buildComparison({ userPrice, currency = 'EUR', characteristics = [], ma
         : "We couldn't search external products right now, so this is based only on the product information and your price."
     );
     summary = `The product was identified, but we couldn't compare ${formatMoney(price, currency)} with similar products.`;
+  } else if (stats && stats.count === 1 && comparable[0].priceDifference / price >= MEANINGFULLY_CHEAPER) {
+    // A single reliable price isn't enough for a value verdict, but a clearly cheaper similar product is still worth comparing.
+    const only = comparable[0];
+    decision = 'COMPARE';
+    title = 'Consider alternatives';
+    summary = `A similar product is listed ${formatMoney(only.priceDifference, currency)} cheaper than ${formatMoney(price, currency)}.`;
+    reasoning.push(`The price you entered is ${formatMoney(price, currency)}.`);
+    reasoning.push(`Only one similar product with a reliable listed price was found (${formatMoney(only.price, currency)}), so this is not a full market comparison.`);
+    reasoning.push(only.category === 'better_value' ? 'Its listing mentions features similar to your product.' : "Its listing doesn't confirm the same features, so it may not be equivalent.");
   } else if (!stats || stats.count < MIN_COMPARABLE_FOR_VERDICT) {
     reasoning.push(`The price you entered is ${formatMoney(price, currency)}.`);
     reasoning.push(
@@ -192,11 +216,12 @@ function buildComparison({ userPrice, currency = 'EUR', characteristics = [], ma
       `${stats.count} similar products with listed prices range from ${formatMoney(stats.min, currency)} to ${formatMoney(stats.max, currency)} (median ${formatMoney(stats.median, currency)}).`
     );
 
-    if (ratio >= FAR_ABOVE && stats.count >= MIN_COMPARABLE_FOR_SKIP) {
+    if (ratio >= FAR_ABOVE && stats.count >= MIN_COMPARABLE_FOR_SKIP && cheaperWithFeatures.length > 0) {
       decision = 'SKIP';
       title = 'Consider skipping';
       summary = `${formatMoney(price, currency)} is well above what similar products are listed for.`;
     } else if (ratio >= CLEARLY_ABOVE) {
+      // Includes "far above" cases whose features can't be confirmed: SKIP needs confirmed comparable features.
       decision = 'COMPARE';
       title = 'Consider alternatives';
       summary = `${formatMoney(price, currency)} looks high compared with similar listed products (median ${formatMoney(stats.median, currency)}).`;
@@ -226,17 +251,26 @@ function buildComparison({ userPrice, currency = 'EUR', characteristics = [], ma
   if (exact) reasoning.push('A possible exact match was found — see below.');
   const localCount = alternatives.filter((a) => a.locality === 'city' || a.locality === 'kosovo').length;
   if (alternatives.length && searchStatus === 'ok') {
-    reasoning.push(localCount ? `${localCount} of the results are from Kosovo/local sources.` : 'No results were clearly identified as Kosovo/local sources.');
+    reasoning.push(localCount ? `${localCount} of the ${alternatives.length} results ${localCount === 1 ? 'is' : 'are'} from Kosovo/local sources.` : 'No results were clearly identified as Kosovo/local sources.');
   }
   if (searchStatus === 'ok' && matches.length === 0) {
     reasoning.push("No comparable products were found; we couldn't find reliable alternatives.");
   }
+
+  // Cheapest comparable option, for the "your price / similar option / difference" summary.
+  const cheapest = comparable.length ? comparable.reduce((a, b) => (b.price < a.price ? b : a)) : null;
+  const highlight =
+    price !== null && cheapest && cheapest.priceDifference > 0
+      ? { userPrice: price, similarPrice: cheapest.price, difference: cheapest.priceDifference, differencePercent: cheapest.priceDifferencePercent, currency }
+      : null;
 
   return {
     decision,
     title,
     summary,
     reasoning,
+    highlight,
+    priceComparisonAvailable: !!stats,
     userPrice: price,
     currency,
     priceStats: stats,

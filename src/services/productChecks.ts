@@ -20,7 +20,13 @@ export type ProductAlternative = {
   title: string | null;
   /** Price reported by the search result (NOT the user's price). Null when none was reliably provided. */
   price: number | null;
+  originalPrice: number | null;
+  priceMin: number | null;
+  priceMax: number | null;
   currency: string | null;
+  priceConfidence: 'high' | 'medium' | 'none';
+  variantDependent: boolean;
+  priceComparisonAvailable: boolean;
   url: string;
   source: string | null;
   locality: 'city' | 'kosovo' | 'regional' | 'unknown' | 'international';
@@ -37,6 +43,15 @@ export type ProductComparison = {
   title: string;
   summary: string;
   reasoning: string[];
+  /** Your price vs the cheapest reliably comparable similar product (same currency), when one is cheaper. */
+  highlight: {
+    userPrice: number;
+    similarPrice: number;
+    difference: number;
+    differencePercent: number;
+    currency: string;
+  } | null;
+  priceComparisonAvailable: boolean;
   userPrice: number | null;
   currency: string;
   exactMatch: ProductAlternative | null;
