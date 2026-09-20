@@ -17,58 +17,47 @@ import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import {
   analyzeProduct,
-  findProductMatches,
+  ProductAlternative,
   ProductCheckResult,
-  ProductMatchResult,
 } from '@/services/productChecks';
 
-const RECOMMENDATION_LABEL: Record<string, string> = {
-  buy: 'Good Buy',
-  consider: 'Worth Considering',
-  skip: 'Consider Skipping',
-  unknown: 'Not Enough Information',
-};
+function formatMoney(amount: number, currency: string | null): string {
+  const value = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return !currency || currency === 'EUR' ? `€${value}` : `${value} ${currency}`;
+}
 
-const PRICE_ASSESSMENT_LABEL: Record<string, string> = {
-  fair: 'Fair Price',
-  good_deal: 'Good Deal',
-  overpriced: 'Overpriced',
-  unknown: 'Price Unknown',
-};
+function AlternativeCard({ item }: { item: ProductAlternative }) {
+  return (
+    <View style={styles.matchRow}>
+      <Text style={styles.matchStore}>
+        {[item.source, item.localityLabel].filter(Boolean).join(' · ')}
+      </Text>
+      {item.title && <Text style={styles.matchTitle}>{item.title}</Text>}
+      <Text style={styles.priceRange}>
+        {item.price !== null
+          ? `Listed price: ${formatMoney(item.price, item.currency)}`
+          : 'Price not listed'}
+      </Text>
+      <Text style={styles.text}>{item.reason}</Text>
+      <TouchableOpacity onPress={() => Linking.openURL(item.url)}>
+        <Text style={styles.matchLink}>VIEW PRODUCT →</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 export default function ProductAnalysis() {
   const router = useRouter();
 
-  const { imageUri, productName } = useLocalSearchParams<{
+  const { imageUri, productName, userPrice } = useLocalSearchParams<{
     imageUri?: string;
     productName?: string;
+    userPrice?: string;
   }>();
 
   const [result, setResult] = React.useState<ProductCheckResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
-
-  const [matchState, setMatchState] = React.useState<{
-    loading: boolean;
-    error: string | null;
-    data: ProductMatchResult | null;
-  }>({ loading: false, error: null, data: null });
-
-  const handleFindMatches = React.useCallback(() => {
-    if (!result) return;
-
-    setMatchState({ loading: true, error: null, data: null });
-
-    findProductMatches(result.id)
-      .then((data) => setMatchState({ loading: false, error: null, data }))
-      .catch((err) =>
-        setMatchState({
-          loading: false,
-          error: err?.message ?? "We couldn't search for this product online.",
-          data: null,
-        })
-      );
-  }, [result]);
 
   const runAnalysis = React.useCallback(() => {
     if (!imageUri) {
@@ -80,7 +69,11 @@ export default function ProductAnalysis() {
     setLoading(true);
     setError(null);
 
-    analyzeProduct(imageUri, undefined, productName)
+    analyzeProduct(
+      imageUri,
+      userPrice ? Number(userPrice) : undefined,
+      productName
+    )
       .then((res) => {
         setResult(res);
         setLoading(false);
@@ -92,7 +85,7 @@ export default function ProductAnalysis() {
         );
         setLoading(false);
       });
-  }, [imageUri]);
+  }, [imageUri, productName, userPrice]);
 
   React.useEffect(() => {
     runAnalysis();
@@ -122,9 +115,10 @@ export default function ProductAnalysis() {
       <SafeAreaView style={styles.container}>
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={Colors.accent} />
-          <Text style={styles.loadingText}>Analyzing product...</Text>
+          <Text style={styles.loadingText}>Analyzing your product...</Text>
           <Text style={styles.loadingSubtext}>
-            Please wait while we identify this product.
+            Identifying the product, searching stores and comparing prices.
+            This can take up to half a minute.
           </Text>
         </View>
       </SafeAreaView>
@@ -132,27 +126,30 @@ export default function ProductAnalysis() {
   }
 
   const { analysis, product } = result;
+  const comparison = result.comparison;
+  const characteristics = result.characteristics ?? [];
 
-  const recommendationColor =
-    analysis.recommendation === 'buy'
+  const decision = comparison?.decision ?? 'UNKNOWN';
+  const decisionColor =
+    decision === 'BUY'
       ? Colors.success
-      : analysis.recommendation === 'consider'
+      : decision === 'COMPARE'
         ? Colors.warning
-        : analysis.recommendation === 'skip'
+        : decision === 'SKIP'
           ? Colors.danger
           : Colors.textSecondary;
-
-  const recommendationBg =
-    analysis.recommendation === 'buy'
+  const decisionBg =
+    decision === 'BUY'
       ? Colors.successDim
-      : analysis.recommendation === 'consider'
+      : decision === 'COMPARE'
         ? Colors.warningDim
-        : analysis.recommendation === 'skip'
+        : decision === 'SKIP'
           ? Colors.dangerDim
           : Colors.surface2;
 
-  const hasPriceRange =
-    analysis.estimatedPriceMin !== null && analysis.estimatedPriceMax !== null;
+  const otherAlternatives = comparison
+    ? comparison.alternatives.filter((a) => a !== comparison.exactMatch)
+    : [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -174,28 +171,6 @@ export default function ProductAnalysis() {
           </View>
         )}
 
-        {/* Recommendation Card */}
-        <View style={styles.scoreCard}>
-          <Text style={styles.scoreLabel}>OUR RECOMMENDATION</Text>
-
-          <View
-            style={[
-              styles.recommendationBadge,
-              { backgroundColor: recommendationBg },
-            ]}
-          >
-            <Text style={[styles.recommendation, { color: recommendationColor }]}>
-              {RECOMMENDATION_LABEL[analysis.recommendation] ?? analysis.recommendation}
-            </Text>
-          </View>
-
-          <Text style={styles.confidenceText}>
-            {analysis.confidence !== null
-              ? `Confidence: ${Math.round(analysis.confidence * 100)}%`
-              : 'Confidence: not available'}
-          </Text>
-        </View>
-
         {/* Product info */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>PRODUCT</Text>
@@ -203,61 +178,50 @@ export default function ProductAnalysis() {
           <Text style={styles.productMeta}>
             {[product.category, product.brand].filter(Boolean).join(' · ') || 'Category unknown'}
           </Text>
+          {characteristics.map((c, i) => (
+            <Text key={`${c}-${i}`} style={styles.text}>
+              • {c}
+            </Text>
+          ))}
         </View>
 
-        {/* Price Analysis */}
+        {/* User price */}
         <View style={styles.priceCard}>
-          <Text style={styles.cardTitle}>PRICE</Text>
-
-          {hasPriceRange ? (
-            <Text style={styles.priceRange}>
-              Estimated range: {analysis.currency}
-              {analysis.estimatedPriceMin} – {analysis.currency}
-              {analysis.estimatedPriceMax}
-            </Text>
-          ) : (
-            <Text style={styles.priceRange}>
-              Not enough information to estimate a price.
-            </Text>
-          )}
-
-          {analysis.userPrice !== null && (
-            <Text style={styles.priceRange}>
-              Your price: {analysis.currency}
-              {analysis.userPrice}
-            </Text>
-          )}
-
-          <View
-            style={[
-              styles.verdictBadge,
-              {
-                backgroundColor:
-                  analysis.priceAssessment === 'good_deal'
-                    ? Colors.successDim
-                    : analysis.priceAssessment === 'overpriced'
-                      ? Colors.dangerDim
-                      : Colors.accentDim,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.verdictText,
-                {
-                  color:
-                    analysis.priceAssessment === 'good_deal'
-                      ? Colors.successText
-                      : analysis.priceAssessment === 'overpriced'
-                        ? Colors.dangerText
-                        : Colors.accentText,
-                },
-              ]}
-            >
-              {PRICE_ASSESSMENT_LABEL[analysis.priceAssessment] ?? analysis.priceAssessment}
-            </Text>
-          </View>
+          <Text style={styles.cardTitle}>PRICE YOU ENTERED</Text>
+          <Text style={styles.priceRange}>
+            {analysis.userPrice !== null
+              ? formatMoney(analysis.userPrice, analysis.currency)
+              : 'Price not provided'}
+          </Text>
         </View>
+
+        {/* Result */}
+        {comparison && (
+          <View style={styles.scoreCard}>
+            <Text style={styles.scoreLabel}>YOUR RESULT</Text>
+
+            <View
+              style={[styles.recommendationBadge, { backgroundColor: decisionBg }]}
+            >
+              <Text style={[styles.recommendation, { color: decisionColor }]}>
+                {comparison.title}
+              </Text>
+            </View>
+
+            <Text style={styles.text}>{comparison.summary}</Text>
+
+            {comparison.reasoning.length > 0 && (
+              <>
+                <Text style={[styles.cardTitle, { marginTop: 14 }]}>WHY?</Text>
+                {comparison.reasoning.map((line, i) => (
+                  <Text key={i} style={styles.text}>
+                    ✓ {line}
+                  </Text>
+                ))}
+              </>
+            )}
+          </View>
+        )}
 
         {/* Description */}
         <View style={styles.card}>
@@ -269,91 +233,48 @@ export default function ProductAnalysis() {
 
         {/* Find where to buy */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>WHERE TO FIND THIS</Text>
+          <Text style={styles.cardTitle}>FIND WHERE TO BUY</Text>
 
-          {!matchState.data && !matchState.loading && (
-            <>
+          {comparison?.search.status === 'unavailable' && (
+            <Text style={styles.errorText}>
+              We couldn&apos;t search external products right now. The analysis
+              above is based only on the product information and your price.
+            </Text>
+          )}
+
+          {comparison?.search.status === 'ok' &&
+            comparison.alternatives.length === 0 && (
               <Text style={styles.text}>
-                Search the web for real product pages that match this photo.
-                We only link out — nothing is copied into the app.
+                No comparable products were found. The product was analyzed
+                successfully, but we couldn&apos;t find reliable alternatives.
               </Text>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={handleFindMatches}
-              >
-                <Text style={styles.secondaryButtonText}>
-                  FIND WHERE TO BUY THIS
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
+            )}
 
-          {matchState.loading && (
-            <View style={styles.matchLoadingRow}>
-              <ActivityIndicator size="small" color={Colors.accent} />
-              <Text style={styles.matchLoadingText}>Searching the web…</Text>
-            </View>
-          )}
-
-          {matchState.error && (
-            <Text style={styles.errorText}>{matchState.error}</Text>
-          )}
-
-          {matchState.data && (
+          {comparison?.exactMatch && (
             <>
-              {matchState.data.isMock && (
-                <View style={styles.mockBanner}>
-                  <Text style={styles.mockBannerText}>
-                    ⚠ Web search isn&apos;t configured on this server yet —
-                    showing a placeholder result. See backend/README.md.
-                  </Text>
-                </View>
-              )}
-
-              {matchState.data.matches.length === 0 ? (
-                <Text style={styles.text}>No close matches found online.</Text>
-              ) : (
-                matchState.data.matches.map((match, index) => (
-                  <View
-                    key={`${match.url ?? match.store}-${index}`}
-                    style={styles.matchRow}
-                  >
-                    <Text style={styles.matchStore}>{match.store}</Text>
-                    {match.pageTitle && (
-                      <Text style={styles.matchTitle}>{match.pageTitle}</Text>
-                    )}
-                    {match.url && (
-                      <TouchableOpacity onPress={() => Linking.openURL(match.url!)}>
-                        <Text style={styles.matchLink}>VIEW PRODUCT →</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))
-              )}
+              <Text style={styles.scoreLabel}>EXACT / POSSIBLE MATCH</Text>
+              <AlternativeCard item={comparison.exactMatch} />
             </>
+          )}
+
+          {otherAlternatives.length > 0 && (
+            <>
+              <Text style={styles.scoreLabel}>SIMILAR PRODUCTS</Text>
+              {otherAlternatives.map((item, index) => (
+                <AlternativeCard key={`${item.url}-${index}`} item={item} />
+              ))}
+            </>
+          )}
+
+          {comparison && comparison.alternatives.length > 0 && (
+            <Text style={styles.text}>
+              Listed prices come from search results, not from us, and may not
+              be current. You will open the original website.
+            </Text>
           )}
         </View>
 
         {/* Actions */}
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() =>
-            router.push({
-              pathname: '/decision',
-              params: {
-                imageUri,
-                productName: product.name || productName,
-                recommendation: analysis.recommendation,
-                confidence: analysis.confidence !== null ? String(analysis.confidence) : '',
-                priceAssessment: analysis.priceAssessment,
-                description: analysis.description || '',
-              },
-            })
-          }
-        >
-          <Text style={styles.primaryButtonText}>SEE FULL RECOMMENDATION →</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.secondaryButton}
           onPress={() =>

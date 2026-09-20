@@ -44,6 +44,8 @@ export default function ProductCaptured() {
 
   const [productName, setProductName] = React.useState(initialName);
 
+  const [priceInput, setPriceInput] = React.useState('');
+
   const [isSaving, setIsSaving] = React.useState(false);
 
   const [isUpdating, setIsUpdating] = React.useState(false);
@@ -155,6 +157,21 @@ export default function ProductCaptured() {
       return;
     }
 
+    // Price is optional. Accept "129", "129.99" or "129,99" (EUR).
+    const normalizedPrice = priceInput.trim().replace(',', '.');
+    if (normalizedPrice) {
+      const valid =
+        /^\d{1,7}(\.\d{1,2})?$/.test(normalizedPrice) &&
+        Number(normalizedPrice) > 0;
+      if (!valid) {
+        Alert.alert(
+          'Check the price',
+          'Enter a valid price such as 129 or 129.99, or leave it empty.'
+        );
+        return;
+      }
+    }
+
     router.push({
       pathname: '/product-analysis',
       params: {
@@ -165,6 +182,8 @@ export default function ProductCaptured() {
         // user's deliberate choice and will use it instead of what the
         // AI actually detects.
         ...(productName.trim() ? { productName: productName.trim() } : {}),
+        // Optional: the price the user saw in the shop (EUR).
+        ...(normalizedPrice ? { userPrice: normalizedPrice } : {}),
       },
     });
   };
@@ -286,6 +305,21 @@ export default function ProductCaptured() {
           </TouchableOpacity>
 
           {/* Actions */}
+
+          <Text style={styles.inputLabel}>
+            PRICE YOU SAW (OPTIONAL)
+          </Text>
+
+          <TextInput
+            value={priceInput}
+            onChangeText={setPriceInput}
+            placeholder="€ 129.99"
+            placeholderTextColor={Colors.textMuted}
+            style={styles.input}
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            maxLength={10}
+          />
 
           <Text style={styles.sectionTitle}>
             WHAT DO YOU WANT TO DO?

@@ -14,6 +14,41 @@ import { apiGet, apiPatch, apiPost, apiUploadImage } from './api';
 export type PriceAssessment = 'fair' | 'good_deal' | 'overpriced' | 'unknown';
 export type Recommendation = 'buy' | 'consider' | 'skip' | 'unknown';
 
+export type ComparisonDecision = 'BUY' | 'COMPARE' | 'SKIP' | 'UNKNOWN';
+
+export type ProductAlternative = {
+  title: string | null;
+  /** Price reported by the search result (NOT the user's price). Null when none was reliably provided. */
+  price: number | null;
+  currency: string | null;
+  url: string;
+  source: string | null;
+  locality: 'city' | 'kosovo' | 'regional' | 'unknown' | 'international';
+  localityLabel: string | null;
+  matchType: 'strong' | 'similar' | 'general';
+  priceDifference: number | null;
+  priceDifferencePercent: number | null;
+  category: 'same' | 'better_value' | 'better_price' | 'other';
+  reason: string;
+};
+
+export type ProductComparison = {
+  decision: ComparisonDecision;
+  title: string;
+  summary: string;
+  reasoning: string[];
+  userPrice: number | null;
+  currency: string;
+  exactMatch: ProductAlternative | null;
+  alternatives: ProductAlternative[];
+  search: {
+    provider: string;
+    status: 'ok' | 'unavailable' | 'not_configured' | 'skipped';
+    resultsFound: number;
+    pricedResults: number;
+  };
+};
+
 export type ProductCheckResult = {
   id: string;
   product: {
@@ -38,6 +73,9 @@ export type ProductCheckResult = {
   imageUrl: string | null;
   hasVisualization: boolean;
   createdAt: string;
+  /** Only present on the response of the analyze request itself. */
+  comparison?: ProductComparison;
+  characteristics?: string[];
 };
 
 /**

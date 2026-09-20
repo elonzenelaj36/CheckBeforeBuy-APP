@@ -25,7 +25,7 @@ const env = require('../config/env');
 
 const SERPAPI_ENDPOINT = 'https://serpapi.com/search.json';
 const TIMEOUT_MS = 15000;
-const MAX_RESULTS = 8;
+const MAX_RESULTS = 10;
 const MIN_LOCAL_RESULTS = 3;
 const STRONG_CONFIDENCE = 0.7;
 
@@ -154,6 +154,50 @@ function localityOf({ url, title, snippet, location }, city) {
   return 'unknown';
 }
 
+// ── Price extraction (only clear prices attached to the result itself) ──────
+const CURRENCY_SYMBOLS = { '€': 'EUR', '$': 'USD', '£': 'GBP' };
+const CURRENCY_CODES = ['EUR', 'USD', 'GBP', 'CHF', 'MKD', 'ALL'];
+
+function parseAmount(raw) {
+  let t = String(raw).replace(/\s/g, '');
+  const lastComma = t.lastIndexOf(',');
+  const lastDot = t.lastIndexOf('.');
+  if (lastComma > -1 && lastDot > -1) {
+    // both present: the later one is the decimal separator
+    t = lastComma > lastDot ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  } else if (lastComma > -1) {
+    t = /,\d{1,2}$/.test(t) ? t.replace(',', '.') : t.replace(/,/g, '');
+  } else if (lastDot > -1 && /\.\d{3}$/.test(t)) {
+    t = t.replace(/\./g, '');
+  }
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+const NUM = '(\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)';
+const PRICE_RE = new RegExp(
+  `([€$£])\\s?${NUM}|${NUM}\\s?([€$£]|(?:${CURRENCY_CODES.join('|')})\\b)|\\b(${CURRENCY_CODES.join('|')})\\s?${NUM}`,
+  'gi'
+);
+
+/**
+ * A price is returned only when the result's own title/snippet contains
+ * exactly ONE distinct amount with a currency marker — so it can be reliably
+ * tied to this result. Anything ambiguous (ranges, "from X", several
+ * prices, "was/now") yields null.
+ */
+function priceFromText(text) {
+  if (!text) return { price: null, currency: null };
+  const found = new Map();
+  for (const m of text.matchAll(PRICE_RE)) {
+    const marker = (m[1] || m[4] || m[6] || '').toUpperCase();
+    const amount = parseAmount(m[2] || m[3] || m[5] || m[7] || '');
+    const currency = CURRENCY_SYMBOLS[marker] || marker;
+    if (amount && currency) found.set(`${currency}${amount}`, { price: amount, currency });
+  }
+  return found.size === 1 ? [...found.values()][0] : { price: null, currency: null };
+}
+
 function priceFromOffer(item) {
   // Only trust prices SerpApi returned as structured data on that result.
   const offer = item.rich_snippet?.top?.detected_extensions?.price != null
@@ -168,6 +212,13 @@ function priceFromOffer(item) {
   return { price: null, currency: null };
 }
 
+// Words that describe a kind of product rather than a specific model.
+const GENERIC_WORDS = new Set([
+  'black', 'white', 'grey', 'gray', 'brown', 'blue', 'red', 'green', 'beige', 'silver', 'gold', 'pink',
+  'ergonomic', 'mesh', 'leather', 'wooden', 'wood', 'metal', 'plastic', 'fabric', 'modern', 'adjustable',
+  'smart', 'inch', 'set', 'with', 'and', 'for', 'the', 'high', 'low', 'small', 'large', 'big',
+]);
+
 function classifyMatch(title, snippet, { name, brand, confidence }) {
   const haystack = `${title || ''} ${snippet || ''}`.toLowerCase();
   const brandHit = brand && haystack.includes(brand.toLowerCase());
@@ -176,11 +227,38 @@ function classifyMatch(title, snippet, { name, brand, confidence }) {
   const sq = albanianTerm(name || '');
   const coverage = Math.max(coverageOf(tokens(name)), sq ? coverageOf(tokens(sq)) : 0);
 
-  // "strong" requires a confidently detected brand AND real title overlap;
-  // a title that merely resembles the category is only "similar".
-  if (brandHit && confidence != null && confidence >= STRONG_CONFIDENCE && coverage >= 0.6) return 'strong';
+  // "strong" (possible exact match) needs a confidently detected brand AND a
+  // distinctive model-like token from the name (not a colour/material/type
+  // word) that appears in the result. Brand + category alone is only "similar".
+  const typeStems = new Set(productTypeWords(name, '').map((w) => w.toLowerCase()));
+  const distinctive = tokens(name).filter(
+    (t) => !GENERIC_WORDS.has(t) && !tokens(brand).includes(t) && ![...typeStems].some((w) => t.startsWith(w))
+  );
+  if (brandHit && confidence != null && confidence >= STRONG_CONFIDENCE && distinctive.length > 0 && coverageOf(distinctive) === 1) {
+    return 'strong';
+  }
   if (coverage >= 0.5) return 'similar';
   return 'general';
+}
+
+// ── Relevance filters ──────────────────────────────────────────────────────
+const NON_PRODUCT_TITLE = /\b(how to|how do|guide|tips|review[s]?|best \d+|top \d+|vs\.?|versus|repair|fix|clean(ing)?|tutorial|diy|news|blog|jobs?|hiring|wikipedia)\b/i;
+
+/** Product-type words (EN + SQ) that a result must mention to be comparable. */
+function productTypeWords(name, category) {
+  const lower = ` ${String(name || '').toLowerCase()} `;
+  for (const [en, sq] of SQ_TERMS) {
+    if (lower.includes(` ${en} `) || lower.includes(` ${en}s `)) return [en, ...sq.split(' ').filter((w) => w.length > 3).slice(0, 1)].map((w) => w.slice(0, Math.max(4, w.length - 1)));
+  }
+  const cat = tokens(category)[0];
+  return cat ? [cat] : [];
+}
+
+function isRelevantResult(m, typeWords) {
+  const text = `${m.pageTitle || ''} ${m.snippet || ''}`.toLowerCase();
+  if (NON_PRODUCT_TITLE.test(m.pageTitle || '') && m.price === null) return false;
+  if (typeWords.length && !typeWords.some((w) => text.includes(w))) return false; // different kind of product
+  return true;
 }
 
 async function callSerpApi(q, hl = 'en') {
@@ -224,8 +302,9 @@ function normalize(body, product, city) {
       pageTitle: item.title || null,
       url,
       snippet: null,
-      price: Number.isFinite(Number(item.extracted_price)) ? Number(item.extracted_price) : null,
-      currency: null, // SerpApi gives a display string ("€49.00"), not a code — never guessed
+      ...(Number.isFinite(Number(item.extracted_price))
+        ? { price: Number(item.extracted_price), currency: priceFromText(item.price).currency } // currency only if the display string states it
+        : { price: null, currency: null }),
       priceText: item.price || null,
       imageUrl: item.thumbnail || null,
       location: item.location || null,
@@ -238,7 +317,9 @@ function normalize(body, product, city) {
     if (!isHttpUrl(item.link)) continue;
     const host = hostnameFromUrl(item.link);
     if (!host || SKIPPED_DOMAINS.test(host)) continue;
-    const { price, currency } = priceFromOffer(item);
+    const structured = priceFromOffer(item);
+    const { price, currency } =
+      structured.price !== null ? structured : priceFromText(`${item.title || ''} ${item.snippet || ''}`);
     out.push({
       store: item.source || host,
       pageTitle: item.title || null,
@@ -247,6 +328,7 @@ function normalize(body, product, city) {
       price,
       currency,
       priceText: null,
+      priceSource: price === null ? null : structured.price !== null ? 'structured' : 'snippet',
       imageUrl: item.thumbnail || null,
       location: null,
       matchType: classifyMatch(item.title, item.snippet, product),
@@ -264,13 +346,27 @@ function normalize(body, product, city) {
  * @param {string|null} [params.category]
  * @param {number|null} [params.confidence]
  * @param {string|null} [params.city] - coarse location only
+ * @param {string[]} [params.characteristics] - short facts from the photo analysis (material, features)
+ * @param {number} [params.deadlineMs] - stop starting new searches after this long
  */
-async function searchProductWeb({ name, brand, category, confidence, city }) {
+async function searchProductWeb({ name, brand, category, confidence, city, characteristics = [], deadlineMs = 20000 }) {
   const product = { name, brand, category, confidence };
   const base = buildBaseQuery(product);
   if (!base) {
     return { isMock: false, provider: 'serpapi', query: null, matches: [] };
   }
+
+  // Add up to two short characteristic words (e.g. "mesh", "headrest") the
+  // name doesn't already contain, so the query reflects what makes it this product.
+  const baseTokens = new Set(tokens(base));
+  const extra = [];
+  for (const c of characteristics) {
+    const word = tokens(c).find((t) => t.length > 3 && !baseTokens.has(t) && !extra.includes(t));
+    if (word && extra.length < 2) extra.push(word);
+  }
+  const enriched = extra.length ? `${base} ${extra.join(' ')}`.slice(0, 100) : base;
+  const typeWords = productTypeWords(name, category);
+  const startedAt = Date.now();
 
   const LOCAL = new Set(['city', 'kosovo']);
   const seen = new Set();
@@ -278,7 +374,11 @@ async function searchProductWeb({ name, brand, category, confidence, city }) {
   const scopesUsed = [];
   let lastError = null;
 
-  for (const step of buildQueryPlan(base, city, brand)) {
+  for (const step of buildQueryPlan(enriched, city, brand)) {
+    if (Date.now() - startedAt > deadlineMs) {
+      console.warn('[webSearch] time budget reached; not starting more searches');
+      break;
+    }
     let body;
     try {
       body = await callSerpApi(step.q, step.hl);
@@ -306,7 +406,7 @@ async function searchProductWeb({ name, brand, category, confidence, city }) {
   // dropped entirely — a short list of useful results beats a padded one.
   const localityRank = { city: 0, kosovo: 1, regional: 2, unknown: 3, international: 4 };
   const matchRank = { strong: 0, similar: 1, general: 2 };
-  const useful = matches.filter((m) => m.matchType !== 'general');
+  const useful = matches.filter((m) => m.matchType !== 'general' && isRelevantResult(m, typeWords));
   useful.sort((a, b) => localityRank[a.locality] - localityRank[b.locality] || matchRank[a.matchType] - matchRank[b.matchType]);
   matches.length = 0;
   matches.push(...useful);
@@ -316,9 +416,9 @@ async function searchProductWeb({ name, brand, category, confidence, city }) {
   return {
     isMock: false,
     provider: 'serpapi',
-    query: base,
+    query: enriched,
     matches: matches.slice(0, MAX_RESULTS),
   };
 }
 
-module.exports = { isConfigured, searchProductWeb, buildBaseQuery, buildQueryPlan };
+module.exports = { isConfigured, searchProductWeb, buildBaseQuery, buildQueryPlan, priceFromText };

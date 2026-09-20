@@ -5,6 +5,9 @@ const { optionalNumber, requireString } = require('../utils/validate');
 const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { analyzeProductImage } = require('../services/aiService');
+const webSearch = require('../services/webSearchService');
+const { buildComparison, toLegacyFields } = require('../services/comparisonService');
+const { getApproximateLocationFromIp, getClientIp } = require('../services/locationService');
 const path = require('path');
 
 function serializeCheck(row) {
@@ -72,6 +75,50 @@ const createProductCheck = asyncHandler(async (req, res) => {
   const { product, analysis, isMock, provider, model } = aiResult;
   const finalProductName = userProductName || product.name;
 
+  // ── Web search + price-aware comparison ────────────────────────────────
+  // Groq output is used as-is. A search failure never fails the analysis:
+  // the comparison just reports that no external search was possible.
+  const characteristics = Array.isArray(aiResult.raw?.visibleSpecifications) ? aiResult.raw.visibleSpecifications : [];
+  let matches = [];
+  let searchStatus = 'skipped';
+  if (!isMock) {
+    if (!webSearch.isConfigured()) {
+      searchStatus = 'not_configured';
+    } else {
+      try {
+        // Coarse city only: one the client sent, else best-effort IP lookup
+        // (null on private/dev IPs). Never stored; only a word in the query.
+        let city = req.body.city ? String(req.body.city).trim().slice(0, 60) : null;
+        if (!city) city = (await getApproximateLocationFromIp(getClientIp(req)))?.city || null;
+
+        const found = await webSearch.searchProductWeb({
+          name: finalProductName,
+          brand: product.brand,
+          category: product.category,
+          confidence: analysis.confidence,
+          city,
+          characteristics,
+        });
+        matches = found.matches;
+        searchStatus = 'ok';
+      } catch (err) {
+        console.error('[product-checks] alternative search failed:', err.message);
+        searchStatus = 'unavailable';
+      }
+    }
+  }
+
+  const comparison = buildComparison({
+    userPrice,
+    currency: 'EUR',
+    characteristics,
+    matches,
+    searchStatus,
+  });
+  // Only override the stored verdict when a real comparison ran; otherwise it
+  // is 'unknown' (we never force BUY/SKIP without evidence).
+  const legacy = isMock ? { recommendation: analysis.recommendation, priceAssessment: analysis.priceAssessment } : toLegacyFields(comparison);
+
   const estimatedPrice =
     analysis.estimatedPriceMin !== null && analysis.estimatedPriceMax !== null
       ? Number(((analysis.estimatedPriceMin + analysis.estimatedPriceMax) / 2).toFixed(2))
@@ -119,8 +166,8 @@ const createProductCheck = asyncHandler(async (req, res) => {
       analysis.estimatedPriceMax,
       analysis.currency || 'EUR',
       userPrice,
-      analysis.priceAssessment,
-      analysis.recommendation,
+      legacy.priceAssessment,
+      legacy.recommendation,
       analysis.confidence,
       provider,
       model,
@@ -131,7 +178,11 @@ const createProductCheck = asyncHandler(async (req, res) => {
 
   const [rows] = await pool.query('SELECT * FROM product_checks WHERE id = ?', [checkResult.insertId]);
 
-  res.status(201).json(serializeCheck(rows[0]));
+  res.status(201).json({
+    ...serializeCheck(rows[0]),
+    comparison,
+    characteristics,
+  });
 });
 
 /** GET /api/product-checks */
