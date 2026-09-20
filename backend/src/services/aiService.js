@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenAI } = require('@google/genai');
 const env = require('../config/env');
 
 const ANALYSIS_TOOL = {
@@ -191,6 +192,10 @@ function mockRoomAnalysis({ roomType, existingItems }) {
 
 function buildClient() {
   if (!env.ai.apiKey) return null;
+  // AI_API_KEY is a Gemini/Groq key when AI_PROVIDER=gemini/groq — never send it to
+  // Anthropic. Room/home analysis stay on Anthropic, so they fall back to
+  // their mock results while Gemini is the configured provider.
+  if (env.ai.provider === 'gemini' || env.ai.provider === 'groq') return null;
   return new Anthropic({ apiKey: env.ai.apiKey });
 }
 
@@ -219,7 +224,9 @@ function mockAnalysis(reasonOverride) {
     analysis: {
       description:
         reasonOverride ||
-        'AI analysis is not configured on this server yet. Set AI_API_KEY (and optionally AI_MODEL) in backend/.env to enable real product recognition via Claude, or run Ollama locally and set OLLAMA_MODEL. See backend/README.md.',
+        (env.ai.provider === 'gemini' || env.ai.provider === 'groq'
+          ? `${env.ai.provider === 'groq' ? 'Groq' : 'Gemini'} AI is not configured on this server yet. Set AI_API_KEY in backend/.env.`
+          : 'AI analysis is not configured on this server yet. Set AI_API_KEY (and optionally AI_MODEL) in backend/.env to enable real product recognition via Claude, or run Ollama locally and set OLLAMA_MODEL. See backend/README.md.'),
       visibleSpecifications: [],
       estimatedPriceMin: null,
       estimatedPriceMax: null,
@@ -330,6 +337,147 @@ async function analyzeWithOllama({ absoluteImagePath, priceContext, ownedItemsCo
 }
 
 /**
+ * Product analysis via Google Gemini (@google/genai). Sends the photo as
+ * inline base64 data and asks for JSON output; the prompt spells out the
+ * exact shape (same one used for Ollama). Real failures are thrown, not
+ * converted to mock data, so the controller returns its normal error.
+ */
+async function analyzeWithGemini({ absoluteImagePath, priceContext, ownedItemsContext }) {
+  const ai = new GoogleGenAI({ apiKey: env.ai.apiKey });
+  const imageBase64 = fs.readFileSync(absoluteImagePath).toString('base64');
+
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: env.ai.model,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: mimeTypeForPath(absoluteImagePath), data: imageBase64 } },
+            { text: `${OLLAMA_ANALYSIS_INSTRUCTIONS}\n\n${priceContext} ${ownedItemsContext}` },
+          ],
+        },
+      ],
+      config: { responseMimeType: 'application/json' },
+    });
+  } catch (err) {
+    console.error('[aiService] Gemini request failed:', err);
+    const wrapped = new Error(`AI provider request failed: ${err.message}`);
+    wrapped.cause = err;
+    throw wrapped;
+  }
+
+  let result;
+  try {
+    result = JSON.parse(response.text);
+  } catch (err) {
+    console.error('[aiService] Gemini returned non-JSON output:', response.text);
+    throw new Error(`Gemini returned a non-JSON response: ${err.message}`);
+  }
+
+  return {
+    isMock: false,
+    provider: 'gemini',
+    model: env.ai.model,
+    product: {
+      name: result.productName || 'Unknown product',
+      category: result.category || 'Uncategorized',
+      brand: result.brand || null,
+    },
+    analysis: {
+      description: result.description || '',
+      visibleSpecifications: Array.isArray(result.visibleSpecifications) ? result.visibleSpecifications : [],
+      estimatedPriceMin: result.estimatedPriceMin ?? null,
+      estimatedPriceMax: result.estimatedPriceMax ?? null,
+      currency: result.currency || 'EUR',
+      priceAssessment: result.priceAssessment || 'unknown',
+      recommendation: result.recommendation || 'unknown',
+      reasoning: result.reasoning || '',
+      confidence: typeof result.confidence === 'number' ? result.confidence : null,
+    },
+    raw: result,
+  };
+}
+
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_TIMEOUT_MS = 60000;
+
+/**
+ * Product analysis via Groq's OpenAI-compatible chat completions API.
+ * Image goes in as a base64 data URL; JSON mode guarantees valid JSON, the
+ * prompt (shared with Ollama/Gemini) defines the shape. Real failures are
+ * thrown, never turned into mock data.
+ */
+async function analyzeWithGroq({ absoluteImagePath, priceContext, ownedItemsContext }) {
+  const imageBase64 = fs.readFileSync(absoluteImagePath).toString('base64');
+  const dataUrl = `data:${mimeTypeForPath(absoluteImagePath)};base64,${imageBase64}`;
+
+  let data;
+  try {
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.ai.apiKey}` },
+      signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
+      body: JSON.stringify({
+        model: env.ai.model,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `${OLLAMA_ANALYSIS_INSTRUCTIONS}\n\n${priceContext} ${ownedItemsContext}` },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    data = await response.json();
+  } catch (err) {
+    console.error('[aiService] Groq request failed:', err.message);
+    const wrapped = new Error(`AI provider request failed: ${err.message}`);
+    wrapped.cause = err;
+    throw wrapped;
+  }
+
+  const content = data.choices?.[0]?.message?.content;
+  let result;
+  try {
+    result = JSON.parse(content);
+  } catch (err) {
+    console.error('[aiService] Groq returned non-JSON output:', content);
+    throw new Error(`Groq returned a non-JSON response: ${err.message}`);
+  }
+
+  return {
+    isMock: false,
+    provider: 'groq',
+    model: env.ai.model,
+    product: {
+      name: result.productName || 'Unknown product',
+      category: result.category || 'Uncategorized',
+      brand: result.brand || null,
+    },
+    analysis: {
+      description: result.description || '',
+      visibleSpecifications: Array.isArray(result.visibleSpecifications) ? result.visibleSpecifications : [],
+      estimatedPriceMin: result.estimatedPriceMin ?? null,
+      estimatedPriceMax: result.estimatedPriceMax ?? null,
+      currency: result.currency || 'EUR',
+      priceAssessment: result.priceAssessment || 'unknown',
+      recommendation: result.recommendation || 'unknown',
+      reasoning: result.reasoning || '',
+      confidence: typeof result.confidence === 'number' ? result.confidence : null,
+    },
+    raw: result,
+  };
+}
+
+/**
  * @param {object} params
  * @param {string} params.absoluteImagePath - path on disk to the uploaded photo
  * @param {number|null} [params.userPrice] - price the user says the product costs, if known
@@ -346,6 +494,24 @@ async function analyzeProductImage({ absoluteImagePath, userPrice, userItems }) 
       : '';
 
   const provider = resolveProductAnalysisProvider();
+
+  if (provider === 'gemini') {
+    if (!env.ai.apiKey) {
+      console.log('[aiService] Gemini AI: MOCK MODE');
+      return mockAnalysis();
+    }
+    console.log(`[aiService] Gemini AI: REAL MODE (${env.ai.model})`);
+    return analyzeWithGemini({ absoluteImagePath, priceContext, ownedItemsContext });
+  }
+
+  if (provider === 'groq') {
+    if (!env.ai.apiKey) {
+      console.log('[aiService] Groq AI: MOCK MODE');
+      return mockAnalysis();
+    }
+    console.log(`[aiService] Groq AI: REAL MODE (${env.ai.model})`);
+    return analyzeWithGroq({ absoluteImagePath, priceContext, ownedItemsContext });
+  }
 
   if (provider === 'ollama') {
     try {
