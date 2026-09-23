@@ -10,6 +10,8 @@
 import { apiUploadMultipart } from './api';
 
 export type ProductCutout = {
+  /** Identifies this product photo on the backend (used to request its 3D model). */
+  id: string;
   /** Transparent PNG, trimmed to the product. */
   imageUri: string;
   width: number;
@@ -37,13 +39,13 @@ export async function removeProductBackground(source: CutoutSource): Promise<Pro
     throw new Error("This product photo can't be prepared. Please take or choose the photo again.");
   }
 
-  const response = await apiUploadMultipart<{ cutoutImageUri: string; width: number; height: number }>(
+  const response = await apiUploadMultipart<{ cutoutId: string; cutoutImageUri: string; width: number; height: number }>(
     '/product-cutouts',
     { image: isLocal ? source.imageUri : null },
     isLocal ? undefined : { productCheckId: String(source.productCheckId) }
   );
 
-  const cutout = { imageUri: response.cutoutImageUri, width: response.width, height: response.height };
+  const cutout = { id: response.cutoutId, imageUri: response.cutoutImageUri, width: response.width, height: response.height };
   cache.set(key, cutout);
   return cutout;
 }

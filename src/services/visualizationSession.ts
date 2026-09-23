@@ -16,9 +16,16 @@
  * - Every product also has an editable `transform` (its layer on the room
  *   photo). Moving/resizing/rotating/selecting only changes this local state —
  *   it never calls the generation API. Only regenerateSession() does.
- * - Each product's layer shows a transparent `cutout` of its photo. It is
- *   prepared once, in the background, when the product joins the session
- *   (see productCutouts.ts). Generation still uses the ORIGINAL photo.
+ * - Each product runs one processing pipeline when it joins the session:
+ *     original photo → background removal (`cutout`) → 3D model (`model3D`)
+ *     → turntable frames rendered on the device.
+ *   The layer shows the best representation available: the 3D model's frame
+ *   for the product's turn angle, else the transparent cutout, else the
+ *   photo. 3D is an enhancement — if it fails, the product stays 2D.
+ * - Every pipeline step runs ONCE per product: the backend never generates a
+ *   model twice for the same photo, and nothing here re-requests a step that
+ *   is in progress or done. A failed step only re-runs on an explicit retry.
+ *   Room-image generation (Cloudflare) still uses the ORIGINAL photos.
  */
 
 import React from 'react';
@@ -26,7 +33,9 @@ import React from 'react';
 import { File } from 'expo-file-system';
 
 import { apiUploadMultipart } from './api';
+import { loadCachedFrames } from './modelFrames';
 import { removeProductBackground } from './productCutouts';
+import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 export const MAX_SESSION_PRODUCTS = 8;
@@ -55,6 +64,8 @@ export type ProductTransform = {
   /** Product photo width / height (1 until the photo has loaded). */
   aspect: number;
   zIndex: number;
+  /** Which way the 3D model faces (degrees, turntable angle). 0 = as photographed. */
+  yawDeg: number;
   /** True once the user has moved/resized/rotated it — only then is the position sent to the AI as a hint. */
   placed: boolean;
 };
@@ -64,15 +75,30 @@ export const MAX_LAYER_WIDTH = 0.9;
 
 export type SessionCutout =
   | { status: 'pending' }
-  | { status: 'ready'; imageUri: string }
+  | { status: 'ready'; imageUri: string; cutoutId: string }
   | { status: 'failed'; message: string };
+
+export type SessionModel3D =
+  /** Needs the background-removed cutout first. */
+  | { status: 'waiting' }
+  /** Being generated on the backend; `stage`/`progress` are the provider's real state. */
+  | { status: 'generating'; modelId: string | null; stage: ProductModelStage; progress: number | null }
+  /** GLB ready; its views are being rendered on this device. */
+  | { status: 'rendering'; modelId: string; modelUrl: string }
+  | { status: 'ready'; modelId: string; modelUrl: string; frames: string[] }
+  /** `retry` says what "try again" re-runs: the backend generation, or only the on-device render. */
+  | { status: 'failed'; message: string; retry: 'generate' | 'render'; modelId: string | null; modelUrl: string | null }
+  /** No 3D provider configured on the server. */
+  | { status: 'unavailable' };
 
 export type SessionProduct = {
   /** Unique within the session (the same product may be added twice). */
   id: string;
   transform: ProductTransform;
-  /** Transparent version of the photo shown as the layer. */
+  /** Transparent version of the photo (2D layer, and the input for 3D). */
   cutout: SessionCutout;
+  /** Generated 3D model (the default layer once ready). */
+  model3D: SessionModel3D;
   /** ORIGINAL photo — sent to generation, never replaced by the cutout. */
   imageUri: string;
   name: string;
@@ -103,7 +129,7 @@ export type VisualizationSession = {
   createdAt: string;
 };
 
-export type NewSessionProduct = Omit<SessionProduct, 'id' | 'transform' | 'cutout'>;
+export type NewSessionProduct = Omit<SessionProduct, 'id' | 'transform' | 'cutout' | 'model3D'>;
 
 // ── Store ────────────────────────────────────────────────────────────────────
 
@@ -153,6 +179,7 @@ function defaultTransform(index: number, zIndex: number): ProductTransform {
     rotation: 0,
     aspect: 1,
     zIndex,
+    yawDeg: 0,
     placed: false,
   };
 }
@@ -163,7 +190,13 @@ function topZIndex(products: SessionProduct[]): number {
 
 export function startSession(room: SessionRoom, firstProduct?: NewSessionProduct): VisualizationSession {
   const first: SessionProduct | null = firstProduct
-    ? { ...firstProduct, id: nextId('product'), transform: defaultTransform(0, 1), cutout: { status: 'pending' } }
+    ? {
+        ...firstProduct,
+        id: nextId('product'),
+        transform: defaultTransform(0, 1),
+        cutout: { status: 'pending' },
+        model3D: { status: 'waiting' },
+      }
     : null;
   const session: VisualizationSession = {
     id: nextId('session'),
@@ -173,6 +206,7 @@ export function startSession(room: SessionRoom, firstProduct?: NewSessionProduct
     selectedProductId: first?.id ?? null,
     createdAt: new Date().toISOString(),
   };
+  stopAllModelPolling();
   commit(session);
   if (first) void prepareCutout(first.id);
   return session;
@@ -209,6 +243,7 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
     name: input.name.trim() || `Product ${session.products.length + 1}`,
     transform: defaultTransform(session.products.length, topZIndex(session.products) + 1),
     cutout: { status: 'pending' },
+    model3D: { status: 'waiting' },
   };
   // The new product is selected so the user can position it right away.
   commit({ ...session, products: [...session.products, product], selectedProductId: product.id });
@@ -220,6 +255,7 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
 export function removeProduct(productId: string) {
   const session = getSession();
   if (!session) return;
+  stopModelPolling(productId);
   commit({
     ...session,
     products: session.products.filter((p) => p.id !== productId),
@@ -278,9 +314,10 @@ async function prepareCutout(productId: string) {
     const cutout = await removeProductBackground({ imageUri: product.imageUri, productCheckId: product.productCheckId });
     patchProduct(session.id, productId, (p) => ({
       ...p,
-      cutout: { status: 'ready', imageUri: cutout.imageUri },
+      cutout: { status: 'ready', imageUri: cutout.imageUri, cutoutId: cutout.id },
       transform: { ...p.transform, aspect: cutout.width / cutout.height },
     }));
+    void startModel3D(productId);
   } catch (error: any) {
     if (__DEV__) console.warn('[visualization] background removal failed:', error?.message ?? error);
     patchProduct(session.id, productId, (p) => ({
@@ -298,8 +335,172 @@ export function retryCutout(productId: string) {
   void prepareCutout(productId);
 }
 
+// ── 3D model ─────────────────────────────────────────────────────────────────
+
+const MODEL_POLL_MS = 3000;
+const MAX_POLL_ERRORS = 10;
+const modelRequests = new Set<string>();
+const modelPollers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function stopModelPolling(productId: string) {
+  const timer = modelPollers.get(productId);
+  if (timer) clearTimeout(timer);
+  modelPollers.delete(productId);
+}
+
+function stopAllModelPolling() {
+  modelPollers.forEach((timer) => clearTimeout(timer));
+  modelPollers.clear();
+}
+
+function setModel3D(sessionId: string, productId: string, model3D: SessionModel3D) {
+  patchProduct(sessionId, productId, (p) => ({ ...p, model3D }));
+}
+
+/** Applies the backend's model state; returns true while it is still generating. */
+function applyModel(sessionId: string, productId: string, model: ProductModel): boolean {
+  if (model.status === 'ready' && model.modelUrl) {
+    const cached = loadCachedFrames(model.modelUrl);
+    if (cached) {
+      applyFrames(sessionId, productId, model.id, model.modelUrl, cached.frames, cached.aspect);
+    } else {
+      setModel3D(sessionId, productId, { status: 'rendering', modelId: model.id, modelUrl: model.modelUrl });
+    }
+    return false;
+  }
+  if (model.status === 'failed') {
+    setModel3D(sessionId, productId, {
+      status: 'failed',
+      message: model.message || "3D preview couldn't be created.",
+      retry: 'generate',
+      modelId: model.id,
+      modelUrl: null,
+    });
+    return false;
+  }
+  setModel3D(sessionId, productId, {
+    status: 'generating',
+    modelId: model.id,
+    stage: model.stage ?? 'starting',
+    progress: model.progress,
+  });
+  return true;
+}
+
+function schedulePoll(sessionId: string, productId: string, modelId: string, errors = 0) {
+  stopModelPolling(productId);
+  const timer = setTimeout(async () => {
+    modelPollers.delete(productId);
+    const product = getSession()?.products.find((p) => p.id === productId);
+    if (getSession()?.id !== sessionId || product?.model3D.status !== 'generating') return;
+    try {
+      const model = await getProductModel(modelId);
+      if (applyModel(sessionId, productId, model)) schedulePoll(sessionId, productId, modelId);
+    } catch (error: any) {
+      // Network hiccups: keep waiting; polling never starts a new generation.
+      if (errors + 1 < MAX_POLL_ERRORS) {
+        schedulePoll(sessionId, productId, modelId, errors + 1);
+      } else {
+        setModel3D(sessionId, productId, {
+          status: 'failed',
+          message: error?.message || "Couldn't reach the server.",
+          retry: 'generate',
+          modelId,
+          modelUrl: null,
+        });
+      }
+    }
+  }, errors === 0 ? MODEL_POLL_MS : MODEL_POLL_MS * 2);
+  modelPollers.set(productId, timer);
+}
+
+/**
+ * Asks the backend for this product's 3D model. The backend starts a
+ * generation only if this photo was never generated before; otherwise it
+ * returns the existing model. `retry` is only for an explicit user retry.
+ */
+async function startModel3D(productId: string, retry = false) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (!session || !product || product.cutout.status !== 'ready') return;
+  const allowed = retry ? product.model3D.status === 'failed' : product.model3D.status === 'waiting';
+  if (!allowed || modelRequests.has(productId)) return;
+
+  modelRequests.add(productId);
+  setModel3D(session.id, productId, { status: 'generating', modelId: null, stage: 'starting', progress: null });
+  try {
+    const model = await requestProductModel(product.cutout.cutoutId, { retry });
+    if (applyModel(session.id, productId, model)) schedulePoll(session.id, productId, model.id);
+  } catch (error: any) {
+    if (error instanceof ModelsUnavailableError) {
+      if (__DEV__) console.warn('[visualization] 3D unavailable:', error.message);
+      setModel3D(session.id, productId, { status: 'unavailable' });
+    } else {
+      setModel3D(session.id, productId, {
+        status: 'failed',
+        message: error?.message || "3D preview couldn't be created.",
+        retry: 'generate',
+        modelId: null,
+        modelUrl: null,
+      });
+    }
+  } finally {
+    modelRequests.delete(productId);
+  }
+}
+
+function applyFrames(sessionId: string, productId: string, modelId: string, modelUrl: string, frames: string[], aspect: number) {
+  patchProduct(sessionId, productId, (p) => {
+    // Keep the product's on-screen HEIGHT when switching to the 3D view, so it
+    // doesn't jump in size (the 3D frame box has a different aspect).
+    const width = Math.min(MAX_LAYER_WIDTH, Math.max(MIN_LAYER_WIDTH, (p.transform.width / p.transform.aspect) * aspect));
+    return {
+      ...p,
+      model3D: { status: 'ready', modelId, modelUrl, frames },
+      transform: { ...p.transform, aspect, width },
+    };
+  });
+}
+
+/** Called by the on-device renderer when a model's frames are ready. */
+export function setModelFrames(productId: string, frames: string[], aspect: number) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (!session || product?.model3D.status !== 'rendering') return;
+  applyFrames(session.id, productId, product.model3D.modelId, product.model3D.modelUrl, frames, aspect);
+}
+
+/** Called by the on-device renderer when the model couldn't be displayed. */
+export function setModelRenderFailed(productId: string, message: string) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (!session || product?.model3D.status !== 'rendering') return;
+  if (__DEV__) console.warn('[visualization] 3D render failed:', message);
+  setModel3D(session.id, productId, {
+    status: 'failed',
+    message: "3D preview couldn't be shown on this device.",
+    retry: 'render',
+    modelId: product.model3D.modelId,
+    modelUrl: product.model3D.modelUrl,
+  });
+}
+
+/** Explicit user retry after a 3D failure. A render failure only re-renders locally. */
+export function retryModel3D(productId: string) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (!session || product?.model3D.status !== 'failed') return;
+  const failed = product.model3D;
+  if (failed.retry === 'render' && failed.modelId && failed.modelUrl) {
+    setModel3D(session.id, productId, { status: 'rendering', modelId: failed.modelId, modelUrl: failed.modelUrl });
+  } else {
+    void startModel3D(productId, true);
+  }
+}
+
 /** Clears the temporary session only. Saved rooms/products/history are untouched. */
 export function clearSession() {
+  stopAllModelPolling();
   commit(null);
 }
 
@@ -364,6 +565,7 @@ export function buildLayout(session: VisualizationSession) {
       brand: p.brand ?? null,
       productCheckId: p.productCheckId ?? null,
       cutoutImageUri: p.cutout.status === 'ready' ? p.cutout.imageUri : null,
+      model3D: p.model3D.status === 'ready' ? { id: p.model3D.modelId, modelUrl: p.model3D.modelUrl } : null,
       transform: {
         x: round3(p.transform.x),
         y: round3(p.transform.y),
@@ -371,6 +573,7 @@ export function buildLayout(session: VisualizationSession) {
         rotation: round3(p.transform.rotation),
         aspect: round3(p.transform.aspect),
         zIndex: p.transform.zIndex,
+        yawDeg: Math.round(p.transform.yawDeg),
       },
     })),
     generatedAt: session.generation?.generatedAt ?? null,

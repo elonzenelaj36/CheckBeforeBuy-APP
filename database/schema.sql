@@ -201,6 +201,30 @@ CREATE TABLE IF NOT EXISTS generated_images (
     FOREIGN KEY (product_check_id) REFERENCES product_checks(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ── product_models ──────────────────────────────────────────────────────────
+-- AI-generated 3D models (GLB) of product photos, used as the 3D version of a
+-- product in room visualizations. One row per user + product photo
+-- (source_hash = the background-removed cutout's content hash), so the same
+-- photo is never sent for 3D generation twice.
+CREATE TABLE IF NOT EXISTS product_models (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id           BIGINT UNSIGNED NOT NULL,
+  source_hash       CHAR(32)        NOT NULL,
+  status            ENUM('processing', 'ready', 'failed') NOT NULL DEFAULT 'processing',
+  provider          VARCHAR(50)     NOT NULL,
+  provider_task_id  VARCHAR(100)    NULL,
+  provider_status   VARCHAR(20)     NULL,
+  progress          TINYINT UNSIGNED NULL,
+  model_path        VARCHAR(500)    NULL,
+  error_message     VARCHAR(500)    NULL,
+  created_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_product_models_source (user_id, source_hash),
+  CONSTRAINT fk_product_models_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ── price_history ───────────────────────────────────────────────────────────
 -- Historical price points for a product, recorded whenever an AI check (or
 -- a user) reports a price for it. Lets us later show price trends.

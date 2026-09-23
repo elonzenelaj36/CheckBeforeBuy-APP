@@ -11,6 +11,7 @@ router.use('/saved-products', require('./savedProductRoutes'));
 router.use('/items', require('./userItemRoutes'));
 router.use('/generated-images', require('./generatedImageRoutes'));
 router.use('/product-cutouts', require('./productCutoutRoutes'));
+router.use('/product-models', require('./productModelRoutes'));
 router.use('/find-for-my-home', require('./findForMyHomeRoutes'));
 
 router.get('/health', (req, res) => {

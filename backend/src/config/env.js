@@ -69,6 +69,12 @@ const env = {
     model: required('BACKGROUND_REMOVAL_MODEL', 'fast'),
   },
 
+  huggingFace: {
+    // Hugging Face access token — used for 3D furniture generation on the
+    // TRELLIS.2 Space (see trellisService.js). Backend only.
+    token: required('HF_TOKEN', ''),
+  },
+
   uploadDir: required('UPLOAD_DIR', 'uploads'),
   publicBaseUrl: required('PUBLIC_BASE_URL', `http://localhost:${required('PORT', '5000')}`),
 };

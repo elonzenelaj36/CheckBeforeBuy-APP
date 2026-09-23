@@ -25,6 +25,7 @@ import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 're
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { Colors } from '@/constants/colors';
+import { frameIndexForYaw } from '@/services/modelFrames';
 import {
   MAX_LAYER_WIDTH,
   MIN_LAYER_WIDTH,
@@ -106,23 +107,41 @@ export default function RoomComposer({
   const pinchStartWidth = useSharedValue(0);
   const rotationStart = useSharedValue(0);
 
-  // Bring in products added/removed and aspect/zIndex changes from the store,
-  // but keep the live position of layers that already exist — the store only
-  // ever receives that geometry from us, so the UI thread is the source of truth.
+  // Bring store changes onto the UI thread (products added/removed, aspect,
+  // layer order, turn angle, and any geometry the store itself changed), but
+  // keep the live geometry of a layer where the store didn't change it — the
+  // UI thread owns geometry while gestures run and only commits at the end.
+  const previousIncoming = React.useRef<LayerMap>({});
   React.useEffect(() => {
     const incoming = toLayerMap(products);
-    scheduleOnUI((next: LayerMap) => {
-      'worklet';
-      const live = layers.get();
-      const merged: LayerMap = {};
-      for (const id in next) {
-        const cur = live[id];
-        merged[id] = cur
-          ? { ...next[id], x: cur.x, y: cur.y, width: cur.width, rotation: cur.rotation }
-          : next[id];
-      }
-      layers.set(merged);
-    }, incoming);
+    const previous = previousIncoming.current;
+    previousIncoming.current = incoming;
+    scheduleOnUI(
+      (next: LayerMap, prev: LayerMap) => {
+        'worklet';
+        const live = layers.get();
+        const merged: LayerMap = {};
+        for (const id in next) {
+          const cur = live[id];
+          const before = prev[id];
+          if (!cur || !before) {
+            merged[id] = next[id];
+            continue;
+          }
+          const t = next[id];
+          merged[id] = {
+            ...t,
+            x: t.x !== before.x ? t.x : cur.x,
+            y: t.y !== before.y ? t.y : cur.y,
+            width: t.width !== before.width ? t.width : cur.width,
+            rotation: t.rotation !== before.rotation ? t.rotation : cur.rotation,
+          };
+        }
+        layers.set(merged);
+      },
+      incoming,
+      previous
+    );
   }, [products, layers]);
 
   React.useEffect(() => {
@@ -290,11 +309,16 @@ const ProductLayer = React.memo(function ProductLayer({
     };
   });
 
-  // A ready cutout is a transparent PNG trimmed to the product, drawn without
-  // a frame. Until then (or if removal failed) the original photo is shown
-  // as a framed card, so it never looks like a finished cutout.
-  const { cutout } = product;
-  const isCutout = cutout.status === 'ready';
+  // Best representation available: the 3D model seen from the product's turn
+  // angle, else the transparent cutout (2D fallback). Both are drawn without a
+  // frame. Until one exists (or if background removal failed) the original
+  // photo is shown as a framed card, so it never looks like a finished cutout.
+  const { cutout, model3D } = product;
+  const frameUri =
+    model3D.status === 'ready' ? model3D.frames[frameIndexForYaw(product.transform.yawDeg, model3D.frames.length)] : null;
+  const layerUri = frameUri ?? (cutout.status === 'ready' ? cutout.imageUri : null);
+  const isCutout = layerUri !== null;
+  const building3D = model3D.status === 'generating' || model3D.status === 'rendering';
 
   return (
     <Animated.View
@@ -307,7 +331,8 @@ const ProductLayer = React.memo(function ProductLayer({
       ]}
     >
       <Image
-        source={{ uri: isCutout ? cutout.imageUri : product.imageUri }}
+        source={{ uri: layerUri ?? product.imageUri }}
+        fadeDuration={0}
         style={[styles.layerImage, !isCutout && styles.photoImage, cutout.status === 'pending' && styles.pendingImage]}
         resizeMode={isCutout ? 'contain' : 'cover'}
         onLoad={(e) => {
@@ -318,6 +343,12 @@ const ProductLayer = React.memo(function ProductLayer({
       {cutout.status === 'pending' && (
         <View style={styles.layerStatus}>
           <ActivityIndicator size="small" color={Colors.cardHighlight} />
+        </View>
+      )}
+      {building3D && cutout.status === 'ready' && (
+        <View style={styles.badge3D}>
+          <ActivityIndicator size="small" color={Colors.cardHighlight} style={styles.badge3DSpinner} />
+          <Text style={styles.badge3DText}>3D</Text>
         </View>
       )}
       {cutout.status === 'failed' && (
@@ -395,6 +426,27 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  badge3D: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(11, 18, 32, 0.75)',
+  },
+  badge3DSpinner: {
+    transform: [{ scale: 0.6 }],
+    marginRight: 2,
+  },
+  badge3DText: {
+    color: Colors.cardHighlight,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   layerWarning: {
     position: 'absolute',

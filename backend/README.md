@@ -111,6 +111,8 @@ On success you'll see:
 | POST | `/api/generated-images/session` | Generate one room + N products (Cloudflare) |
 | PUT | `/api/generated-images/:id/layout` | Save the product layout of a visualization |
 | POST | `/api/product-cutouts` | Remove a product photo's background → transparent PNG layer |
+| POST | `/api/product-models` | Get / start the 3D model of a product cutout (`{ cutoutId, retry? }`) |
+| GET | `/api/product-models/:id` | 3D model status (`processing` / `ready` / `failed`, real stage) |
 | POST | `/api/find-for-my-home` | AI product recommendations for the user's home (see "Find for My Home") |
 | GET | `/api/health` | Liveness check |
 
@@ -196,6 +198,33 @@ generation (Cloudflare).
 - The original photo is not modified; generation still uses the original.
 - Optional env: `BACKGROUND_REMOVAL_PROVIDER` (`clearbackdrop`),
   `BACKGROUND_REMOVAL_MODEL` (`fast` default, or `hd`).
+
+## 3D furniture (TRELLIS.2)
+
+Product pipeline: photo → background removal (ClearBackdrop) → **3D model
+(TRELLIS.2, `services/trellisService.js`)** → the app renders the GLB into
+turntable views that become the product's layer in the room. 3D is an
+enhancement: if it fails or isn't configured, the product stays 2D.
+
+- Provider: Microsoft's TRELLIS.2 (MIT) on the public Hugging Face Space
+  `microsoft/TRELLIS.2` (ZeroGPU), via Gradio's HTTP queue protocol:
+  `preprocess_image` → `image_to_3d` → `extract_glb`, all in one session.
+  Settings in `GENERATION_SETTINGS` (resolution 512, 100k faces, 1024px
+  textures — lighter for phones and the GPU quota).
+- Config: `HF_TOKEN` in `backend/.env` (free "Read" token from
+  https://huggingface.co/settings/tokens; never in the app). Without it,
+  `POST /api/product-models` returns 503 `not_configured` and nothing is stored.
+- **Development only:** free accounts get a small daily ZeroGPU quota and each
+  GPU step reserves 120s of it, so expect only a few models per day (the
+  Space answers "You have exceeded your ZeroGPU quota" when it's used up —
+  shown to the user as today's limit). The Space's API is a demo and can
+  change or be busy without notice.
+- Quota protection (`services/productModelService.js`, table
+  `product_models`, migration 003): one row per user + cutout hash with a
+  UNIQUE key, so a photo starts at most one generation; failed models only
+  re-run with `retry: true`. Generations run one at a time on the server and
+  the GLB is saved as `uploads/model-<hash>-<id>.glb`. A generation
+  interrupted by a server restart is marked failed (retry restarts it).
 
 ## AI — room analysis
 

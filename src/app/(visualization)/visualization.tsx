@@ -15,6 +15,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ModelViewerModal from '@/components/model3d/ModelViewerModal';
+import ProductPipelineStatus from '@/components/model3d/ProductPipelineStatus';
+import TurnControl from '@/components/model3d/TurnControl';
+import TurntableRenderer from '@/components/model3d/TurntableRenderer';
 import RoomComposer from '@/components/RoomComposer';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
@@ -28,8 +32,9 @@ import {
   type ProductTransform,
   regenerateSession,
   removeProduct,
-  retryCutout,
   selectProduct,
+  setModelFrames,
+  setModelRenderFailed,
   startSession,
   updateProductTransform,
   useVisualizationSession,
@@ -66,20 +71,15 @@ export default function Visualization() {
   const [availableWidth, setAvailableWidth] = React.useState(0);
   const hydrating = !session && !hydrateFailed && !!params.roomId && !!params.productImageUri;
 
-  // Background-removal status across products: "Preparing…" while any is
-  // pending, then a short "Product ready" once they have all finished.
-  const cutoutsPending = session?.products.filter((p) => p.cutout.status === 'pending').length ?? 0;
-  const cutoutsFailed = session?.products.filter((p) => p.cutout.status === 'failed') ?? [];
-  const [showReady, setShowReady] = React.useState(false);
-  const previousPending = React.useRef(cutoutsPending);
-  React.useEffect(() => {
-    const finished = previousPending.current > 0 && cutoutsPending === 0 && cutoutsFailed.length === 0;
-    previousPending.current = cutoutsPending;
-    if (!finished) return;
-    setShowReady(true);
-    const timer = setTimeout(() => setShowReady(false), 2500);
-    return () => clearTimeout(timer);
-  }, [cutoutsPending, cutoutsFailed.length]);
+  const [viewerOpen, setViewerOpen] = React.useState(false);
+  const selectedId = session?.selectedProductId ?? null;
+  // Stable per selected product, so the turn gesture isn't rebuilt mid-drag.
+  const turnSelected = React.useCallback(
+    (yawDeg: number) => {
+      if (selectedId) updateProductTransform(selectedId, { yawDeg });
+    },
+    [selectedId]
+  );
 
   React.useEffect(() => {
     if (session || !params.roomId || !params.productImageUri) return;
@@ -146,6 +146,11 @@ export default function Visualization() {
   const aspect = Math.min(2, Math.max(0.5, roomAspect));
   const canvasWidth = Math.min(availableWidth, MAX_CANVAS_HEIGHT * aspect);
   const canvasHeight = canvasWidth / aspect;
+
+  const selectedProduct = products.find((p) => p.id === selectedProductId) ?? null;
+  const selected3D = selectedProduct?.model3D.status === 'ready' ? selectedProduct.model3D : null;
+  // One product at a time gets its 3D views rendered on the device.
+  const renderJob = products.find((p) => p.model3D.status === 'rendering') ?? null;
 
   const selectFromList = (productId: string) => {
     selectProduct(productId);
@@ -291,44 +296,22 @@ export default function Visualization() {
           <Text style={styles.canvasHint}>
             {showingAi
               ? 'AI render of your room. Switch to Arrange to move products, then regenerate.'
-              : 'Drag a product to move it · pinch to resize · twist to rotate'}
+              : selected3D
+                ? 'Drag to move · pinch to resize · twist to tilt · turn it in 3D below'
+                : 'Drag a product to move it · pinch to resize · twist to rotate'}
           </Text>
         )}
 
-        {cutoutsPending > 0 ? (
-          <View style={styles.statusCard}>
-            <ActivityIndicator size="small" color={Colors.accent} />
-            <View style={styles.statusText}>
-              <Text style={styles.statusTitle}>Preparing your product…</Text>
-              <Text style={styles.statusDescription}>Removing background</Text>
-            </View>
-          </View>
-        ) : cutoutsFailed.length > 0 ? (
-          <View style={styles.cutoutErrorCard}>
-            <Text style={styles.pendingEyebrow}>BACKGROUND NOT REMOVED</Text>
-            <Text style={styles.resultDescription}>
-              {cutoutsFailed[0].cutout.status === 'failed' ? cutoutsFailed[0].cutout.message : ''}
-            </Text>
-            <Text style={styles.resultDescription}>
-              {cutoutsFailed.length === 1 ? `"${cutoutsFailed[0].name}" is` : `${cutoutsFailed.length} products are`} shown
-              with the original photo until it works.
-            </Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={() => cutoutsFailed.forEach((p) => retryCutout(p.id))}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.retryButtonText}>TRY AGAIN</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          showReady && (
-            <View style={styles.statusCard}>
-              <Text style={styles.readyCheck}>✓</Text>
-              <Text style={styles.statusTitle}>Product ready</Text>
-            </View>
-          )
+        {!showingAi && selectedProduct && selected3D && (
+          <TurnControl
+            yawDeg={selectedProduct.transform.yawDeg}
+            frameCount={selected3D.frames.length}
+            onChange={turnSelected}
+            onOpenViewer={() => setViewerOpen(true)}
+          />
         )}
+
+        <ProductPipelineStatus products={products} />
 
         {/* Products */}
         <Text style={styles.sectionLabel}>PRODUCTS IN THIS ROOM</Text>
@@ -414,6 +397,30 @@ export default function Visualization() {
           <Text style={styles.backToHomeLinkText}>START OVER</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {renderJob && renderJob.model3D.status === 'rendering' && (
+        <TurntableRenderer
+          key={`${renderJob.id}:${renderJob.model3D.modelUrl}`}
+          productId={renderJob.id}
+          modelUrl={renderJob.model3D.modelUrl}
+          onDone={setModelFrames}
+          onError={setModelRenderFailed}
+        />
+      )}
+
+      {viewerOpen && selectedProduct && selected3D && (
+        <ModelViewerModal
+          visible
+          productName={selectedProduct.name}
+          modelUrl={selected3D.modelUrl}
+          yawDeg={selectedProduct.transform.yawDeg}
+          onUseAngle={(yawDeg) => {
+            updateProductTransform(selectedProduct.id, { yawDeg });
+            setViewerOpen(false);
+          }}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -533,58 +540,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.border,
     backgroundColor: Colors.surface2,
-  },
-  statusCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  statusText: {
-    flex: 1,
-  },
-  statusTitle: {
-    color: Colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  statusDescription: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  readyCheck: {
-    color: Colors.successText,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cutoutErrorCard: {
-    marginTop: 14,
-    backgroundColor: Colors.warningDim,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.warning,
-    padding: 16,
-  },
-  retryButton: {
-    alignSelf: 'flex-start',
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: Colors.warning,
-  },
-  retryButtonText: {
-    color: Colors.textInverse,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
   },
   productThumbnailSelected: {
     borderColor: Colors.accent,
