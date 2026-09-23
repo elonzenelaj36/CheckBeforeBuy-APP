@@ -307,6 +307,8 @@ export default function ProductAnalysis() {
                 productImageUri: result.imageUrl ?? imageUri,
                 productName: product.name || productName,
                 productCheckId: result.id,
+                ...(product.category ? { productCategory: product.category } : {}),
+                ...(product.brand ? { productBrand: product.brand } : {}),
               },
             })
           }

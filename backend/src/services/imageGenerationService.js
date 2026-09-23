@@ -65,27 +65,76 @@ function toBlob(filePath) {
   return { buf, blob: new Blob([buf], { type: mime }), name: path.basename(filePath) };
 }
 
-async function generateWithCloudflare({ roomImagePath, productImagePath, roomType }) {
+/** "the lower left of the room, about 30% of the image width" — coarse words the model can follow. */
+function describePlacement({ x, y, width }) {
+  const horizontal = x < 0.34 ? 'left' : x > 0.66 ? 'right' : 'center';
+  const vertical = y < 0.34 ? 'upper' : y > 0.66 ? 'lower' : 'middle';
+  const area = vertical === 'middle' && horizontal === 'center' ? 'center' : `${vertical} ${horizontal}`;
+  return `in the ${area} of the room, about ${Math.round(width * 100)}% of the image width`;
+}
+
+/** Only products the user arranged on the app's layout editor carry a placement. */
+function placementSentence(products) {
+  const hints = products
+    .map((p, i) => (p.placement ? `the product from image ${i + 1} ${describePlacement(p.placement)}` : null))
+    .filter(Boolean);
+  return hints.length ? `Position ${hints.join('; ')}. ` : '';
+}
+
+/**
+ * Same wording as the original single-product prompt; with several products it
+ * additionally lists them and asks for all of them to appear together.
+ */
+function buildPrompt({ roomType, products }) {
+  const n = products.length;
+  const room = `Image 0 is a photo of a ${roomType || 'room'}. `;
+  if (n === 1) {
+    return (
+      room +
+      'Image 1 is a product photo. ' +
+      'Place the product from image 1 naturally into the room from image 0, at realistic scale, ' +
+      'with matching perspective, lighting and shadows. ' +
+      placementSentence(products) +
+      'Keep the room, its layout, walls, floor and ' +
+      'existing furniture exactly as they are. Photorealistic result.'
+    );
+  }
+  const list = products
+    .map((p, i) => `image ${i + 1}: ${[p.name, p.category, p.brand].filter(Boolean).join(', ')}`)
+    .join('; ');
+  return (
+    room +
+    `Images 1 to ${n} are product photos (${list}). ` +
+    `Place ALL ${n} products naturally into the room from image 0 at the same time, each where it naturally belongs, ` +
+    'at realistic scale, with matching perspective, lighting and shadows. Use each original product as accurately ' +
+    'as possible (shape, color, material, proportions, design) and do not replace it with a similar object. ' +
+    placementSentence(products) +
+    'Keep the room, its layout, walls, floor and existing furniture exactly as they are. ' +
+    'All products must appear together in the same final image. Photorealistic result.'
+  );
+}
+
+async function generateWithCloudflare({ roomImagePath, products, roomType }) {
   if (!roomImagePath) {
     throw new Error('A room photo is required to generate a visualization. Add a photo to this room first.');
   }
 
   const room = toBlob(roomImagePath);
-  const product = toBlob(productImagePath);
   const { width, height } = outputSize(room.buf);
 
-  const prompt =
-    `Image 0 is a photo of a ${roomType || 'room'}. Image 1 is a product photo. ` +
-    'Place the product from image 1 naturally into the room from image 0, at realistic scale, ' +
-    'with matching perspective, lighting and shadows. Keep the room, its layout, walls, floor and ' +
-    'existing furniture exactly as they are. Photorealistic result.';
+  const prompt = buildPrompt({ roomType, products });
 
+  // Same request format as before: original room photo = input_image_0, the
+  // original product photos = input_image_1..N (array order).
   const form = new FormData();
   form.append('prompt', prompt);
   form.append('width', String(width));
   form.append('height', String(height));
   form.append('input_image_0', room.blob, room.name);
-  form.append('input_image_1', product.blob, product.name);
+  products.forEach((p, i) => {
+    const product = toBlob(p.imagePath);
+    form.append(`input_image_${i + 1}`, product.blob, product.name);
+  });
 
   const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.imageAi.accountId)}/ai/run/${env.imageAi.model}`;
 
@@ -136,11 +185,14 @@ async function generateWithCloudflare({ roomImagePath, productImagePath, roomTyp
 /**
  * @param {object} params
  * @param {string|null} params.roomImagePath - absolute path to the room photo
- * @param {string} params.productImagePath - absolute path to the product photo
+ * @param {Array<{imagePath: string, name?: string, category?: string, brand?: string, placement?: {x: number, y: number, width: number}|null}>} params.products - ORIGINAL product photos (absolute paths), 1..N, in order
  * @param {string} params.roomType
  * @returns {Promise<{status: 'pending'|'completed'|'failed', generatedImagePath: string|null, provider: string|null, message?: string}>}
  */
-async function generateRoomVisualization({ roomImagePath, productImagePath, roomType }) {
+async function generateRoomVisualization({ roomImagePath, products, roomType }) {
+  if (!Array.isArray(products) || products.length === 0) {
+    throw new Error('At least one product is required.');
+  }
   const { provider, apiKey, accountId } = env.imageAi;
 
   if (!provider || !apiKey || (provider === 'cloudflare' && !accountId)) {
@@ -155,7 +207,7 @@ async function generateRoomVisualization({ roomImagePath, productImagePath, room
   }
 
   if (provider === 'cloudflare') {
-    return generateWithCloudflare({ roomImagePath, productImagePath, roomType });
+    return generateWithCloudflare({ roomImagePath, products, roomType });
   }
 
   throw new Error(`Image AI provider "${provider}" is not supported. Use "cloudflare".`);

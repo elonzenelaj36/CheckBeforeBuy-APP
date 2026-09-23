@@ -6,8 +6,10 @@ const {
   listGeneratedImagesForRoom,
   createGeneratedImage,
   updateGeneratedImage,
+  saveGeneratedImageLayout,
   deleteGeneratedImage,
 } = require('../controllers/generatedImageController');
+const { generateSession } = require('../controllers/visualizationSessionController');
 
 const router = express.Router();
 
@@ -23,7 +25,13 @@ router.post(
   ]),
   createGeneratedImage
 );
+router.post(
+  '/session',
+  upload.fields(Array.from({ length: 8 }, (_, i) => ({ name: `productImage${i}`, maxCount: 1 }))),
+  generateSession
+);
 router.patch('/:id', updateGeneratedImage);
+router.put('/:id/layout', saveGeneratedImageLayout);
 router.delete('/:id', deleteGeneratedImage);
 
 module.exports = router;

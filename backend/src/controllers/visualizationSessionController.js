@@ -1,16 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const { pool } = require('../db/connection');
-const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { generateRoomVisualization } = require('../services/imageGenerationService');
-const {
-  MAX_PRODUCTS,
-  mockGenerateSessionVisualization,
-} = require('../services/visualizationSessionService');
+
+const MAX_PRODUCTS = 8;
 
 function discardUploads(files) {
   Object.values(files || {})
@@ -30,17 +27,27 @@ function parseProducts(raw) {
   return products;
 }
 
+/** Keeps only a well-formed { x, y, width } in 0..1; anything else is ignored. */
+function parsePlacement(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const nums = [raw.x, raw.y, raw.width].map(Number);
+  if (nums.some((n) => !Number.isFinite(n) || n < 0 || n > 1)) return null;
+  const [x, y, width] = nums;
+  return { x, y, width };
+}
+
 /**
  * POST /api/generated-images/session   (multipart/form-data)
- *   roomId, products (JSON: [{ name, category?, brand?, model?, characteristics?, productCheckId? }]),
+ *   roomId, products (JSON: [{ name, category?, brand?, model?, characteristics?, productCheckId?,
+ *     placement? { x, y, width } — normalized 0..1, only for products the user arranged }]),
  *   productImage0..productImage7 (file per product, in the same order; omit for a
  *   product that has productCheckId — its saved photo is used).
  *
  * The room's ORIGINAL saved primary photo and the ORIGINAL product photos are
  * the only inputs; a previous generation is never fed back in.
  *
- * VISUALIZATION_MOCK !== 'false' → mock (no provider call, nothing stored).
- * Otherwise → real generation, stored as a generated_images row.
+ * Calls the existing Cloudflare generation service and stores the result as a
+ * generated_images row (same as POST /generated-images does for one product).
  */
 const generateSession = asyncHandler(async (req, res) => {
   const files = req.files || {};
@@ -53,14 +60,6 @@ const generateSession = asyncHandler(async (req, res) => {
     if (roomRows.length === 0) throw new ApiError(404, 'Room not found.');
     const roomType = roomRows[0].room_type;
 
-    // ── Mock ────────────────────────────────────────────────────────────
-    if (env.visualizationMock) {
-      if (env.nodeEnv === 'production') throw new ApiError(503, 'Room visualization is not available yet.');
-      const result = await mockGenerateSessionVisualization({ roomType, products });
-      return res.json({ success: true, mock: true, generatedImage: null, productsUsed: result.productsUsed });
-    }
-
-    // ── Real ────────────────────────────────────────────────────────────
     const [photoRows] = await pool.query(
       'SELECT image_path FROM room_photos WHERE room_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1',
       [roomId]
@@ -94,6 +93,7 @@ const generateSession = asyncHandler(async (req, res) => {
         category: meta.category || null,
         brand: meta.brand || null,
         model: meta.model || null,
+        placement: parsePlacement(meta.placement),
       });
     }
 
@@ -130,7 +130,6 @@ const generateSession = asyncHandler(async (req, res) => {
 
     res.status(201).json({
       success: generation.status === 'completed',
-      mock: false,
       status: generation.status,
       id: String(generatedImageId),
       generatedImage: toAbsoluteUrl(generation.generatedImagePath),
@@ -138,9 +137,9 @@ const generateSession = asyncHandler(async (req, res) => {
       message: generation.message || null,
     });
   } finally {
-    // Mock mode and failed validation must not leave uploads behind; in real
-    // mode the product photos are kept because generated_images references them.
-    if (env.visualizationMock || res.statusCode >= 400 || !res.headersSent) discardUploads(files);
+    // A request that failed validation must not leave uploads behind; on success the
+    // product photos are kept because generated_images references them.
+    if (!res.headersSent) discardUploads(files);
   }
 });
 

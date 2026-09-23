@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS generated_images (
   generated_image_path      VARCHAR(500)    NULL,
   status                    ENUM('pending', 'completed', 'failed') NOT NULL DEFAULT 'pending',
   provider                  VARCHAR(50)     NULL,
+  layout_json               JSON            NULL,
   created_at                TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_generated_images_user (user_id),

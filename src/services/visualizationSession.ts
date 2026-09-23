@@ -11,8 +11,14 @@
  * - `room.imageUri` and every `product.imageUri` are the ORIGINAL images and
  *   are never replaced by the generated one, so regeneration always starts
  *   from originals.
- * - Generation goes through backend POST /generated-images/session, which is a
- *   mock unless VISUALIZATION_MOCK=false is set in backend/.env.
+ * - Generation goes through backend POST /generated-images/session,
+ *   which calls the existing Cloudflare image-generation service.
+ * - Every product also has an editable `transform` (its layer on the room
+ *   photo). Moving/resizing/rotating/selecting only changes this local state —
+ *   it never calls the generation API. Only regenerateSession() does.
+ * - Each product's layer shows a transparent `cutout` of its photo. It is
+ *   prepared once, in the background, when the product joins the session
+ *   (see productCutouts.ts). Generation still uses the ORIGINAL photo.
  */
 
 import React from 'react';
@@ -20,6 +26,7 @@ import React from 'react';
 import { File } from 'expo-file-system';
 
 import { apiUploadMultipart } from './api';
+import { removeProductBackground } from './productCutouts';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 export const MAX_SESSION_PRODUCTS = 8;
@@ -33,9 +40,40 @@ export type SessionRoom = {
   imageUri: string | null;
 };
 
+/**
+ * A product's layer on the room photo, in coordinates normalized to the ROOM
+ * IMAGE (0..1), so it renders the same at any screen size.
+ */
+export type ProductTransform = {
+  /** Center of the layer. */
+  x: number;
+  y: number;
+  /** Layer width as a fraction of the room image width; height follows `aspect`. */
+  width: number;
+  /** Radians. */
+  rotation: number;
+  /** Product photo width / height (1 until the photo has loaded). */
+  aspect: number;
+  zIndex: number;
+  /** True once the user has moved/resized/rotated it — only then is the position sent to the AI as a hint. */
+  placed: boolean;
+};
+
+export const MIN_LAYER_WIDTH = 0.08;
+export const MAX_LAYER_WIDTH = 0.9;
+
+export type SessionCutout =
+  | { status: 'pending' }
+  | { status: 'ready'; imageUri: string }
+  | { status: 'failed'; message: string };
+
 export type SessionProduct = {
   /** Unique within the session (the same product may be added twice). */
   id: string;
+  transform: ProductTransform;
+  /** Transparent version of the photo shown as the layer. */
+  cutout: SessionCutout;
+  /** ORIGINAL photo — sent to generation, never replaced by the cutout. */
   imageUri: string;
   name: string;
   category?: string | null;
@@ -47,10 +85,10 @@ export type SessionProduct = {
 };
 
 export type SessionGeneration = {
-  /** true = placeholder from the mock layer, NOT an AI image. */
-  mock: boolean;
-  /** Placeholder shown until real generation exists (the original room photo). */
-  imageUri: string | null;
+  /** generated_images row id — Save attaches the layout to it. */
+  id: string;
+  /** The latest generated image. Never used as an input — regeneration always starts from the originals. */
+  imageUri: string;
   productsUsed: number;
   generatedAt: string;
 };
@@ -61,10 +99,11 @@ export type VisualizationSession = {
   /** Stable order — this is the order used in the generation prompt. */
   products: SessionProduct[];
   generation: SessionGeneration | null;
+  selectedProductId: string | null;
   createdAt: string;
 };
 
-export type NewSessionProduct = Omit<SessionProduct, 'id'>;
+export type NewSessionProduct = Omit<SessionProduct, 'id' | 'transform' | 'cutout'>;
 
 // ── Store ────────────────────────────────────────────────────────────────────
 
@@ -103,15 +142,39 @@ export function useVisualizationSession(): VisualizationSession | null {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
+/** New layers are staggered across the lower middle of the room so they don't stack exactly. */
+function defaultTransform(index: number, zIndex: number): ProductTransform {
+  const column = index % 3;
+  const row = Math.floor(index / 3) % 2;
+  return {
+    x: 0.3 + column * 0.2,
+    y: 0.58 + row * 0.16,
+    width: 0.3,
+    rotation: 0,
+    aspect: 1,
+    zIndex,
+    placed: false,
+  };
+}
+
+function topZIndex(products: SessionProduct[]): number {
+  return products.reduce((max, p) => Math.max(max, p.transform.zIndex), 0);
+}
+
 export function startSession(room: SessionRoom, firstProduct?: NewSessionProduct): VisualizationSession {
+  const first: SessionProduct | null = firstProduct
+    ? { ...firstProduct, id: nextId('product'), transform: defaultTransform(0, 1), cutout: { status: 'pending' } }
+    : null;
   const session: VisualizationSession = {
     id: nextId('session'),
     room,
-    products: firstProduct ? [{ ...firstProduct, id: nextId('product') }] : [],
+    products: first ? [first] : [],
     generation: null,
+    selectedProductId: first?.id ?? null,
     createdAt: new Date().toISOString(),
   };
   commit(session);
+  if (first) void prepareCutout(first.id);
   return session;
 }
 
@@ -144,8 +207,12 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
     ...input,
     id: nextId('product'),
     name: input.name.trim() || `Product ${session.products.length + 1}`,
+    transform: defaultTransform(session.products.length, topZIndex(session.products) + 1),
+    cutout: { status: 'pending' },
   };
-  commit({ ...session, products: [...session.products, product] });
+  // The new product is selected so the user can position it right away.
+  commit({ ...session, products: [...session.products, product], selectedProductId: product.id });
+  void prepareCutout(product.id);
   return { ok: true, product };
 }
 
@@ -153,7 +220,82 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
 export function removeProduct(productId: string) {
   const session = getSession();
   if (!session) return;
-  commit({ ...session, products: session.products.filter((p) => p.id !== productId) });
+  commit({
+    ...session,
+    products: session.products.filter((p) => p.id !== productId),
+    selectedProductId: session.selectedProductId === productId ? null : session.selectedProductId,
+  });
+}
+
+/** Selects a layer and brings it to the front. null deselects. Local only. */
+export function selectProduct(productId: string | null) {
+  const session = getSession();
+  if (!session || session.selectedProductId === productId) return;
+  const top = topZIndex(session.products);
+  commit({
+    ...session,
+    selectedProductId: productId,
+    products: session.products.map((p) =>
+      p.id === productId && p.transform.zIndex < top ? { ...p, transform: { ...p.transform, zIndex: top + 1 } } : p
+    ),
+  });
+}
+
+/**
+ * Stores a layer's transform. Called once at the END of a gesture (never per
+ * frame) and when a product photo reports its aspect ratio. Local only.
+ */
+export function updateProductTransform(productId: string, patch: Partial<ProductTransform>) {
+  const session = getSession();
+  if (!session) return;
+  commit({
+    ...session,
+    products: session.products.map((p) =>
+      p.id === productId ? { ...p, transform: { ...p.transform, ...patch } } : p
+    ),
+  });
+}
+
+function patchProduct(sessionId: string, productId: string, patch: (p: SessionProduct) => SessionProduct) {
+  const session = getSession();
+  if (!session || session.id !== sessionId) return; // started over meanwhile
+  commit({ ...session, products: session.products.map((p) => (p.id === productId ? patch(p) : p)) });
+}
+
+/**
+ * Removes the background of a product's ORIGINAL photo so its layer is a
+ * clean cutout. Runs once per product (the result is cached per photo); a
+ * failure only marks the product — the session and other products are kept,
+ * and the user can retry with retryCutout().
+ */
+async function prepareCutout(productId: string) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (!session || !product || product.cutout.status === 'ready') return;
+
+  patchProduct(session.id, productId, (p) => ({ ...p, cutout: { status: 'pending' } }));
+  try {
+    const cutout = await removeProductBackground({ imageUri: product.imageUri, productCheckId: product.productCheckId });
+    patchProduct(session.id, productId, (p) => ({
+      ...p,
+      cutout: { status: 'ready', imageUri: cutout.imageUri },
+      transform: { ...p.transform, aspect: cutout.width / cutout.height },
+    }));
+  } catch (error: any) {
+    if (__DEV__) console.warn('[visualization] background removal failed:', error?.message ?? error);
+    patchProduct(session.id, productId, (p) => ({
+      ...p,
+      cutout: {
+        status: 'failed',
+        message: error?.message || "We couldn't remove the product background. Please try again.",
+      },
+    }));
+  }
+}
+
+/** User-requested retry after a failed background removal. */
+export function retryCutout(productId: string) {
+  void prepareCutout(productId);
 }
 
 /** Clears the temporary session only. Saved rooms/products/history are untouched. */
@@ -174,11 +316,20 @@ function isUsableImage(uri: string): boolean {
 
 // ── Generation ────────────────────────────────────────────────────────
 
-/** What the future image-generation provider will receive: ORIGINAL images, array of products. */
+/** What the generation service receives: ORIGINAL images, array of products. */
 export type GenerationPayload = {
   roomImage: string | null;
   roomType: string;
-  products: { image: string; name: string; category?: string | null; brand?: string | null; model?: string | null; characteristics?: string[] }[];
+  products: {
+    image: string;
+    name: string;
+    category?: string | null;
+    brand?: string | null;
+    model?: string | null;
+    characteristics?: string[];
+    /** Only for layers the user arranged: where it should go (normalized to the room image). */
+    placement?: { x: number; y: number; width: number };
+  }[];
 };
 
 export function buildGenerationPayload(session: VisualizationSession): GenerationPayload {
@@ -192,15 +343,46 @@ export function buildGenerationPayload(session: VisualizationSession): Generatio
       brand: p.brand,
       model: p.model,
       characteristics: p.characteristics,
+      ...(p.transform.placed
+        ? { placement: { x: round3(p.transform.x), y: round3(p.transform.y), width: round3(p.transform.width) } }
+        : {}),
     })),
+  };
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/** What Save stores with the generated image: enough to understand/rebuild the composition. */
+export function buildLayout(session: VisualizationSession) {
+  return {
+    version: 1,
+    sessionId: session.id,
+    room: { id: session.room.id, name: session.room.name, roomType: session.room.roomType },
+    products: session.products.map((p) => ({
+      name: p.name,
+      category: p.category ?? null,
+      brand: p.brand ?? null,
+      productCheckId: p.productCheckId ?? null,
+      cutoutImageUri: p.cutout.status === 'ready' ? p.cutout.imageUri : null,
+      transform: {
+        x: round3(p.transform.x),
+        y: round3(p.transform.y),
+        width: round3(p.transform.width),
+        rotation: round3(p.transform.rotation),
+        aspect: round3(p.transform.aspect),
+        zIndex: p.transform.zIndex,
+      },
+    })),
+    generatedAt: session.generation?.generatedAt ?? null,
+    savedAt: new Date().toISOString(),
   };
 }
 
 export type RegenerateResult = { ok: true } | { ok: false; message: string };
 
 /**
- * Validates the session, logs the payload the real provider will later get,
- * uploads the original photos to the backend (mock or real, decided there) and stores the result.
+ * Validates the session, logs the payload,
+ * uploads the original photos to the backend, which calls the Cloudflare service, and stores the result.
  */
 export async function regenerateSession(): Promise<RegenerateResult> {
   const session = getSession();
@@ -210,10 +392,7 @@ export async function regenerateSession(): Promise<RegenerateResult> {
 
   const payload = buildGenerationPayload(session);
   if (__DEV__) {
-    console.log(
-      `[visualization] requesting generation with ${payload.products.length} product(s) + room (backend decides mock vs real):`,
-      JSON.stringify(payload, null, 2)
-    );
+    console.log(`[visualization] generating: room + ${payload.products.length} product(s)`, JSON.stringify(payload, null, 2));
   }
 
   try {
@@ -227,8 +406,8 @@ export async function regenerateSession(): Promise<RegenerateResult> {
 
     const response = await apiUploadMultipart<{
       success: boolean;
-      mock: boolean;
       status?: 'pending' | 'completed' | 'failed';
+      id: string;
       generatedImage: string | null;
       productsUsed: number;
       message?: string | null;
@@ -246,29 +425,28 @@ export async function regenerateSession(): Promise<RegenerateResult> {
     const latest = getSession();
     if (!latest || latest.id !== session.id) return { ok: false, message: 'The session changed. Please try again.' };
 
-    if (!response.mock && !(response.status === 'completed' && response.generatedImage)) {
+    if (response.status !== 'completed' || !response.generatedImage) {
       return {
         ok: false,
         message:
           response.message ||
           (response.status === 'pending'
             ? 'Image generation is not configured on the server yet.'
-            : "We couldn't generate this visualization. Please try again."),
+            : "Couldn't generate the visualization. Please try again."),
       };
     }
 
     commit({
       ...latest,
       generation: {
-        mock: response.mock,
-        // Mock: original room photo as placeholder. Real: the generated image.
-        imageUri: response.mock ? session.room.imageUri : response.generatedImage,
+        id: response.id,
+        imageUri: response.generatedImage,
         productsUsed: response.productsUsed,
         generatedAt: new Date().toISOString(),
       },
     });
     return { ok: true };
   } catch (error: any) {
-    return { ok: false, message: error?.message ?? 'Visualization is unavailable right now.' };
+    return { ok: false, message: error?.message ?? "Couldn't generate the visualization. Please try again." };
   }
 }

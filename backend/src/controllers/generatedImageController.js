@@ -7,6 +7,16 @@ const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { generateRoomVisualization } = require('../services/imageGenerationService');
 const path = require('path');
 
+function parseLayout(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value; // mysql2 already parses JSON columns
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 function serialize(row) {
   return {
     id: String(row.id),
@@ -25,6 +35,9 @@ function serialize(row) {
     roomImageUri: toAbsoluteUrl(row.source_room_image_path),
     generatedImageUri: toAbsoluteUrl(row.generated_image_path),
     status: row.status,
+    // Product layout saved from the visualization editor (null for older rows,
+    // or before migration 002 has been applied).
+    layout: parseLayout(row.layout_json),
     createdAt: row.created_at,
   };
 }
@@ -114,7 +127,9 @@ const createGeneratedImage = asyncHandler(async (req, res) => {
   try {
     generationResult = await generateRoomVisualization({
       roomImagePath: sourceRoomImagePath ? path.join(uploadRoot, path.basename(sourceRoomImagePath)) : null,
-      productImagePath: path.join(uploadRoot, path.basename(sourceProductImagePath)),
+      products: [
+        { imagePath: path.join(uploadRoot, path.basename(sourceProductImagePath)), name: productName || undefined },
+      ],
       roomType: roomRows[0].room_type,
     });
   } catch (err) {
@@ -198,6 +213,34 @@ const updateGeneratedImage = asyncHandler(async (req, res) => {
   res.json(serialize(updatedRows[0]));
 });
 
+/**
+ * PUT /api/generated-images/:id/layout — body: { layout }
+ *
+ * Stores the product layout (room, products, positions, sizes, rotation,
+ * layers) from the visualization editor next to its generated image. Pure
+ * data — never triggers generation.
+ */
+const MAX_LAYOUT_BYTES = 64 * 1024;
+
+const saveGeneratedImageLayout = asyncHandler(async (req, res) => {
+  const { layout } = req.body || {};
+  if (!layout || typeof layout !== 'object' || !Array.isArray(layout.products)) {
+    throw new ApiError(400, 'layout with a products array is required.');
+  }
+  const json = JSON.stringify(layout);
+  if (json.length > MAX_LAYOUT_BYTES) throw new ApiError(400, 'layout is too large.');
+
+  const [result] = await pool.query('UPDATE generated_images SET layout_json = ? WHERE id = ? AND user_id = ?', [
+    json,
+    req.params.id,
+    req.user.id,
+  ]);
+  if (result.affectedRows === 0) throw new ApiError(404, 'Generated image not found.');
+
+  const [rows] = await pool.query(`${SELECT_BASE} WHERE gi.id = ?`, [req.params.id]);
+  res.json(serialize(rows[0]));
+});
+
 /** DELETE /api/generated-images/:id */
 const deleteGeneratedImage = asyncHandler(async (req, res) => {
   const [result] = await pool.query('DELETE FROM generated_images WHERE id = ? AND user_id = ?', [
@@ -213,5 +256,6 @@ module.exports = {
   listGeneratedImagesForRoom,
   createGeneratedImage,
   updateGeneratedImage,
+  saveGeneratedImageLayout,
   deleteGeneratedImage,
 };

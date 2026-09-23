@@ -15,6 +15,7 @@ import EmptyState from '@/components/EmptyState';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import { getRooms, Room } from '@/services/rooms';
+import { startSession } from '@/services/visualizationSession';
 
 export default function SelectRoom() {
   const router = useRouter();
@@ -23,6 +24,8 @@ export default function SelectRoom() {
     productImageUri?: string | string[];
     productName?: string | string[];
     productCheckId?: string | string[];
+    productCategory?: string | string[];
+    productBrand?: string | string[];
   }>();
 
   const productImageUri = Array.isArray(params.productImageUri)
@@ -36,6 +39,8 @@ export default function SelectRoom() {
   const productCheckId = Array.isArray(params.productCheckId)
     ? params.productCheckId[0]
     : params.productCheckId;
+
+  const first = (v?: string | string[]) => (Array.isArray(v) ? v[0] : v);
 
   const [savedRooms, setSavedRooms] = React.useState<Room[]>([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -53,18 +58,26 @@ export default function SelectRoom() {
   // it here must always carry its real roomId into the visualization
   // request, never just a roomType category.
   const selectSavedRoom = (room: Room) => {
-    router.push({
-      pathname: '/visualization',
-      params: {
+    // Starts a fresh temporary session: the room + Product 1. It lives in
+    // memory (services/visualizationSession.ts), so no images go through params.
+    startSession(
+      {
+        id: room.id,
+        name: room.name,
         roomType: room.roomType,
-        roomId: room.id,
-        imageUri: room.primaryImageUri || productImageUri,
-        productImageUri,
-        productName: productName || room.name,
-        productCheckId,
-        productMode: 'true',
+        imageUri: room.primaryImageUri ?? null,
       },
-    });
+      productImageUri
+        ? {
+            imageUri: productImageUri,
+            name: productName || 'Product',
+            category: first(params.productCategory),
+            brand: first(params.productBrand),
+            productCheckId: productCheckId ?? null,
+          }
+        : undefined
+    );
+    router.push('/visualization');
   };
 
   const goToCreateRoom = () => {

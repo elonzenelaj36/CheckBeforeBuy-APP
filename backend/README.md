@@ -108,6 +108,9 @@ On success you'll see:
 | POST | `/api/generated-images` | Request a visualization (see status note below) |
 | PATCH | `/api/generated-images/:id` | Rename — updates the linked product check's (and shared product's) name when there is one, not just this row |
 | DELETE | `/api/generated-images/:id` | Delete |
+| POST | `/api/generated-images/session` | Generate one room + N products (Cloudflare) |
+| PUT | `/api/generated-images/:id/layout` | Save the product layout of a visualization |
+| POST | `/api/product-cutouts` | Remove a product photo's background → transparent PNG layer |
 | POST | `/api/find-for-my-home` | AI product recommendations for the user's home (see "Find for My Home") |
 | GET | `/api/health` | Liveness check |
 
@@ -178,6 +181,21 @@ mobile UI) needs to change, since they already speak the `pending` /
 
 The mobile app is built to reflect this honestly: it shows a "visualization
 pending — AI not configured yet" state instead of a fake generated image.
+
+## Product background removal
+
+`services/backgroundRemovalService.js` → `removeBackground({ imagePath })`,
+used by `POST /api/product-cutouts` (multipart `image`, or `productCheckId`).
+Provider: [ClearBackdrop](https://clearbackdrop.com/api) — no API key,
+100 images/hour per server IP, max 15MB. Completely separate from image
+generation (Cloudflare).
+
+- Output: transparent PNG, trimmed to the product, longest side ≤ 1200px,
+  stored as `uploads/cutout-<sha256 of photo>.png`. The same photo is never
+  sent twice (the file is the cache). No database changes.
+- The original photo is not modified; generation still uses the original.
+- Optional env: `BACKGROUND_REMOVAL_PROVIDER` (`clearbackdrop`),
+  `BACKGROUND_REMOVAL_MODEL` (`fast` default, or `hd`).
 
 ## AI — room analysis
 

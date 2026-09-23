@@ -11,7 +11,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { apiDelete, apiGet, apiPatch, apiUploadMultipart } from './api';
+import { apiDelete, apiGet, apiPatch, apiPut, apiUploadMultipart } from './api';
 
 const GENERATED_IMAGES_CACHE_KEY = '@check_before_buy_generated_images_cache_v2';
 
@@ -32,6 +32,8 @@ export type GeneratedImage = {
   /** null while status is "pending" or "failed". */
   generatedImageUri: string | null;
   status: GeneratedImageStatus;
+  /** Product layout saved from the Visualization screen (room, products, positions); null if never saved. */
+  layout?: unknown | null;
   createdAt: string;
 };
 
@@ -133,6 +135,16 @@ export async function updateGeneratedImage(
   const updated = await apiPatch<GeneratedImage>(`/generated-images/${imageId}`, {
     productName: productName.trim(),
   });
+
+  const existing = await readCache();
+  await writeCache(existing.map((img) => (img.id === imageId ? updated : img)));
+
+  return updated;
+}
+
+/** Attaches the visualization's product layout to its generated image. Never triggers generation. */
+export async function saveGeneratedImageLayout(imageId: string, layout: object): Promise<GeneratedImage> {
+  const updated = await apiPut<GeneratedImage>(`/generated-images/${imageId}/layout`, { layout });
 
   const existing = await readCache();
   await writeCache(existing.map((img) => (img.id === imageId ? updated : img)));

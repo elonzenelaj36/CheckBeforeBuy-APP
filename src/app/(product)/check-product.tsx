@@ -11,18 +11,26 @@ import {
 } from 'react-native';
 
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
 import BrandLogo from '@/components/BrandLogo';
+import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
+import { addProduct, useVisualizationSession } from '@/services/visualizationSession';
 
 const tutorialVideoSource = require('@/assets/videos/Check-video.mov');
 
 export default function CheckProduct() {
   const router = useRouter();
+
+  // "Generate another product" mode: the photo is added to the current
+  // visualization session instead of starting a product check.
+  const { addToSession } = useLocalSearchParams<{ addToSession?: string }>();
+  const session = useVisualizationSession();
+  const isSessionMode = addToSession === '1';
 
   const [imageUri, setImageUri] = React.useState<
     string | null
@@ -94,6 +102,22 @@ export default function CheckProduct() {
       return;
     }
 
+    if (isSessionMode) {
+      const result = addProduct({
+        imageUri,
+        name: `Product ${(session?.products.length ?? 0) + 1}`,
+      });
+
+      if (!result.ok) {
+        Alert.alert("Couldn't add product", result.message);
+        if (result.reason === 'no-session') router.replace('/my-home');
+        return;
+      }
+
+      router.back(); // back to the visualization screen, same session
+      return;
+    }
+
     router.push({
       pathname: '/product-captured',
       params: { imageUri },
@@ -106,18 +130,22 @@ export default function CheckProduct() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        <BrandLogo />
+        {isSessionMode ? (
+          <ScreenHeader eyebrow="MY ROOM" title="Add product" />
+        ) : (
+          <BrandLogo />
+        )}
 
         {/* Intro */}
         <View style={styles.intro}>
           <Text style={styles.title}>
-            Check the product.
+            {isSessionMode ? 'Add a product.' : 'Check the product.'}
           </Text>
 
           <Text style={styles.subtitle}>
-            Take a photo of a product you&apos;re thinking
-            about buying. We&apos;ll help you understand it
-            before you spend your money.
+            {isSessionMode
+              ? 'Take or choose a photo of another product to place in the same room.'
+              : "Take a photo of a product you're thinking about buying. We'll help you understand it before you spend your money."}
           </Text>
         </View>
 
@@ -172,7 +200,7 @@ export default function CheckProduct() {
             ]}
           >
             <Text style={styles.pillPrimaryText}>
-              CHECK THIS PRODUCT
+              {isSessionMode ? 'ADD TO MY ROOM' : 'CHECK THIS PRODUCT'}
             </Text>
             <Text style={styles.pillPrimaryArrow}>→</Text>
           </Pressable>
@@ -258,7 +286,7 @@ export default function CheckProduct() {
         </View>
       </ScrollView>
 
-      <BottomNavigation activeTab="check" />
+      {!isSessionMode && <BottomNavigation activeTab="check" />}
     </SafeAreaView>
   );
 }
