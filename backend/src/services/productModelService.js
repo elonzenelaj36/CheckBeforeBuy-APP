@@ -25,6 +25,7 @@ const ApiError = require('../utils/ApiError');
 const { uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const trellis = require('./trellisService');
+const { prepareModelInput, discardModelInput } = require('./modelInputService');
 
 const PROVIDER = 'trellis';
 const INTERRUPTED_AFTER_MS = 15000;
@@ -40,6 +41,8 @@ function serialize(row) {
     status: row.status, // processing | ready | failed
     // Real state while processing: starting | queued | running | finishing | downloading
     stage: row.status === 'processing' ? row.provider_status || 'starting' : null,
+    // Machine-readable cause of a failure (provider_status of a failed row), e.g. 'quota'.
+    reason: row.status === 'failed' ? row.provider_status || null : null,
     progress: row.progress ?? null,
     modelUrl: toAbsoluteUrl(row.model_path),
     message: row.error_message || null,
@@ -51,11 +54,11 @@ async function findRow(where, params) {
   return rows[0] || null;
 }
 
-async function markFailed(id, userMessage, technical) {
+async function markFailed(id, userMessage, technical, reason = null) {
   console.error(`[productModel] #${id} failed: ${technical || userMessage}`);
   await pool.query(
-    "UPDATE product_models SET status = 'failed', provider_status = NULL, error_message = ? WHERE id = ? AND status = 'processing'",
-    [String(userMessage).slice(0, 500), id]
+    "UPDATE product_models SET status = 'failed', provider_status = ?, error_message = ? WHERE id = ? AND status = 'processing'",
+    [reason, String(userMessage).slice(0, 500), id]
   );
 }
 
@@ -63,12 +66,15 @@ async function setStage(id, stage) {
   await pool.query("UPDATE product_models SET provider_status = ? WHERE id = ? AND status = 'processing'", [stage, id]);
 }
 
-async function generate(id, sourceHash, imagePath) {
+async function generate(id, sourceHash, cutoutPath) {
   const fileName = `model-${sourceHash}-${crypto.randomBytes(4).toString('hex')}.glb`;
   let lastStage = null;
+  let inputPath = null;
   try {
+    // Standardized input: tight crop, centered on a square, fixed size (modelInputService.js).
+    inputPath = await prepareModelInput(cutoutPath);
     const { bytes } = await trellis.generateModel({
-      imagePath,
+      imagePath: inputPath,
       destPath: path.join(uploadRoot, fileName),
       onStage: (stage) => {
         if (stage === lastStage) return;
@@ -82,7 +88,10 @@ async function generate(id, sourceHash, imagePath) {
     );
     console.log(`[productModel] #${id} ready: ${fileName} (${Math.round(bytes / 1024)} KB)`);
   } catch (err) {
-    await markFailed(id, err instanceof trellis.ModelProviderError ? err.userMessage : "3D preview couldn't be created.", err.message);
+    const known = err instanceof trellis.ModelProviderError;
+    await markFailed(id, known ? err.userMessage : "3D preview couldn't be created.", err.message, known ? err.reason : null);
+  } finally {
+    if (inputPath) await discardModelInput(inputPath);
   }
 }
 

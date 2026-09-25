@@ -13,7 +13,7 @@ const { removeBackground, BackgroundRemovalError } = require('../services/backgr
  *   productCheckId — an analyzed product; its saved photo is used.
  *
  * Returns a transparent PNG of the product for use as a movable layer:
- *   { cutoutId, cutoutImageUri, width, height, cached }
+ *   { cutoutId, cutoutImageUri, width, height, cached, quality }
  * cutoutId (the content hash) identifies the product photo for 3D generation.
  *
  * Nothing is written to the database: cutouts are files cached by the
@@ -51,6 +51,8 @@ const createProductCutout = asyncHandler(async (req, res) => {
       width: result.width,
       height: result.height,
       cached: result.cached,
+      // How suitable this cutout is for 3D (warnings are advisory; null = not measured).
+      quality: result.quality ? { ok: result.quality.ok, warnings: result.quality.warnings } : null,
     });
   } finally {
     if (upload) fs.promises.unlink(upload.path).catch(() => {});

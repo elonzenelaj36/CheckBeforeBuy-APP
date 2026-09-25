@@ -19,6 +19,7 @@ import BottomNavigation from '@/components/BottomNavigation';
 import BrandLogo from '@/components/BrandLogo';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
+import { detectProductRoute, openProductSelection } from '@/services/productSelection';
 import { addProduct, useVisualizationSession } from '@/services/visualizationSession';
 
 const tutorialVideoSource = require('@/assets/videos/Check-video.mov');
@@ -37,6 +38,7 @@ export default function CheckProduct() {
   >(null);
 
   const hasImage = Boolean(imageUri);
+  const [checkingPhoto, setCheckingPhoto] = React.useState(false);
 
   const tutorialPlayer = useVideoPlayer(tutorialVideoSource, (player) => {
     player.loop = true;
@@ -97,24 +99,53 @@ export default function CheckProduct() {
     }
   };
 
+  // The existing "add to this room" step, unchanged. Case 1 calls it with the
+  // photo as taken; Case 2 with the product the user outlined.
+  const addToCurrentSession = (productImageUri: string, selectedFromPhoto = false) => {
+    const result = addProduct({
+      imageUri: productImageUri,
+      name: `Product ${(session?.products.length ?? 0) + 1}`,
+      ...(selectedFromPhoto ? { selectedFromPhoto: true } : {}),
+    });
+
+    if (!result.ok) {
+      Alert.alert("Couldn't add product", result.message);
+      if (result.reason === 'no-session') router.replace('/my-home');
+      return false;
+    }
+    return true;
+  };
+
+  // Decides BEFORE the existing pipeline: one clear product → add the photo as
+  // before; several / unclear → the user outlines the product first.
+  const routeSessionProduct = async (photoUri: string) => {
+    setCheckingPhoto(true);
+    const decision = await detectProductRoute({ imageUri: photoUri });
+    setCheckingPhoto(false);
+
+    if (decision.route === 'auto') {
+      if (addToCurrentSession(photoUri)) router.back(); // back to the visualization screen, same session
+      return;
+    }
+
+    openProductSelection({
+      source: { imageUri: photoUri },
+      reason: decision.reason,
+      products: decision.products,
+      onConfirm: (selectedImageUri) => {
+        if (addToCurrentSession(selectedImageUri, true)) router.dismissTo('/visualization');
+      },
+    });
+    router.push('/select-product');
+  };
+
   const continueWithProduct = () => {
-    if (!imageUri) {
+    if (!imageUri || checkingPhoto) {
       return;
     }
 
     if (isSessionMode) {
-      const result = addProduct({
-        imageUri,
-        name: `Product ${(session?.products.length ?? 0) + 1}`,
-      });
-
-      if (!result.ok) {
-        Alert.alert("Couldn't add product", result.message);
-        if (result.reason === 'no-session') router.replace('/my-home');
-        return;
-      }
-
-      router.back(); // back to the visualization screen, same session
+      void routeSessionProduct(imageUri);
       return;
     }
 
@@ -194,13 +225,15 @@ export default function CheckProduct() {
         {imageUri && (
           <Pressable
             onPress={continueWithProduct}
+            disabled={checkingPhoto}
             style={({ pressed }) => [
               styles.pillPrimary,
               pressed && styles.pillPrimaryPressed,
+              checkingPhoto && { opacity: 0.6 },
             ]}
           >
             <Text style={styles.pillPrimaryText}>
-              {isSessionMode ? 'ADD TO MY ROOM' : 'CHECK THIS PRODUCT'}
+              {isSessionMode ? (checkingPhoto ? 'CHECKING YOUR PHOTO…' : 'ADD TO MY ROOM') : 'CHECK THIS PRODUCT'}
             </Text>
             <Text style={styles.pillPrimaryArrow}>→</Text>
           </Pressable>

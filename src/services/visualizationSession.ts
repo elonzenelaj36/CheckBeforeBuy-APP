@@ -34,7 +34,7 @@ import { File } from 'expo-file-system';
 
 import { apiUploadMultipart } from './api';
 import { loadCachedFrames } from './modelFrames';
-import { removeProductBackground } from './productCutouts';
+import { removeProductBackground, type CutoutQuality } from './productCutouts';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -75,7 +75,7 @@ export const MAX_LAYER_WIDTH = 0.9;
 
 export type SessionCutout =
   | { status: 'pending' }
-  | { status: 'ready'; imageUri: string; cutoutId: string }
+  | { status: 'ready'; imageUri: string; cutoutId: string; quality: CutoutQuality | null }
   | { status: 'failed'; message: string };
 
 export type SessionModel3D =
@@ -87,9 +87,21 @@ export type SessionModel3D =
   | { status: 'rendering'; modelId: string; modelUrl: string }
   | { status: 'ready'; modelId: string; modelUrl: string; frames: string[] }
   /** `retry` says what "try again" re-runs: the backend generation, or only the on-device render. */
-  | { status: 'failed'; message: string; retry: 'generate' | 'render'; modelId: string | null; modelUrl: string | null }
+  | {
+      status: 'failed';
+      message: string;
+      retry: 'generate' | 'render';
+      modelId: string | null;
+      modelUrl: string | null;
+      /** 'quota' = the free daily 3D limit is used up (try again tomorrow). */
+      reason?: string | null;
+    }
   /** No 3D provider configured on the server. */
-  | { status: 'unavailable' };
+  | { status: 'unavailable' }
+  /** The photo may give an inaccurate model — waiting for the user to continue or keep 2D. Nothing generated yet. */
+  | { status: 'review'; warnings: CutoutQuality['warnings'] }
+  /** The user chose to keep this product 2D. */
+  | { status: 'declined' };
 
 export type SessionProduct = {
   /** Unique within the session (the same product may be added twice). */
@@ -108,6 +120,12 @@ export type SessionProduct = {
   characteristics?: string[];
   /** Existing product check, when the product was analyzed. */
   productCheckId?: string | null;
+  /**
+   * True when `imageUri` is the product the user outlined in a photo with
+   * several/unclear products — it (not the check's full photo) is then what
+   * every step uses.
+   */
+  selectedFromPhoto?: boolean;
 };
 
 export type SessionGeneration = {
@@ -314,7 +332,7 @@ async function prepareCutout(productId: string) {
     const cutout = await removeProductBackground({ imageUri: product.imageUri, productCheckId: product.productCheckId });
     patchProduct(session.id, productId, (p) => ({
       ...p,
-      cutout: { status: 'ready', imageUri: cutout.imageUri, cutoutId: cutout.id },
+      cutout: { status: 'ready', imageUri: cutout.imageUri, cutoutId: cutout.id, quality: cutout.quality },
       transform: { ...p.transform, aspect: cutout.width / cutout.height },
     }));
     void startModel3D(productId);
@@ -375,6 +393,7 @@ function applyModel(sessionId: string, productId: string, model: ProductModel): 
       retry: 'generate',
       modelId: model.id,
       modelUrl: null,
+      reason: model.reason ?? null,
     });
     return false;
   }
@@ -419,12 +438,21 @@ function schedulePoll(sessionId: string, productId: string, modelId: string, err
  * generation only if this photo was never generated before; otherwise it
  * returns the existing model. `retry` is only for an explicit user retry.
  */
-async function startModel3D(productId: string, retry = false) {
+async function startModel3D(productId: string, retry = false, reviewed = false) {
   const session = getSession();
   const product = session?.products.find((p) => p.id === productId);
   if (!session || !product || product.cutout.status !== 'ready') return;
-  const allowed = retry ? product.model3D.status === 'failed' : product.model3D.status === 'waiting';
+  const allowed = retry
+    ? product.model3D.status === 'failed'
+    : product.model3D.status === 'waiting' || (reviewed && product.model3D.status === 'review');
   if (!allowed || modelRequests.has(productId)) return;
+
+  // A photo that may give an inaccurate model: ask before generating anything.
+  const quality = product.cutout.quality;
+  if (!retry && !reviewed && quality && !quality.ok) {
+    setModel3D(session.id, productId, { status: 'review', warnings: quality.warnings });
+    return;
+  }
 
   modelRequests.add(productId);
   setModel3D(session.id, productId, { status: 'generating', modelId: null, stage: 'starting', progress: null });
@@ -483,6 +511,18 @@ export function setModelRenderFailed(productId: string, message: string) {
     modelId: product.model3D.modelId,
     modelUrl: product.model3D.modelUrl,
   });
+}
+
+/** User chose to create the 3D model despite the photo-quality warnings. */
+export function confirmModel3D(productId: string) {
+  void startModel3D(productId, false, true);
+}
+
+/** User chose to keep this product 2D (no 3D generation). */
+export function declineModel3D(productId: string) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (session && product?.model3D.status === 'review') setModel3D(session.id, productId, { status: 'declined' });
 }
 
 /** Explicit user retry after a 3D failure. A render failure only re-renders locally. */
@@ -604,7 +644,9 @@ export async function regenerateSession(): Promise<RegenerateResult> {
     // productCheckId. The room's saved primary photo is used server-side.
     const images: Record<string, string> = {};
     session.products.forEach((p, i) => {
-      if (p.imageUri.startsWith('file://') && !p.productCheckId) images[`productImage${i}`] = p.imageUri;
+      if (p.imageUri.startsWith('file://') && (!p.productCheckId || p.selectedFromPhoto)) {
+        images[`productImage${i}`] = p.imageUri;
+      }
     });
 
     const response = await apiUploadMultipart<{

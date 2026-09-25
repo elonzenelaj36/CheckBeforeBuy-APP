@@ -9,6 +9,12 @@
 
 import { apiUploadMultipart } from './api';
 
+/** Advisory: why this cutout may give an inaccurate 3D model (from the backend's pixel checks). */
+export type CutoutQuality = {
+  ok: boolean;
+  warnings: { code: string; message: string }[];
+};
+
 export type ProductCutout = {
   /** Identifies this product photo on the backend (used to request its 3D model). */
   id: string;
@@ -16,6 +22,8 @@ export type ProductCutout = {
   imageUri: string;
   width: number;
   height: number;
+  /** null when it wasn't measured (e.g. cutouts made before the check existed). */
+  quality: CutoutQuality | null;
 };
 
 export type CutoutSource = {
@@ -39,13 +47,25 @@ export async function removeProductBackground(source: CutoutSource): Promise<Pro
     throw new Error("This product photo can't be prepared. Please take or choose the photo again.");
   }
 
-  const response = await apiUploadMultipart<{ cutoutId: string; cutoutImageUri: string; width: number; height: number }>(
+  const response = await apiUploadMultipart<{
+    cutoutId: string;
+    cutoutImageUri: string;
+    width: number;
+    height: number;
+    quality?: CutoutQuality | null;
+  }>(
     '/product-cutouts',
     { image: isLocal ? source.imageUri : null },
     isLocal ? undefined : { productCheckId: String(source.productCheckId) }
   );
 
-  const cutout = { id: response.cutoutId, imageUri: response.cutoutImageUri, width: response.width, height: response.height };
+  const cutout = {
+    id: response.cutoutId,
+    imageUri: response.cutoutImageUri,
+    width: response.width,
+    height: response.height,
+    quality: response.quality ?? null,
+  };
   cache.set(key, cutout);
   return cutout;
 }

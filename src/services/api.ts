@@ -191,6 +191,25 @@ export async function apiUploadMultipart<T = unknown>(
   imagesByField: Record<string, string | undefined | null>,
   extraFields?: Record<string, string>
 ): Promise<T> {
+  const response = await postMultipart(endpoint, imagesByField, extraFields);
+  return response.json() as Promise<T>;
+}
+
+/** Like apiUploadMultipart, for endpoints that answer with binary data (e.g. a PNG). */
+export async function apiUploadMultipartBytes(
+  endpoint: string,
+  imagesByField: Record<string, string | undefined | null>,
+  extraFields?: Record<string, string>
+): Promise<ArrayBuffer> {
+  const response = await postMultipart(endpoint, imagesByField, extraFields);
+  return response.arrayBuffer();
+}
+
+async function postMultipart(
+  endpoint: string,
+  imagesByField: Record<string, string | undefined | null>,
+  extraFields?: Record<string, string>
+): Promise<Response> {
   const formData = new FormData();
 
   for (const [fieldName, imageUri] of Object.entries(imagesByField)) {
@@ -226,5 +245,5 @@ export async function apiUploadMultipart<T = unknown>(
     } satisfies ApiError;
   }
 
-  return response.json() as Promise<T>;
+  return response;
 }

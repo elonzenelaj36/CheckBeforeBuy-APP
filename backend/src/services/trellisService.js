@@ -34,9 +34,13 @@ const JOB_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_MODEL_BYTES = 150 * 1024 * 1024;
 
 /**
- * Settings for furniture shown on a phone. 512 uses less GPU time than the
- * Space's default 1024 (more models per daily quota); decimation/texture are
- * the Space's minimums, which keep the GLB light enough for a mobile WebView.
+ * Settings for furniture shown on a phone. Resolution 512 instead of the
+ * Space's default 1024: measured on the free ZeroGPU quota, 1024 used ~68s of
+ * GPU for image_to_3d alone (512: ~40-46s for the whole model), i.e. far
+ * fewer models per day, and a quota that runs out between the two steps
+ * wastes the first one. 1024 may give finer thin parts — untested here; try it
+ * with more quota (e.g. HF PRO). decimation/texture are the Space's minimums,
+ * which keep the GLB light for a mobile WebView.
  */
 const GENERATION_SETTINGS = {
   seed: 0,
@@ -50,10 +54,12 @@ const SAMPLER_DEFAULTS = [7.5, 0.7, 12, 5.0, 7.5, 0.5, 12, 3.0, 1.0, 0.0, 12, 3.
 
 /** Error with a technical message (for logs) and a user-facing one. */
 class ModelProviderError extends Error {
-  constructor(message, userMessage = "3D preview couldn't be created.") {
+  /** @param {string|null} reason - machine-readable cause, e.g. 'quota' (daily free GPU limit reached) */
+  constructor(message, userMessage = "3D preview couldn't be created.", reason = null) {
     super(message);
     this.name = 'ModelProviderError';
     this.userMessage = userMessage;
+    this.reason = reason;
   }
 }
 
@@ -66,7 +72,7 @@ function toProviderError(err, step) {
   const text = String(err?.message ?? err?.detail ?? err ?? 'unknown error');
   const technical = `TRELLIS.2 ${step} failed: ${text}`;
   if (/quota/i.test(text)) {
-    return new ModelProviderError(technical, "Today's free 3D generation limit is used up. Please try again later.");
+    return new ModelProviderError(technical, 'Daily free 3D limit reached — try again tomorrow.', 'quota');
   }
   if (/sleeping|building|starting|paused|not_found|runtime_error|config_error|503/i.test(text)) {
     return new ModelProviderError(technical, 'The 3D generation service is starting up. Please try again in a few minutes.');

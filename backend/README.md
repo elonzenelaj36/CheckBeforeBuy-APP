@@ -113,6 +113,8 @@ On success you'll see:
 | POST | `/api/product-cutouts` | Remove a product photo's background → transparent PNG layer |
 | POST | `/api/product-models` | Get / start the 3D model of a product cutout (`{ cutoutId, retry? }`) |
 | GET | `/api/product-models/:id` | 3D model status (`processing` / `ready` / `failed`, real stage) |
+| POST | `/api/product-selection/detect` | Does the photo clearly show ONE product? → `{ route: 'auto'|'select', reason, products }` |
+| POST | `/api/product-selection/crop` | Freehand outline (`polygon`, normalized) → PNG of just that product |
 | POST | `/api/find-for-my-home` | AI product recommendations for the user's home (see "Find for My Home") |
 | GET | `/api/health` | Liveness check |
 
@@ -198,6 +200,34 @@ generation (Cloudflare).
 - The original photo is not modified; generation still uses the original.
 - Optional env: `BACKGROUND_REMOVAL_PROVIDER` (`clearbackdrop`),
   `BACKGROUND_REMOVAL_MODEL` (`fast` default, or `hd`).
+
+## Product selection (before background removal / 3D)
+
+`services/productSelectionService.js`. Before a product enters the pipeline,
+the app asks `POST /api/product-selection/detect` (Groq vision, same
+provider/model as product analysis — a separate prompt, the Analyze flow is
+unchanged). Automatic only if exactly one product is listed, it's the clear
+subject, fully visible, and confidence ≥ 0.6; otherwise (several, unclear,
+none, or detection unavailable) the app shows the freehand selector. The
+outline is cut from the original photo with sharp (outside → white, cropped
+around the selection) and that image goes into the same existing pipeline.
+Uploads for these endpoints are temporary; nothing is stored.
+
+## Input quality for 3D (before TRELLIS.2)
+
+The image the 3D model sees is prepared in two places, with no AI calls:
+
+- `services/productImageQuality.js` (inside background removal): removes small
+  detached background-removal specks and measures the product — size, how
+  much of it runs into the photo edge, brightness, sharpness (Laplacian),
+  fill. `assessQuality()` turns that into advisory warnings (`cut_off`,
+  `small`, `blurry`, `dark`, `bright`, `background`, `sparse`), stored as
+  `uploads/cutout-<hash>.json` and returned by `/api/product-cutouts` as
+  `quality`. The app pauses 3D for flagged photos and lets the user retake,
+  continue anyway, or keep the product 2D. Thresholds are conservative.
+- `services/modelInputService.js` (right before generation): tight crop,
+  centered on a transparent 1024×1024 square with 5% padding, uniform scaling
+  only (proportions never change).
 
 ## 3D furniture (TRELLIS.2)
 

@@ -311,7 +311,13 @@ export default function Visualization() {
           />
         )}
 
-        <ProductPipelineStatus products={products} />
+        <ProductPipelineStatus
+          products={products}
+          onRetake={(productId) => {
+            removeProduct(productId);
+            goToAddProduct();
+          }}
+        />
 
         {/* Products */}
         <Text style={styles.sectionLabel}>PRODUCTS IN THIS ROOM</Text>

@@ -477,6 +477,84 @@ async function analyzeWithGroq({ absoluteImagePath, priceContext, ownedItemsCont
   };
 }
 
+const PRODUCT_DETECTION_INSTRUCTIONS = `You help an app turn ONE product from a photo into a 3D model, so it must know
+which product the user means. List the distinct physical products in the photo that the user could plausibly
+want: movable furniture, decor, lighting, appliances, electronics. Ignore walls, floors, ceilings, windows,
+doors, built-in fixtures, and small clutter that is clearly not the subject (e.g. a cup on a table).
+Only list objects you can actually see — never invent any.
+
+Respond with ONLY a single JSON object (no markdown, no prose) with exactly these fields:
+{
+  "products": [                      // every candidate product, most prominent first ([] if none)
+    { "name": string,                // short name, e.g. "office chair"
+      "fullyVisible": boolean }      // false if it is cut off by the frame or largely hidden
+  ],
+  "singleClearProduct": boolean,     // true ONLY if exactly one product is obviously the subject and nothing competes with it
+  "confidence": number               // 0 to 1, how sure you are about singleClearProduct
+}`;
+
+/** Thrown when product detection can't run on this server (no Groq configured). */
+class DetectionUnavailableError extends Error {}
+
+/**
+ * Lists the candidate products visible in a photo (Groq vision, same
+ * provider/model as product analysis). Used to decide whether the product
+ * for 3D can be taken automatically or the user must select it. Separate
+ * from analyzeProductImage() so the Analyze flow is unaffected.
+ *
+ * @returns {Promise<{products: Array<{name: string, fullyVisible: boolean}>, singleClearProduct: boolean, confidence: number|null}>}
+ */
+async function detectProductsInImage({ absoluteImagePath }) {
+  if (resolveProductAnalysisProvider() !== 'groq' || !env.ai.apiKey) {
+    throw new DetectionUnavailableError('Product detection needs AI_PROVIDER=groq and AI_API_KEY.');
+  }
+  const dataUrl = `data:${mimeTypeForPath(absoluteImagePath)};base64,${fs.readFileSync(absoluteImagePath).toString('base64')}`;
+
+  let data;
+  try {
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.ai.apiKey}` },
+      signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
+      body: JSON.stringify({
+        model: env.ai.model,
+        response_format: { type: 'json_object' },
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: PRODUCT_DETECTION_INSTRUCTIONS },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    data = await response.json();
+  } catch (err) {
+    console.error('[aiService] Groq product detection failed:', err.message);
+    throw new Error(`AI provider request failed: ${err.message}`);
+  }
+
+  let result;
+  try {
+    result = JSON.parse(data.choices?.[0]?.message?.content);
+  } catch (err) {
+    throw new Error(`Groq returned a non-JSON detection response: ${err.message}`);
+  }
+
+  const products = (Array.isArray(result?.products) ? result.products : [])
+    .filter((p) => p && typeof p.name === 'string' && p.name.trim())
+    .map((p) => ({ name: p.name.trim().slice(0, 80), fullyVisible: p.fullyVisible !== false }));
+  return {
+    products,
+    singleClearProduct: result?.singleClearProduct === true,
+    confidence: typeof result?.confidence === 'number' ? result.confidence : null,
+  };
+}
+
 /**
  * @param {object} params
  * @param {string} params.absoluteImagePath - path on disk to the uploaded photo
@@ -843,4 +921,10 @@ async function analyzeHomeNeeds({ rooms, userItems, candidateProducts, recentPro
   };
 }
 
-module.exports = { analyzeProductImage, analyzeRoomImages, analyzeHomeNeeds };
+module.exports = {
+  analyzeProductImage,
+  analyzeRoomImages,
+  analyzeHomeNeeds,
+  detectProductsInImage,
+  DetectionUnavailableError,
+};

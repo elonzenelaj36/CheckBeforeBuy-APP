@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import EmptyState from '@/components/EmptyState';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import { getRooms, Room } from '@/services/rooms';
+import { detectProductRoute, openProductSelection } from '@/services/productSelection';
 import { startSession } from '@/services/visualizationSession';
 
 export default function SelectRoom() {
@@ -57,7 +59,9 @@ export default function SelectRoom() {
   // A room only exists once the user has explicitly created it — selecting
   // it here must always carry its real roomId into the visualization
   // request, never just a roomType category.
-  const selectSavedRoom = (room: Room) => {
+  // The existing session start, unchanged except that Case 2 passes the
+  // product the user outlined instead of the full photo.
+  const startWithProduct = (room: Room, selectedImageUri?: string) => {
     // Starts a fresh temporary session: the room + Product 1. It lives in
     // memory (services/visualizationSession.ts), so no images go through params.
     startSession(
@@ -69,15 +73,49 @@ export default function SelectRoom() {
       },
       productImageUri
         ? {
-            imageUri: productImageUri,
+            imageUri: selectedImageUri ?? productImageUri,
             name: productName || 'Product',
             category: first(params.productCategory),
             brand: first(params.productBrand),
             productCheckId: productCheckId ?? null,
+            ...(selectedImageUri ? { selectedFromPhoto: true } : {}),
           }
         : undefined
     );
-    router.push('/visualization');
+  };
+
+  const [checkingPhoto, setCheckingPhoto] = React.useState(false);
+
+  // Decides BEFORE the existing pipeline: one clear product → exactly as
+  // before; several / unclear → the user outlines the product first.
+  const selectSavedRoom = async (room: Room) => {
+    if (checkingPhoto) return;
+    if (!productImageUri) {
+      startWithProduct(room);
+      router.push('/visualization');
+      return;
+    }
+
+    setCheckingPhoto(true);
+    const decision = await detectProductRoute({ imageUri: productImageUri, productCheckId });
+    setCheckingPhoto(false);
+
+    if (decision.route === 'auto') {
+      startWithProduct(room);
+      router.push('/visualization');
+      return;
+    }
+
+    openProductSelection({
+      source: { imageUri: productImageUri, productCheckId },
+      reason: decision.reason,
+      products: decision.products,
+      onConfirm: (selectedImageUri) => {
+        startWithProduct(room, selectedImageUri);
+        router.replace('/visualization'); // back from the room goes to this room list, as before
+      },
+    });
+    router.push('/select-product');
   };
 
   const goToCreateRoom = () => {
@@ -100,6 +138,13 @@ export default function SelectRoom() {
           </Text>
         </View>
 
+        {checkingPhoto && (
+          <View style={styles.checking}>
+            <ActivityIndicator size="small" color={Colors.accent} />
+            <Text style={styles.checkingText}>Checking your photo…</Text>
+          </View>
+        )}
+
         {!loaded ? null : savedRooms.length === 0 ? (
           <EmptyState
             icon="🏠"
@@ -117,6 +162,7 @@ export default function SelectRoom() {
                   key={room.id}
                   style={styles.savedRoomCard}
                   onPress={() => selectSavedRoom(room)}
+                  disabled={checkingPhoto}
                   activeOpacity={0.8}
                 >
                   {room.primaryImageUri ? (
@@ -285,5 +331,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 19,
     marginTop: 8,
+  },
+  checking: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  checkingText: {
+    color: Colors.lightTextSecondary,
+    fontSize: 13,
   },
 });

@@ -23,6 +23,8 @@ export type ProductModel = {
   /** GLB, once ready. */
   modelUrl: string | null;
   message: string | null;
+  /** Why it failed, when known — 'quota' = the free daily 3D limit is used up. */
+  reason?: string | null;
 };
 
 /** Thrown when the server has no 3D provider configured — products stay 2D. */

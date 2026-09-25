@@ -11,7 +11,13 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 
 import { Colors } from '@/constants/colors';
 import type { ProductModelStage } from '@/services/productModels';
-import { retryCutout, retryModel3D, type SessionProduct } from '@/services/visualizationSession';
+import {
+  confirmModel3D,
+  declineModel3D,
+  retryCutout,
+  retryModel3D,
+  type SessionProduct,
+} from '@/services/visualizationSession';
 
 type StepState = 'done' | 'active' | 'pending' | 'skipped';
 type Step = { label: string; state: StepState; detail?: string };
@@ -56,11 +62,20 @@ function stepsFor(p: SessionProduct): Step[] {
   return steps;
 }
 
-export default function ProductPipelineStatus({ products }: { products: SessionProduct[] }) {
+type Props = {
+  products: SessionProduct[];
+  /** Replace a product's photo: remove it from the room and open the camera. */
+  onRetake: (productId: string) => void;
+};
+
+export default function ProductPipelineStatus({ products, onRetake }: Props) {
   const preparing = products.find(isPreparing) ?? null;
+  const inReview = products.find((p) => p.model3D.status === 'review') ?? null;
   const bgFailed = products.filter((p) => p.cutout.status === 'failed');
   const failed3D = products.filter((p) => p.model3D.status === 'failed');
   const unavailable = products.some((p) => p.model3D.status === 'unavailable');
+  // Any product that failed because the free daily 3D limit is used up.
+  const limitReached = failed3D.some((p) => p.model3D.status === 'failed' && p.model3D.reason === 'quota');
 
   // Short "Product ready" once the pipeline finishes.
   const [showReady, setShowReady] = React.useState(false);
@@ -113,6 +128,35 @@ export default function ProductPipelineStatus({ products }: { products: SessionP
         </View>
       )}
 
+      {inReview && inReview.model3D.status === 'review' && (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningEyebrow}>CHECK YOUR PHOTO</Text>
+          <Text style={styles.warningText}>
+            This photo{products.length > 1 ? ` of "${inReview.name}"` : ''} may produce an inaccurate 3D model:
+          </Text>
+          {inReview.model3D.warnings.map((warning) => (
+            <Text key={warning.code} style={styles.warningDetail}>
+              • {warning.message}
+            </Text>
+          ))}
+          <Text style={styles.warningText}>
+            For the best result: the whole product in view, good light, a plain background. It stays in your room in
+            2D either way.
+          </Text>
+          <View style={styles.reviewActions}>
+            <TouchableOpacity style={styles.retry} onPress={() => onRetake(inReview.id)} activeOpacity={0.85}>
+              <Text style={styles.retryText}>RETAKE PHOTO</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.outline} onPress={() => confirmModel3D(inReview.id)} activeOpacity={0.85}>
+              <Text style={styles.outlineText}>CREATE 3D ANYWAY</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.outline} onPress={() => declineModel3D(inReview.id)} activeOpacity={0.85}>
+              <Text style={styles.outlineText}>KEEP 2D</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {bgFailed.length > 0 && (
         <View style={styles.warningCard}>
           <Text style={styles.warningEyebrow}>BACKGROUND NOT REMOVED</Text>
@@ -129,7 +173,21 @@ export default function ProductPipelineStatus({ products }: { products: SessionP
         </View>
       )}
 
-      {failed3D.length > 0 && (
+      {failed3D.length > 0 && limitReached && (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningEyebrow}>DAILY 3D LIMIT REACHED</Text>
+          <Text style={styles.warningText}>
+            Daily free 3D limit reached — try again tomorrow.{' '}
+            {failed3D.length > 1 ? `${failed3D.length} products stay` : `"${failed3D[0].name}" stays`} in your room in 2D
+            until then.
+          </Text>
+          <TouchableOpacity style={styles.retry} onPress={() => failed3D.forEach((p) => retryModel3D(p.id))} activeOpacity={0.85}>
+            <Text style={styles.retryText}>TRY 3D AGAIN</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {failed3D.length > 0 && !limitReached && (
         <View style={styles.warningCard}>
           <Text style={styles.warningEyebrow}>3D PREVIEW NOT CREATED</Text>
           <Text style={styles.warningText}>
@@ -244,6 +302,26 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 10,
     backgroundColor: Colors.warning,
+  },
+  reviewActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  outline: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.warning,
+  },
+  outlineText: {
+    color: Colors.warningText,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   retryText: {
     color: Colors.textInverse,
