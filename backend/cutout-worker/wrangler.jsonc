@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cbb-cutout",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  // Served on <name>.<your-subdomain>.workers.dev — no domain needed.
+  "workers_dev": true,
+  // Cloudflare Images binding (transformations incl. segment: "foreground").
+  "images": { "binding": "IMAGES" },
+  "observability": { "enabled": true }
+}

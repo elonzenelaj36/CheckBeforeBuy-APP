@@ -64,9 +64,10 @@ const env = {
 
   backgroundRemoval: {
     // Product cutouts for visualization layers — see backgroundRemovalService.js.
-    // ClearBackdrop needs no API key. Model: 'fast' (default) or 'hd'.
-    provider: required('BACKGROUND_REMOVAL_PROVIDER', 'clearbackdrop'),
-    model: required('BACKGROUND_REMOVAL_MODEL', 'fast'),
+    // 'cloudflare' = our Worker in backend/cutout-worker (BiRefNet).
+    provider: required('BACKGROUND_REMOVAL_PROVIDER', 'cloudflare'),
+    workerUrl: required('CUTOUT_WORKER_URL', ''),
+    workerSecret: required('CUTOUT_WORKER_SECRET', ''),
   },
 
   huggingFace: {

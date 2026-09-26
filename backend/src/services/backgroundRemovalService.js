@@ -1,11 +1,12 @@
 /**
  * Product background removal ("cutouts") for the room-visualization layers.
  *
- * Provider: ClearBackdrop (https://clearbackdrop.com/api)
- *   POST https://clearbackdrop.com/api/v1/remove-background?model=<fast|hd>
- *   multipart/form-data, field "image" (JPG/PNG/WEBP/HEIC/…, max 15MB)
+ * Provider: our own Cloudflare Worker (backend/cutout-worker) — Cloudflare
+ * Images segment: "foreground", i.e. BiRefNet (MIT) run by Cloudflare.
+ *   POST <CUTOUT_WORKER_URL>, body = photo bytes (JPG/PNG/WEBP/HEIC, max 15MB)
+ *   Authorization: Bearer <CUTOUT_WORKER_SECRET>
  *   → 200 with the transparent PNG as the response body.
- *   No API key; limited to 100 images/hour per calling IP (our server).
+ *   Free plan: 5,000 unique photos per month (then 429, nothing is charged).
  *
  * Completely separate from imageGenerationService.js (Cloudflare) — this
  * never generates anything, it only removes the background of one photo.
@@ -32,9 +33,8 @@ const env = require('../config/env');
 const { uploadRoot } = require('../middleware/upload');
 const { cleanAndMeasure, assessQuality } = require('./productImageQuality');
 
-const CLEARBACKDROP_URL = 'https://clearbackdrop.com/api/v1/remove-background';
 const REQUEST_TIMEOUT_MS = 60000;
-const MAX_INPUT_BYTES = 15 * 1024 * 1024; // ClearBackdrop's documented limit
+const MAX_INPUT_BYTES = 15 * 1024 * 1024; // the Worker's limit
 const MAX_OUTPUT_SIDE = 1200;
 
 const EXT_TO_MIME = {
@@ -57,7 +57,7 @@ class BackgroundRemovalError extends Error {
 
 const GENERIC_FAILURE = "We couldn't remove the product background. Please try again.";
 
-/** Maps ClearBackdrop's documented status codes to user-facing errors. */
+/** Maps the Worker's status codes to user-facing errors. */
 function providerError(status) {
   switch (status) {
     case 400:
@@ -70,39 +70,39 @@ function providerError(status) {
     case 429:
       return new BackgroundRemovalError(
         429,
-        'Background removal is busy right now (hourly limit reached). Please try again later.'
+        'Background removal is busy right now (free limit reached). Please try again later.'
       );
     default:
       return new BackgroundRemovalError(502, GENERIC_FAILURE);
   }
 }
 
-async function removeWithClearBackdrop(buffer, fileName, mime) {
-  const form = new FormData();
-  form.append('image', new Blob([buffer], { type: mime }), fileName);
+async function removeWithCloudflare(buffer, mime) {
+  const { workerUrl, workerSecret } = env.backgroundRemoval;
+  if (!workerUrl || !workerSecret) {
+    console.error('[backgroundRemoval] CUTOUT_WORKER_URL / CUTOUT_WORKER_SECRET are not set');
+    throw new BackgroundRemovalError(503, 'Background removal is not configured on this server.');
+  }
 
   let response;
   try {
-    response = await fetch(`${CLEARBACKDROP_URL}?model=${encodeURIComponent(env.backgroundRemoval.model)}`, {
+    response = await fetch(workerUrl, {
       method: 'POST',
-      body: form,
+      headers: { Authorization: `Bearer ${workerSecret}`, 'Content-Type': mime },
+      body: buffer,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
-    console.error('[backgroundRemoval] ClearBackdrop request failed:', err.name === 'TimeoutError' ? 'timed out' : err.message);
+    console.error('[backgroundRemoval] Cloudflare Worker request failed:', err.name === 'TimeoutError' ? 'timed out' : err.message);
     throw new BackgroundRemovalError(504, GENERIC_FAILURE);
   }
 
   const contentType = response.headers.get('content-type') || '';
   if (!response.ok || !contentType.startsWith('image/')) {
     const detail = await response.text().catch(() => '');
-    console.error(`[backgroundRemoval] ClearBackdrop HTTP ${response.status}: ${detail.slice(0, 200)}`);
+    console.error(`[backgroundRemoval] Cloudflare Worker HTTP ${response.status}: ${detail.slice(0, 200)}`);
+    if (response.status === 401 || response.status === 503) throw new BackgroundRemovalError(503, GENERIC_FAILURE);
     throw providerError(response.ok ? 500 : response.status);
-  }
-
-  const remaining = response.headers.get('x-ratelimit-remaining');
-  if (remaining !== null && Number(remaining) <= 10) {
-    console.warn(`[backgroundRemoval] ClearBackdrop hourly quota nearly used up: ${remaining} left`);
   }
 
   return Buffer.from(await response.arrayBuffer());
@@ -131,8 +131,8 @@ async function toLayerPng(transparentBuffer) {
  *   imagePath is the stored relative path ("/uploads/cutout-….png") of the transparent PNG.
  */
 async function removeBackground({ imagePath }) {
-  const { provider, model } = env.backgroundRemoval;
-  if (provider !== 'clearbackdrop') {
+  const { provider } = env.backgroundRemoval;
+  if (provider !== 'cloudflare') {
     throw new BackgroundRemovalError(503, `Background removal provider "${provider}" is not supported.`);
   }
 
@@ -147,7 +147,7 @@ async function removeBackground({ imagePath }) {
   if (!mime) throw providerError(415);
 
   // Same photo + same provider settings → same file, so it is processed once.
-  const hash = crypto.createHash('sha256').update(`${provider}:${model}:`).update(input).digest('hex').slice(0, 32);
+  const hash = crypto.createHash('sha256').update(`${provider}:birefnet:`).update(input).digest('hex').slice(0, 32);
   const fileName = `cutout-${hash}.png`;
   const outputPath = path.join(uploadRoot, fileName);
   const relativePath = `/${env.uploadDir}/${fileName}`;
@@ -159,7 +159,7 @@ async function removeBackground({ imagePath }) {
     return { imagePath: relativePath, width: meta.width, height: meta.height, cached: true, quality: readQuality(reportPath) };
   }
 
-  const transparent = await removeWithClearBackdrop(input, path.basename(imagePath), mime);
+  const transparent = await removeWithCloudflare(input, mime);
 
   // Clean + measure at full photo size (before trimming, so edge contact is known).
   // Best effort: if it fails, the cutout is used exactly as before.
@@ -192,4 +192,10 @@ function readQuality(reportPath) {
   }
 }
 
-module.exports = { removeBackground, BackgroundRemovalError };
+module.exports = {
+  removeBackground,
+  // Raw Worker output (untrimmed, no cache/cleanup) — for scripts/preview-cutouts.js.
+  fetchRawCutout: removeWithCloudflare,
+  BackgroundRemovalError,
+  EXT_TO_MIME,
+};

@@ -190,16 +190,20 @@ pending — AI not configured yet" state instead of a fake generated image.
 
 `services/backgroundRemovalService.js` → `removeBackground({ imagePath })`,
 used by `POST /api/product-cutouts` (multipart `image`, or `productCheckId`).
-Provider: [ClearBackdrop](https://clearbackdrop.com/api) — no API key,
-100 images/hour per server IP, max 15MB. Completely separate from image
-generation (Cloudflare).
+Provider: our Cloudflare Worker in `cutout-worker/`, which uses Cloudflare
+Images `segment: "foreground"` (BiRefNet, MIT). It is free for 5,000 photos
+per month under Cloudflare's standard terms, and it accepts photos up to 15MB.
+It needs `CUTOUT_WORKER_URL` and `CUTOUT_WORKER_SECRET`; setup is in
+`cutout-worker/README.md`.
+
+Background removal is completely separate from image generation.
+`node scripts/preview-cutouts.js <folder>` previews cutouts and their quality
+warnings without starting any 3D generation.
 
 - Output: transparent PNG, trimmed to the product, longest side ≤ 1200px,
   stored as `uploads/cutout-<sha256 of photo>.png`. The same photo is never
   sent twice (the file is the cache). No database changes.
 - The original photo is not modified; generation still uses the original.
-- Optional env: `BACKGROUND_REMOVAL_PROVIDER` (`clearbackdrop`),
-  `BACKGROUND_REMOVAL_MODEL` (`fast` default, or `hd`).
 
 ## Product selection (before background removal / 3D)
 
@@ -231,7 +235,7 @@ The image the 3D model sees is prepared in two places, with no AI calls:
 
 ## 3D furniture (TRELLIS.2)
 
-Product pipeline: photo → background removal (ClearBackdrop) → **3D model
+Product pipeline: photo → background removal (Cloudflare) → **3D model
 (TRELLIS.2, `services/trellisService.js`)** → the app renders the GLB into
 turntable views that become the product's layer in the room. 3D is an
 enhancement: if it fails or isn't configured, the product stays 2D.

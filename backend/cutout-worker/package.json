@@ -1,0 +1,13 @@
+{
+  "name": "check-before-buy-cutout-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker: product background removal (Images binding, segment: foreground / BiRefNet).",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.141.0"
+  }
+}
