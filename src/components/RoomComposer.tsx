@@ -25,8 +25,8 @@ import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 're
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { Colors } from '@/constants/colors';
-import { frameIndexForYaw } from '@/services/modelFrames';
 import {
+  layerImageFor,
   MAX_LAYER_WIDTH,
   MIN_LAYER_WIDTH,
   type ProductTransform,
@@ -314,9 +314,8 @@ const ProductLayer = React.memo(function ProductLayer({
   // frame. Until one exists (or if background removal failed) the original
   // photo is shown as a framed card, so it never looks like a finished cutout.
   const { cutout, model3D } = product;
-  const frameUri =
-    model3D.status === 'ready' ? model3D.frames[frameIndexForYaw(product.transform.yawDeg, model3D.frames.length)] : null;
-  const layerUri = frameUri ?? (cutout.status === 'ready' ? cutout.imageUri : null);
+  const layerImage = layerImageFor(product);
+  const layerUri = layerImage.source === 'photo' ? null : layerImage.uri;
   const isCutout = layerUri !== null;
   const building3D = model3D.status === 'generating' || model3D.status === 'rendering';
 

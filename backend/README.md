@@ -167,24 +167,33 @@ To enable it: get an API key at https://console.anthropic.com/, set
 
 ## AI — room visualization
 
-**Status: NOT implemented — abstraction only.** `services/imageGenerationService.js`
-defines the full contract (`generateRoomVisualization({ roomImagePath,
-productImagePath, roomType })`) and `POST /api/generated-images` calls it,
-persists a `generated_images` row either way, and returns
-`status: "pending"` with an explanatory `message` when no provider is
-configured.
+`services/imageGenerationService.js` uses Cloudflare Workers AI with FLUX.2
+[klein] 9B (`IMAGE_AI_MODEL`). It needs `IMAGE_AI_PROVIDER=cloudflare`,
+`IMAGE_AI_API_KEY` and `IMAGE_AI_ACCOUNT_ID`. Without them, the request is
+stored with status `pending`.
 
-Why it's not wired up: Claude (the provider used for product analysis) does
-not generate images. Real product-in-room visualization needs a separate
-image-generation/image-editing API, and picking one has real cost/quality
-tradeoffs that should be a deliberate choice, not something hard-coded here.
-Once you pick a provider, implement the call inside
-`generateRoomVisualization` — nothing else in the app (routes, DB schema,
-mobile UI) needs to change, since they already speak the `pending` /
-`completed` / `failed` status contract.
+The model's documented limits are: up to 4 reference images
+(`input_image_0`..`input_image_3`), each smaller than 512x512; output sides of
+256-1920px; 4 fixed steps; and no mask or strength input. Layout control
+therefore comes only from the reference images.
 
-The mobile app is built to reflect this honestly: it shows a "visualization
-pending — AI not configured yet" state instead of a fake generated image.
+**AI Render** (`POST /api/generated-images/session`, Visualization screen).
+The app sends each product's Arrange layer: position, width, rotation, aspect,
+zIndex, and which image the layer shows (3D view, cutout or photo).
+`services/arrangeCompositionService.js` rebuilds the exact Arrange picture with
+sharp, using the same math as `RoomComposer.tsx`. The request then contains:
+- `input_image_0`: the Arrange composition. This is the spatial reference for
+  position, size, rotation, overlap and the number of products.
+- `input_image_1..3`: cutouts of the (up to 3) largest products, as references
+  for their appearance.
+- `width`/`height`: the composition's size, so the render lines up with Arrange.
+
+Requests without layers (older app builds, and `POST /api/generated-images`
+for a single product) use the previous request: the room photo plus product
+photos, with a text placement hint.
+
+`IMAGE_AI_DEBUG=1` saves each AI Render's composition, reference images and
+prompt to `uploads/render-debug/`.
 
 ## Product background removal
 

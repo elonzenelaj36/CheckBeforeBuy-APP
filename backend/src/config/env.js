@@ -60,6 +60,8 @@ const env = {
     // Cloudflare Workers AI needs the account id in the request URL.
     accountId: required('IMAGE_AI_ACCOUNT_ID', ''),
     model: required('IMAGE_AI_MODEL', '@cf/black-forest-labs/flux-2-klein-9b'),
+    // 1 = keep AI Render inputs (arrangement, references, prompt) in uploads/render-debug/ for checking.
+    debug: required('IMAGE_AI_DEBUG', '') === '1',
   },
 
   backgroundRemoval: {

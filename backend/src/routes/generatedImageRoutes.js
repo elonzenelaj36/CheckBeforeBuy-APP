@@ -27,7 +27,12 @@ router.post(
 );
 router.post(
   '/session',
-  upload.fields(Array.from({ length: 8 }, (_, i) => ({ name: `productImage${i}`, maxCount: 1 }))),
+  upload.fields(
+    Array.from({ length: 8 }, (_, i) => [
+      { name: `productImage${i}`, maxCount: 1 },
+      { name: `layerImage${i}`, maxCount: 1 },
+    ]).flat()
+  ),
   generateSession
 );
 router.patch('/:id', updateGeneratedImage);

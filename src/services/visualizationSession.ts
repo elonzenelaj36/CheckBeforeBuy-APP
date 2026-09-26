@@ -33,7 +33,7 @@ import React from 'react';
 import { File } from 'expo-file-system';
 
 import { apiUploadMultipart } from './api';
-import { loadCachedFrames } from './modelFrames';
+import { frameIndexForYaw, loadCachedFrames } from './modelFrames';
 import { removeProductBackground, type CutoutQuality } from './productCutouts';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
@@ -127,6 +127,21 @@ export type SessionProduct = {
    */
   selectedFromPhoto?: boolean;
 };
+
+/**
+ * The image a product's layer shows on the Arrange canvas: the 3D model seen
+ * from the product's turn angle, else the transparent cutout, else (no cutout
+ * yet, or background removal failed) the original photo. RoomComposer draws
+ * exactly this, and AI Render rebuilds the same picture from it.
+ */
+export function layerImageFor(product: SessionProduct): { source: 'frame' | 'cutout' | 'photo'; uri: string } {
+  const { cutout, model3D } = product;
+  if (model3D.status === 'ready' && model3D.frames.length > 0) {
+    return { source: 'frame', uri: model3D.frames[frameIndexForYaw(product.transform.yawDeg, model3D.frames.length)] };
+  }
+  if (cutout.status === 'ready') return { source: 'cutout', uri: cutout.imageUri };
+  return { source: 'photo', uri: product.imageUri };
+}
 
 export type SessionGeneration = {
   /** generated_images row id — Save attaches the layout to it. */
@@ -570,7 +585,21 @@ export type GenerationPayload = {
     characteristics?: string[];
     /** Only for layers the user arranged: where it should go (normalized to the room image). */
     placement?: { x: number; y: number; width: number };
+    /** The product's layer exactly as shown in Arrange — AI Render's spatial reference. */
+    layer: GenerationLayer;
   }[];
+};
+
+export type GenerationLayer = {
+  x: number;
+  y: number;
+  width: number;
+  rotation: number;
+  aspect: number;
+  zIndex: number;
+  source: 'frame' | 'cutout' | 'photo';
+  /** Backend cutout the layer shows (source 'cutout'); also the product's appearance reference. */
+  cutoutId?: string;
 };
 
 export function buildGenerationPayload(session: VisualizationSession): GenerationPayload {
@@ -587,11 +616,22 @@ export function buildGenerationPayload(session: VisualizationSession): Generatio
       ...(p.transform.placed
         ? { placement: { x: round3(p.transform.x), y: round3(p.transform.y), width: round3(p.transform.width) } }
         : {}),
+      layer: {
+        x: round4(p.transform.x),
+        y: round4(p.transform.y),
+        width: round4(p.transform.width),
+        rotation: round4(p.transform.rotation),
+        aspect: round4(p.transform.aspect),
+        zIndex: p.transform.zIndex,
+        source: layerImageFor(p).source,
+        ...(p.cutout.status === 'ready' ? { cutoutId: p.cutout.cutoutId } : {}),
+      },
     })),
   };
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
 /** What Save stores with the generated image: enough to understand/rebuild the composition. */
 export function buildLayout(session: VisualizationSession) {
@@ -647,6 +687,9 @@ export async function regenerateSession(): Promise<RegenerateResult> {
       if (p.imageUri.startsWith('file://') && (!p.productCheckId || p.selectedFromPhoto)) {
         images[`productImage${i}`] = p.imageUri;
       }
+      // A 3D view exists only on this device — upload the exact frame the layer shows.
+      const layerImage = layerImageFor(p);
+      if (layerImage.source === 'frame') images[`layerImage${i}`] = layerImage.uri;
     });
 
     const response = await apiUploadMultipart<{

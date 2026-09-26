@@ -2,9 +2,18 @@
  * Room-visualization (product-in-room image generation) abstraction.
  *
  * Provider: Cloudflare Workers AI, FLUX.2 [klein] (image editing with
- * multiple reference images) via its REST API. The room photo and the
- * product photo are both sent as reference images and the model is asked to
- * place the product into the room.
+ * multiple reference images) via its REST API. Documented limits: up to 4
+ * reference images named input_image_0..input_image_3, each smaller than
+ * 512x512; output 256-1920px per side; 4 fixed steps; no mask/strength input.
+ *
+ * Two request types:
+ *  - ARRANGED (AI Render of the Visualization screen): the user's exact
+ *    Arrange composition (room + product layers, rebuilt by
+ *    arrangeCompositionService.js) is input_image_0 — the spatial reference —
+ *    and up to 3 product cutouts are input_image_1..3 as appearance
+ *    references. The model is asked to make that exact scene photorealistic.
+ *  - LEGACY (single product, no arrangement): the room photo and the product
+ *    photos are sent and the model places the products itself.
  *
  * If IMAGE_AI_PROVIDER / IMAGE_AI_API_KEY / IMAGE_AI_ACCOUNT_ID are not all
  * set, the request stays "pending" with a clear message (no fake image).
@@ -16,11 +25,16 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const sharp = require('sharp');
 const env = require('../config/env');
 const { uploadRoot } = require('../middleware/upload');
+const { composeArrangement } = require('./arrangeCompositionService');
 
 const CLOUDFLARE_TIMEOUT_MS = 120000;
 const MAX_SIDE = 1024;
+/** Documented FLUX.2 [klein] limits on Workers AI. */
+const MAX_REFERENCE_IMAGES = 4;
+const MAX_REFERENCE_SIDE = 512;
 
 const EXT_TO_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 
@@ -136,6 +150,11 @@ async function generateWithCloudflare({ roomImagePath, products, roomType }) {
     form.append(`input_image_${i + 1}`, product.blob, product.name);
   });
 
+  return runCloudflare(form);
+}
+
+/** Sends a prepared multipart request to Workers AI and stores the returned image in uploads/. */
+async function runCloudflare(form) {
   const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.imageAi.accountId)}/ai/run/${env.imageAi.model}`;
 
   let response;
@@ -182,10 +201,129 @@ async function generateWithCloudflare({ roomImagePath, products, roomType }) {
   };
 }
 
+/** Where a layer sits in the composition, in words ("lower left"). */
+function describeArea({ x, y }) {
+  const horizontal = x < 0.34 ? 'left' : x > 0.66 ? 'right' : 'center';
+  const vertical = y < 0.34 ? 'upper' : y > 0.66 ? 'lower' : 'middle';
+  return vertical === 'middle' && horizontal === 'center' ? 'center' : `${vertical} ${horizontal}`;
+}
+
+/** Products with the most visible area get the few appearance-reference slots. */
+function pickAppearanceReferences(products) {
+  const area = (t) => (t.width * t.width) / t.aspect;
+  return products
+    .map((product, index) => ({ product, index }))
+    .sort((a, b) => area(b.product.layer.transform) - area(a.product.layer.transform))
+    .slice(0, MAX_REFERENCE_IMAGES - 1)
+    .sort((a, b) => a.index - b.index)
+    .map((ref, i) => ({ ...ref, imageIndex: i + 1 }));
+}
+
+function buildArrangedPrompt({ roomType, products, references }) {
+  const n = products.length;
+  const label = (p) => p.name || p.category || 'product';
+  const list = products.map((p) => `the ${label(p)} at the ${describeArea(p.layer.transform)}`).join(', ');
+  const refs = references
+    .map(
+      ({ product, imageIndex }) =>
+        `Image ${imageIndex} is a photo of the real ${label(product)} (the one at the ${describeArea(product.layer.transform)} ` +
+        "of image 0): match that product's exact shape, proportions, color, material and details. "
+    )
+    .join('');
+  return (
+    `Image 0 is a mock-up of a ${roomType || 'room'} arranged by the user: the real room photo with ` +
+    `${n} product cut-out${n === 1 ? '' : 's'} pasted onto it (${list}). ` +
+    'Turn image 0 into one realistic photograph of exactly this scene. ' +
+    "Keep image 0's composition exactly: the same camera view and framing, the same room, and every product at the " +
+    'same position, size, rotation, viewing angle and overlap as in image 0. ' +
+    `Keep exactly ${n} product${n === 1 ? '' : 's'}; do not move, resize, rotate, add, remove, merge or replace any ` +
+    'object, and do not redesign the room. ' +
+    refs +
+    'Make it photorealistic: natural lighting that matches the room, soft contact shadows where each product touches ' +
+    'the floor or wall, realistic reflections and materials, and seamless edges instead of pasted cut-out edges.'
+  );
+}
+
+/** A reference image within the documented size limit, as JPEG (transparent areas → `background`). */
+async function toReference(input, background = '#ffffff') {
+  const buffer = await sharp(input)
+    .rotate()
+    .resize({ width: MAX_REFERENCE_SIDE, height: MAX_REFERENCE_SIDE, fit: 'inside', withoutEnlargement: true })
+    .flatten({ background })
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  return buffer;
+}
+
+/** Temporary copies of what AI Render sent, only when IMAGE_AI_DEBUG=1 (uploads/render-debug/). */
+async function saveDiagnostics(generatedImagePath, { composition, references, config }) {
+  if (!env.imageAi.debug) return;
+  try {
+    const dir = path.join(uploadRoot, 'render-debug');
+    await fs.promises.mkdir(dir, { recursive: true });
+    const base = path.basename(generatedImagePath, path.extname(generatedImagePath));
+    await fs.promises.writeFile(path.join(dir, `${base}.arrange.png`), composition);
+    await Promise.all(references.map((buf, i) => fs.promises.writeFile(path.join(dir, `${base}.input_image_${i}.jpg`), buf)));
+    await fs.promises.writeFile(path.join(dir, `${base}.json`), JSON.stringify(config, null, 2));
+    console.log(`[imageGeneration] diagnostics: uploads/render-debug/${base}.*`);
+  } catch (err) {
+    console.warn('[imageGeneration] diagnostics not saved:', err.message);
+  }
+}
+
+/**
+ * AI Render of an arranged scene: the exact composition is the spatial
+ * reference, product cutouts are appearance references.
+ */
+async function generateArrangedWithCloudflare({ roomImagePath, products, roomType }) {
+  if (!roomImagePath) {
+    throw new Error('A room photo is required to generate a visualization. Add a photo to this room first.');
+  }
+
+  const composition = await composeArrangement({
+    roomImagePath,
+    layers: products.map((p) => p.layer),
+    maxSide: MAX_SIDE,
+  });
+  const references = pickAppearanceReferences(products);
+  const prompt = buildArrangedPrompt({ roomType, products, references });
+
+  const images = [await toReference(composition.buffer)];
+  for (const { product } of references) images.push(await toReference(product.appearancePath));
+
+  const form = new FormData();
+  form.append('prompt', prompt);
+  // Same size and aspect as the composition, so the render lines up with Arrange.
+  form.append('width', String(composition.width));
+  form.append('height', String(composition.height));
+  images.forEach((buf, i) => form.append(`input_image_${i}`, new Blob([buf], { type: 'image/jpeg' }), `input_image_${i}.jpg`));
+
+  const config = {
+    model: env.imageAi.model,
+    output: { width: composition.width, height: composition.height },
+    input_image_0: `arranged composition (${products.length} product layer${products.length === 1 ? '' : 's'})`,
+    ...Object.fromEntries(
+      references.map(({ product, imageIndex }) => [`input_image_${imageIndex}`, `appearance: ${product.name || 'product'}`])
+    ),
+    layers: products.map((p) => ({ name: p.name, fit: p.layer.fit, source: p.layer.source, transform: p.layer.transform })),
+    prompt,
+  };
+  console.log(
+    `[imageGeneration] AI Render: ${composition.width}x${composition.height}, input_image_0 = arrangement, ` +
+      `input_image_1..${references.length} = ${references.map((r) => r.product.name || 'product').join(', ') || 'none'}`
+  );
+
+  const result = await runCloudflare(form);
+  await saveDiagnostics(result.generatedImagePath, { composition: composition.buffer, references: images, config });
+  return result;
+}
+
 /**
  * @param {object} params
  * @param {string|null} params.roomImagePath - absolute path to the room photo
- * @param {Array<{imagePath: string, name?: string, category?: string, brand?: string, placement?: {x: number, y: number, width: number}|null}>} params.products - ORIGINAL product photos (absolute paths), 1..N, in order
+ * @param {Array<{imagePath: string, name?: string, category?: string, brand?: string, placement?: {x: number, y: number, width: number}|null, appearancePath?: string, layer?: {imagePath: string, fit: 'contain'|'cover', source: string, transform: object}}>} params.products
+ *   ORIGINAL product photos (absolute paths), 1..N, in order. When EVERY product has a `layer` (its Arrange
+ *   layer), the arranged AI Render is used; otherwise the legacy placement request.
  * @param {string} params.roomType
  * @returns {Promise<{status: 'pending'|'completed'|'failed', generatedImagePath: string|null, provider: string|null, message?: string}>}
  */
@@ -207,7 +345,9 @@ async function generateRoomVisualization({ roomImagePath, products, roomType }) 
   }
 
   if (provider === 'cloudflare') {
-    return generateWithCloudflare({ roomImagePath, products, roomType });
+    return products.every((p) => p.layer)
+      ? generateArrangedWithCloudflare({ roomImagePath, products, roomType })
+      : generateWithCloudflare({ roomImagePath, products, roomType });
   }
 
   throw new Error(`Image AI provider "${provider}" is not supported. Use "cloudflare".`);

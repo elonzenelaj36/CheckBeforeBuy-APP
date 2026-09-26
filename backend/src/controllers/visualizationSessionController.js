@@ -37,14 +37,52 @@ function parsePlacement(raw) {
 }
 
 /**
+ * The product's layer in the user's Arrange composition, or null if missing
+ * or malformed (then the request falls back to the legacy placement prompt).
+ *   raw: { x, y, width, rotation, aspect, zIndex, source: 'frame'|'cutout'|'photo', cutoutId? }
+ *   x/y/width normalized to the room image (0..1), rotation in radians.
+ */
+function parseLayer(raw, { layerFile, cutoutPath, photoPath }) {
+  if (!raw || typeof raw !== 'object') return null;
+  const [x, y, width, rotation, aspect, zIndex] = [raw.x, raw.y, raw.width, raw.rotation, raw.aspect, raw.zIndex].map(Number);
+  if (![x, y, width, rotation, aspect, zIndex].every(Number.isFinite)) return null;
+  if (x < 0 || x > 1 || y < 0 || y > 1 || width <= 0 || width > 1 || aspect < 0.05 || aspect > 20) return null;
+
+  // The image the layer shows in the app: a 3D view (uploaded), the cutout, or the original photo.
+  let imagePath = null;
+  if (raw.source === 'frame') imagePath = layerFile ? layerFile.path : null;
+  else if (raw.source === 'cutout') imagePath = cutoutPath;
+  else if (raw.source === 'photo') imagePath = photoPath;
+  if (!imagePath) return null;
+
+  return {
+    imagePath,
+    source: raw.source,
+    fit: raw.source === 'photo' ? 'cover' : 'contain',
+    transform: { x, y, width, rotation, aspect, zIndex },
+  };
+}
+
+/** Absolute path of a background-removed cutout, if it exists on this server. */
+function cutoutFile(cutoutId) {
+  if (!/^[a-f0-9]{32}$/.test(String(cutoutId || ''))) return null;
+  const file = path.join(uploadRoot, `cutout-${cutoutId}.png`);
+  return fs.existsSync(file) ? file : null;
+}
+
+/**
  * POST /api/generated-images/session   (multipart/form-data)
  *   roomId, products (JSON: [{ name, category?, brand?, model?, characteristics?, productCheckId?,
- *     placement? { x, y, width } — normalized 0..1, only for products the user arranged }]),
+ *     placement? { x, y, width } — normalized 0..1, only for products the user arranged,
+ *     layer? — the product's Arrange layer, see parseLayer() }]),
  *   productImage0..productImage7 (file per product, in the same order; omit for a
- *   product that has productCheckId — its saved photo is used).
+ *   product that has productCheckId — its saved photo is used),
+ *   layerImage0..layerImage7 (the 3D view a layer shows, for layers with source 'frame').
  *
- * The room's ORIGINAL saved primary photo and the ORIGINAL product photos are
- * the only inputs; a previous generation is never fed back in.
+ * When every product has a layer, AI Render uses the exact Arrange composition
+ * (room photo + layers) as its spatial reference. Only the room's ORIGINAL
+ * saved photo, the product photos/cutouts and the current Arrange layers are
+ * inputs; a previous generation is never fed back in.
  *
  * Calls the existing Cloudflare generation service and stores the result as a
  * generated_images row (same as POST /generated-images does for one product).
@@ -85,10 +123,15 @@ const generateSession = asyncHandler(async (req, res) => {
       }
       if (!storedPath) throw new ApiError(400, `Product ${i + 1} has no image.`);
 
+      const imagePath = path.join(uploadRoot, path.basename(storedPath));
+      const cutoutPath = cutoutFile(meta.layer?.cutoutId);
       resolved.push({
         storedPath,
         checkId,
-        imagePath: path.join(uploadRoot, path.basename(storedPath)),
+        imagePath,
+        // What the product really looks like: its cutout (no background), else the photo.
+        appearancePath: cutoutPath || imagePath,
+        layer: parseLayer(meta.layer, { layerFile: files[`layerImage${i}`]?.[0], cutoutPath, photoPath: imagePath }),
         name: String(meta.name || `Product ${i + 1}`).slice(0, 120),
         category: meta.category || null,
         brand: meta.brand || null,
@@ -106,7 +149,10 @@ const generateSession = asyncHandler(async (req, res) => {
     );
     const generatedImageId = insert.insertId;
 
-    console.log(`[imageGeneration] REAL generation: room ${roomId} + ${resolved.length} product(s): ${names}`);
+    const arranged = resolved.every((p) => p.layer);
+    console.log(
+      `[imageGeneration] REAL generation (${arranged ? 'arranged' : 'legacy'}): room ${roomId} + ${resolved.length} product(s): ${names}`
+    );
     let generation;
     try {
       generation = await generateRoomVisualization({
@@ -138,8 +184,10 @@ const generateSession = asyncHandler(async (req, res) => {
     });
   } finally {
     // A request that failed validation must not leave uploads behind; on success the
-    // product photos are kept because generated_images references them.
+    // product photos are kept because generated_images references them. Layer
+    // images (3D views) are only needed for this one generation.
     if (!res.headersSent) discardUploads(files);
+    else discardUploads(Object.fromEntries(Object.entries(files).filter(([field]) => field.startsWith('layerImage'))));
   }
 });
 
