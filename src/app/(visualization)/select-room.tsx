@@ -18,7 +18,7 @@ import { Colors } from '@/constants/colors';
 import { getRooms, Room } from '@/services/rooms';
 import { detectProductRoute, openProductSelection } from '@/services/productSelection';
 import { startSession } from '@/services/visualizationSession';
-import { roomWorkingImage } from '@/services/roomCaptures';
+import { isSpatialRoom, roomCoverImage, roomWorkingImage } from '@/services/roomCaptures';
 
 export default function SelectRoom() {
   const router = useRouter();
@@ -170,9 +170,9 @@ export default function SelectRoom() {
                   disabled={checkingPhoto}
                   activeOpacity={0.8}
                 >
-                  {room.primaryImageUri ? (
+                  {roomCoverImage(room) ? (
                     <Image
-                      source={{ uri: room.primaryImageUri }}
+                      source={{ uri: roomCoverImage(room)! }}
                       style={styles.roomThumb}
                     />
                   ) : (
@@ -184,7 +184,8 @@ export default function SelectRoom() {
                   <View style={styles.roomText}>
                     <Text style={styles.roomName}>{room.name}</Text>
                     <Text style={styles.roomDescription}>
-                      {room.roomType} · {room.imageUris.length} photos
+                      {room.roomType} ·{' '}
+                      {isSpatialRoom(room) ? `${room.capture!.mode}° room` : `${room.imageUris.length} photos`}
                     </Text>
                   </View>
 

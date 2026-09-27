@@ -18,8 +18,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BottomNavigation from '@/components/BottomNavigation';
 import EmptyState from '@/components/EmptyState';
+import RoomSpatialHero from '@/components/spatial/RoomSpatialHero';
 import { Colors } from '@/constants/colors';
 import { deleteGeneratedImagesForRoom } from '@/services/generatedImages';
+import { isSpatialRoom } from '@/services/roomCaptures';
 import {
   deleteRoom,
   getRooms,
@@ -140,76 +142,85 @@ export default function MyHome() {
           />
         ) : (
           <View style={styles.roomsList}>
-            {rooms.map((room) => (
-              <TouchableOpacity
-                key={room.id}
-                style={styles.roomCard}
-                activeOpacity={0.92}
-                onPress={() =>
-                  router.push({
-                    pathname: '/room-detail',
-                    params: { roomId: room.id },
-                  })
-                }
-              >
-                <View style={styles.roomImageWrap}>
-                  {room.primaryImageUri ? (
-                    <Image
-                      source={{
-                        uri: room.primaryImageUri,
-                      }}
-                      style={styles.roomImage}
-                    />
-                  ) : (
-                    <View style={styles.roomImagePlaceholder}>
-                      <Text
-                        style={
-                          styles.roomImagePlaceholderText
-                        }
-                      >
-                        🏠
+            {rooms.map((room) =>
+              isSpatialRoom(room) ? (
+                <SpatialRoomCard
+                  key={room.id}
+                  room={room}
+                  onOpen={() => router.push({ pathname: '/room-detail', params: { roomId: room.id } })}
+                  onDelete={() => handleDeleteRoom(room)}
+                />
+              ) : (
+                <TouchableOpacity
+                  key={room.id}
+                  style={styles.roomCard}
+                  activeOpacity={0.92}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/room-detail',
+                      params: { roomId: room.id },
+                    })
+                  }
+                >
+                  <View style={styles.roomImageWrap}>
+                    {room.primaryImageUri ? (
+                      <Image
+                        source={{
+                          uri: room.primaryImageUri,
+                        }}
+                        style={styles.roomImage}
+                      />
+                    ) : (
+                      <View style={styles.roomImagePlaceholder}>
+                        <Text
+                          style={
+                            styles.roomImagePlaceholderText
+                          }
+                        >
+                          🏠
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Photo-count pill */}
+                    <View style={styles.roomPhotosPill}>
+                      <Text style={styles.roomPhotosPillText}>
+                        {room.imageUris.length}{' '}
+                        {room.imageUris.length === 1
+                          ? 'photo'
+                          : 'photos'}
                       </Text>
                     </View>
-                  )}
 
-                  {/* Photo-count pill */}
-                  <View style={styles.roomPhotosPill}>
-                    <Text style={styles.roomPhotosPillText}>
-                      {room.imageUris.length}{' '}
-                      {room.imageUris.length === 1
-                        ? 'photo'
-                        : 'photos'}
-                    </Text>
+                    {/* Delete */}
+                    <TouchableOpacity
+                      style={styles.roomDeleteButton}
+                      onPress={() =>
+                        handleDeleteRoom(room)
+                      }
+                    >
+                      <Text style={styles.roomDeleteText}>
+                        ×
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Soft bottom fade + caption */}
+                    <View style={styles.roomScrimUpper} pointerEvents="none" />
+                    <View style={styles.roomScrimLower} pointerEvents="none" />
+
+                    <View style={styles.roomCaption} pointerEvents="none">
+                      <Text style={styles.roomName} numberOfLines={1}>
+                        {room.name}
+                      </Text>
+
+                      <Text style={styles.roomType}>
+                        {room.roomType}
+                      </Text>
+                    </View>
                   </View>
-
-                  {/* Delete */}
-                  <TouchableOpacity
-                    style={styles.roomDeleteButton}
-                    onPress={() =>
-                      handleDeleteRoom(room)
-                    }
-                  >
-                    <Text style={styles.roomDeleteText}>
-                      ×
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Soft bottom fade + caption */}
-                  <View style={styles.roomScrimUpper} pointerEvents="none" />
-                  <View style={styles.roomScrimLower} pointerEvents="none" />
-
-                  <View style={styles.roomCaption} pointerEvents="none">
-                    <Text style={styles.roomName} numberOfLines={1}>
-                      {room.name}
-                    </Text>
-
-                    <Text style={styles.roomType}>
-                      {room.roomType}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              )
+            )}
           </View>
         )}
 
@@ -232,6 +243,40 @@ export default function MyHome() {
 
       <BottomNavigation activeTab="home" />
     </SafeAreaView>
+  );
+}
+
+/**
+ * My Home card of a spatial (180°/360°) room: the room itself — swipe it to
+ * look around, tap to open. Same frame, caption and delete button as a photo
+ * room's card; only the photo is replaced by the interactive room.
+ */
+function SpatialRoomCard({ room, onOpen, onDelete }: { room: Room; onOpen: () => void; onDelete: () => void }) {
+  const [width, setWidth] = React.useState(0);
+  const capture = room.capture!;
+  return (
+    <View style={styles.roomCard}>
+      <View style={styles.roomImageWrap} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        {width > 0 && (
+          <RoomSpatialHero roomId={room.id} capture={capture} width={width} height={190} onTap={onOpen}>
+            <View style={styles.roomScrimUpper} />
+            <View style={styles.roomScrimLower} />
+            <View style={styles.roomPhotosPill}>
+              <Text style={styles.roomPhotosPillText}>{capture.mode}° ROOM · SWIPE ↔</Text>
+            </View>
+            <View style={styles.roomCaption}>
+              <Text style={styles.roomName} numberOfLines={1}>
+                {room.name}
+              </Text>
+              <Text style={styles.roomType}>{room.roomType}</Text>
+            </View>
+          </RoomSpatialHero>
+        )}
+        <TouchableOpacity style={styles.roomDeleteButton} onPress={onDelete}>
+          <Text style={styles.roomDeleteText}>×</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 

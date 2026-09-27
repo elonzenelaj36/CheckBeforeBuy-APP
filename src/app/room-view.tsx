@@ -25,20 +25,18 @@ import {
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ScreenHeader from '@/components/ScreenHeader';
+import SpatialBackdrop from '@/components/spatial/SpatialBackdrop';
+import { useSpatialAngle } from '@/components/spatial/useSpatialAngle';
 import { Colors } from '@/constants/colors';
 import { CAPTURE_LENSES, getRoomCapture, selectRoomView, type RoomCapture } from '@/services/roomCaptures';
-import { blendAt, dragToDegrees, normalizeAngle, stepFrame, wrap360 } from '@/services/roomViewMath';
+import { blendAt, stepFrame, wrap360 } from '@/services/roomViewMath';
 import { getRoomById, type Room } from '@/services/rooms';
 import { getSession, setSessionRoomView } from '@/services/visualizationSession';
 
 const MAX_STAGE_HEIGHT = 520;
-/** Fling: velocity multiplier per 16 ms frame, and the speed (deg/s) at which it stops. */
-const FLING_DECAY = 0.93;
-const FLING_STOP_DEG_S = 4;
 
 export default function RoomView() {
   const router = useRouter();
@@ -51,35 +49,19 @@ export default function RoomView() {
   const [capture, setCapture] = React.useState<RoomCapture | null>(null);
   const [state, setState] = React.useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const [prefetched, setPrefetched] = React.useState(false);
-  const [angle, setAngle] = React.useState(0);
   const [frameAspect, setFrameAspect] = React.useState(9 / 16);
   const [saving, setSaving] = React.useState(false);
-
-  // Kept outside React state (like TurnControl) so gestures and animations
-  // read the live angle without being rebuilt on every change.
-  const angleNow = useSharedValue(0);
-  const dragStart = useSharedValue(0);
-  const animation = useSharedValue<number | null>(null);
 
   const frames = React.useMemo(() => capture?.frames ?? [], [capture]);
   const loops = !!capture?.loops;
   // A full-width drag turns the view by the lens's field of view (1:1 with the finger).
   const fovDeg = CAPTURE_LENSES[capture?.lens ?? 'wide']?.fovDeg ?? CAPTURE_LENSES.wide.fovDeg;
-
-  const moveTo = React.useCallback(
-    (a: number) => {
-      const next = normalizeAngle(frames, loops, a);
-      angleNow.set(next);
-      setAngle(next);
-    },
-    [frames, loops, angleNow]
-  );
-
-  const stopAnimation = React.useCallback(() => {
-    const id = animation.get();
-    if (id != null) cancelAnimationFrame(id);
-    animation.set(null);
-  }, [animation]);
+  const { angle, jumpTo, snapTo, drag } = useSpatialAngle(frames, loops);
+  /** The view to open on — applied once the frames are rendered (jumpTo then clamps against them). */
+  const [startAngle, setStartAngle] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (startAngle != null) jumpTo(startAngle);
+  }, [startAngle, jumpTo]);
 
   React.useEffect(() => {
     if (!roomId) return;
@@ -98,8 +80,7 @@ export default function RoomView() {
         const startId =
           (sessionView && sessionView.captureId === c.id ? sessionView.frameId : null) ?? c.selectedView?.frameId;
         const start = c.frames.find((f) => f.id === startId) ?? c.frames[0];
-        angleNow.set(start.angleDeg);
-        setAngle(start.angleDeg);
+        setStartAngle(start.angleDeg);
         setState('ready');
         // Swiping swaps images constantly — load every preview first so it never flashes.
         Image.prefetch(
@@ -112,61 +93,11 @@ export default function RoomView() {
       .catch(() => !cancelled && setState('error'));
     return () => {
       cancelled = true;
-      stopAnimation();
     };
-  }, [roomId, pickForSession, angleNow, stopAnimation]);
+  }, [roomId, pickForSession]);
 
   const stageWidth = Math.min(windowWidth - 40, MAX_STAGE_HEIGHT * frameAspect);
   const stageHeight = stageWidth / frameAspect;
-
-  /** Glides to a frame's exact angle (shortest way round when looping). */
-  const snapTo = React.useCallback(
-    (target: number) => {
-      stopAnimation();
-      const from = angleNow.get();
-      let delta = target - from;
-      if (loops) delta = ((delta + 540) % 360) - 180;
-      const started = Date.now();
-      const tick = () => {
-        const t = Math.min((Date.now() - started) / 160, 1);
-        moveTo(from + delta * (1 - (1 - t) ** 3));
-        animation.set(t < 1 ? requestAnimationFrame(tick) : null);
-      };
-      animation.set(requestAnimationFrame(tick));
-    },
-    [loops, moveTo, stopAnimation, angleNow, animation]
-  );
-
-  const snapToNearest = React.useCallback(() => {
-    if (frames.length === 0) return;
-    const { nearest } = blendAt(frames, loops, angleNow.get());
-    snapTo(frames[nearest].angleDeg);
-  }, [frames, loops, snapTo, angleNow]);
-
-  const fling = React.useCallback(
-    (velocityDegS: number) => {
-      stopAnimation();
-      let v = velocityDegS;
-      let last = Date.now();
-      const tick = () => {
-        const now = Date.now();
-        const dt = Math.min((now - last) / 1000, 0.05);
-        last = now;
-        const before = angleNow.get();
-        moveTo(before + v * dt);
-        v *= FLING_DECAY ** (dt / 0.016);
-        const hitEnd = !loops && angleNow.get() === before && v !== 0;
-        if (Math.abs(v) < FLING_STOP_DEG_S || hitEnd) {
-          animation.set(null);
-          snapToNearest();
-          return;
-        }
-        animation.set(requestAnimationFrame(tick));
-      };
-      animation.set(requestAnimationFrame(tick));
-    },
-    [loops, moveTo, snapToNearest, stopAnimation, angleNow, animation]
-  );
 
   const pan = React.useMemo(
     () =>
@@ -174,17 +105,10 @@ export default function RoomView() {
         .runOnJS(true)
         .activeOffsetX([-8, 8])
         .failOffsetY([-14, 14])
-        .onBegin(() => {
-          stopAnimation();
-          dragStart.set(angleNow.get());
-        })
-        .onUpdate((e) => {
-          moveTo(dragStart.get() + dragToDegrees(e.translationX, stageWidth, fovDeg));
-        })
-        .onEnd((e) => {
-          fling(dragToDegrees(e.velocityX, stageWidth, fovDeg));
-        }),
-    [moveTo, fling, stageWidth, fovDeg, stopAnimation, dragStart, angleNow]
+        .onBegin(() => drag.begin())
+        .onUpdate((e) => drag.update(e.translationX, stageWidth, fovDeg))
+        .onEnd((e) => drag.end(e.velocityX, stageWidth, fovDeg)),
+    [drag, stageWidth, fovDeg]
   );
 
   const shownState = roomId ? state : 'missing';
@@ -216,8 +140,6 @@ export default function RoomView() {
 
   const blend = blendAt(frames, loops, angle);
   const current = frames[blend.nearest];
-  const lower = frames[blend.lower];
-  const upper = frames[blend.upper];
   const selectedId = pickForSession ? getSession()?.room.view?.frameId ?? null : capture.selectedView?.frameId ?? null;
   const isSelected = current.id === selectedId;
   const approximate = capture.angleSource === 'time';
@@ -292,26 +214,13 @@ export default function RoomView() {
 
         <GestureDetector gesture={pan}>
           <View style={[styles.stage, { width: stageWidth, height: stageHeight }]}>
-            <Image
-              source={{ uri: lower.previewUri }}
+            <SpatialBackdrop
+              frames={frames}
+              loops={loops}
+              angle={angle}
               style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={null}
-              onLoad={(e) => {
-                const { width, height } = e.source;
-                if (width > 0 && height > 0) setFrameAspect(Math.min(2, Math.max(0.5, width / height)));
-              }}
+              onAspect={(aspect) => setFrameAspect(Math.min(2, Math.max(0.5, aspect)))}
             />
-            {blend.upper !== blend.lower && blend.weight > 0.01 && (
-              <Image
-                source={{ uri: upper.previewUri }}
-                style={[StyleSheet.absoluteFill, { opacity: blend.weight }]}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={null}
-              />
-            )}
             {!prefetched && (
               <View style={styles.loadingPill}>
                 <ActivityIndicator size="small" color={Colors.textPrimary} />

@@ -30,8 +30,12 @@ import {
   Room,
   setRoomPrimaryPhoto,
 } from '@/services/rooms';
-import { deleteRoomCapture } from '@/services/roomCaptures';
+import RoomSpatialHero from '@/components/spatial/RoomSpatialHero';
+import { deleteRoomCapture, isSpatialRoom } from '@/services/roomCaptures';
 import { deleteUserItem, getUserItemsForRoom, UserItem } from '@/services/userItems';
+
+/** A spatial room's main visual is taller than a photo banner: the capture is portrait and it IS the room. */
+const SPATIAL_BANNER_HEIGHT = 360;
 
 export default function RoomDetail() {
   const router = useRouter();
@@ -43,6 +47,7 @@ export default function RoomDetail() {
   const [userItems, setUserItems] = React.useState<UserItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [analyzing, setAnalyzing] = React.useState(false);
+  const [heroWidth, setHeroWidth] = React.useState(0);
 
   const loadData = React.useCallback(async () => {
     if (!roomId) {
@@ -277,25 +282,51 @@ export default function RoomDetail() {
       >
         <ScreenHeader eyebrow="MY HOME" title={room.name} />
 
-        {/* Primary Photo Banner */}
-        <View style={styles.bannerOuter}>
-          <View style={styles.bannerContainer}>
-            {primaryPhoto ? (
-              <Image source={{ uri: primaryPhoto }} style={styles.bannerImage} />
-            ) : (
-              <View style={styles.bannerPlaceholder}>
-                <Text style={styles.placeholderIcon}>🏠</Text>
-                <Text style={styles.placeholderText}>No room photo yet</Text>
-              </View>
-            )}
-
-            <View style={styles.bannerScrim} pointerEvents="none" />
-
-            <View style={styles.bannerBadge}>
-              <Text style={styles.bannerBadgeText}>{room.roomType}</Text>
+        {/* Main visual: a spatial room is its swipeable 180°/360° capture; a photo room its primary photo. */}
+        {isSpatialRoom(room) ? (
+          <View style={styles.bannerOuter}>
+            <View
+              style={[styles.bannerContainer, styles.spatialBanner]}
+              onLayout={(e) => setHeroWidth(e.nativeEvent.layout.width - 2)}
+            >
+              {heroWidth > 0 && (
+                <RoomSpatialHero
+                  roomId={room.id}
+                  capture={room.capture!}
+                  width={heroWidth}
+                  height={SPATIAL_BANNER_HEIGHT - 2}
+                  onTap={() => router.push({ pathname: '/room-view', params: { roomId: room.id } })}
+                >
+                  <View style={styles.bannerScrim} />
+                  <View style={styles.bannerBadge}>
+                    <Text style={styles.bannerBadgeText}>
+                      {room.capture!.mode}° ROOM · SWIPE TO LOOK AROUND
+                    </Text>
+                  </View>
+                </RoomSpatialHero>
+              )}
             </View>
           </View>
-        </View>
+        ) : (
+          <View style={styles.bannerOuter}>
+            <View style={styles.bannerContainer}>
+              {primaryPhoto ? (
+                <Image source={{ uri: primaryPhoto }} style={styles.bannerImage} />
+              ) : (
+                <View style={styles.bannerPlaceholder}>
+                  <Text style={styles.placeholderIcon}>🏠</Text>
+                  <Text style={styles.placeholderText}>No room photo yet</Text>
+                </View>
+              )}
+
+              <View style={styles.bannerScrim} pointerEvents="none" />
+
+              <View style={styles.bannerBadge}>
+                <Text style={styles.bannerBadgeText}>{room.roomType}</Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Room name — the strongest text on this screen */}
         <View style={styles.roomNameBlock}>
@@ -311,7 +342,12 @@ export default function RoomDetail() {
           </TouchableOpacity>
         </View>
 
-        {room.imageUris.length === 0 ? (
+        {room.imageUris.length === 0 && isSpatialRoom(room) ? (
+          // A spatial room already shows the room above — photos are optional extras here.
+          <TouchableOpacity style={styles.subtleInfoCard} onPress={handleAddPhoto} activeOpacity={0.85}>
+            <Text style={styles.subtleInfoText}>Optional: add still photos of this room.</Text>
+          </TouchableOpacity>
+        ) : room.imageUris.length === 0 ? (
           <EmptyState
             icon="📷"
             title="No room photos"
@@ -542,6 +578,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.myHomeSurface,
     borderWidth: 1,
     borderColor: Colors.myHomeBorder,
+  },
+  spatialBanner: {
+    height: SPATIAL_BANNER_HEIGHT,
   },
   bannerImage: {
     width: '100%',

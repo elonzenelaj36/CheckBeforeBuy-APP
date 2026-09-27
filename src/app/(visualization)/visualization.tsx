@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 // Gesture-handler's ScrollView, so dragging a product cancels page scrolling.
 import { ScrollView } from 'react-native-gesture-handler';
@@ -20,26 +21,35 @@ import ProductPipelineStatus from '@/components/model3d/ProductPipelineStatus';
 import TurnControl from '@/components/model3d/TurnControl';
 import TurntableRenderer from '@/components/model3d/TurntableRenderer';
 import RoomComposer from '@/components/RoomComposer';
+import SpatialBackdrop from '@/components/spatial/SpatialBackdrop';
+import { useSpatialAngle } from '@/components/spatial/useSpatialAngle';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import { saveImageToGallery } from '@/services/gallery';
 import { saveGeneratedImageLayout } from '@/services/generatedImages';
 import { getRoomById } from '@/services/rooms';
-import { roomWorkingImage } from '@/services/roomCaptures';
+import { getRoomCapture, roomWorkingImage } from '@/services/roomCaptures';
+import { directionAtView, projectToView } from '@/services/roomViewMath';
 import {
   buildLayout,
   clearSession,
   getSession,
+  productsInView,
   type ProductTransform,
+  type SessionSpatialFrame,
   regenerateSession,
   removeProduct,
   selectProduct,
   setModelFrames,
   setModelRenderFailed,
+  setSessionSpatial,
+  setSessionViewAngle,
   startSession,
   updateProductTransform,
   useVisualizationSession,
 } from '@/services/visualizationSession';
+
+const NO_FRAMES: SessionSpatialFrame[] = [];
 
 /** Tallest the room canvas may get; wider-than-tall rooms fill the width. */
 const MAX_CANVAS_HEIGHT = 480;
@@ -115,6 +125,91 @@ export default function Visualization() {
     };
   }, [session, params.roomId, params.productImageUri, params.productName, params.productCheckId]);
 
+  // The canvas keeps the room image's aspect ratio so normalized product
+  // positions map onto it exactly, at any screen size.
+  const aspect = Math.min(2, Math.max(0.5, roomAspect));
+  const canvasWidth = Math.min(availableWidth, MAX_CANVAS_HEIGHT * aspect);
+  const canvasHeight = canvasWidth / aspect;
+
+  // ── Spatial (180°/360°) room ─────────────────────────────────────────────────
+  // The room's captured views are the canvas: swiping empty space turns the
+  // room, and every product is drawn where its room direction (anchorDeg)
+  // appears in the current view — it stays in its place in the room.
+  const spatial = session?.room.spatial ?? null;
+  const spatialFrames = spatial?.frames ?? NO_FRAMES;
+  const spatialLoops = !!spatial?.loops;
+  const fovDeg = spatial?.fovDeg ?? 60;
+  const sessionRoomId = session?.room.id ?? null;
+  const needsSpatial = !!session?.room.captureId && !spatial;
+  const {
+    angle: viewAngle,
+    angleNow: viewAngleNow,
+    jumpTo: jumpToView,
+    drag: roomDrag,
+  } = useSpatialAngle(spatialFrames, spatialLoops, { onSettle: setSessionViewAngle });
+
+  React.useEffect(() => {
+    if (!needsSpatial || !sessionRoomId) return;
+    let cancelled = false;
+    getRoomCapture(sessionRoomId)
+      .then((capture) => {
+        if (!cancelled && capture) setSessionSpatial(capture);
+      })
+      .catch(() => {}); // stays on the room image it has (Change view still works)
+    return () => {
+      cancelled = true;
+    };
+  }, [needsSpatial, sessionRoomId]);
+
+  // Once the views are loaded, open on the session's view and preload them all for smooth turning.
+  React.useEffect(() => {
+    if (spatialFrames.length === 0) return;
+    const start = getSession()?.room.spatial?.viewDeg;
+    if (start != null) jumpToView(start);
+    ExpoImage.prefetch(
+      spatialFrames.map((f) => f.previewUri),
+      'memory-disk'
+    ).catch(() => false);
+  }, [spatialFrames, jumpToView]);
+
+  const shownProducts = React.useMemo(() => {
+    const list = session?.products ?? [];
+    if (!spatial) return list;
+    return list.map((p) =>
+      p.transform.anchorDeg == null
+        ? p
+        : {
+            ...p,
+            transform: {
+              ...p.transform,
+              x: projectToView(spatialFrames, spatialLoops, fovDeg, viewAngle, p.transform.anchorDeg),
+            },
+          }
+    );
+  }, [session?.products, spatial, spatialFrames, spatialLoops, fovDeg, viewAngle]);
+
+  const onRoomPan = React.useMemo(
+    () =>
+      spatial
+        ? {
+            begin: roomDrag.begin,
+            update: (tx: number) => roomDrag.update(tx, canvasWidth, fovDeg),
+            end: (vx: number) => roomDrag.end(vx, canvasWidth, fovDeg),
+          }
+        : undefined,
+    [spatial, roomDrag, canvasWidth, fovDeg]
+  );
+
+  // A product dragged in a spatial room gets a new place in the room.
+  const onComposerTransformEnd = React.useCallback(
+    (productId: string, geometry: Pick<ProductTransform, 'x' | 'y' | 'width' | 'rotation'>) => {
+      if (!spatial) return handleTransformEnd(productId, geometry);
+      const anchorDeg = directionAtView(spatialFrames, spatialLoops, fovDeg, viewAngleNow.get(), geometry.x);
+      updateProductTransform(productId, { ...geometry, placed: true, anchorDeg });
+    },
+    [spatial, spatialFrames, spatialLoops, fovDeg, viewAngleNow]
+  );
+
   if (!session) {
     return (
       <SafeAreaView style={styles.container}>
@@ -150,11 +245,7 @@ export default function Visualization() {
   const showingAi = view === 'ai' && !!generation;
   const canGenerate = products.length > 0 && status !== 'generating';
 
-  // The canvas keeps the room photo's aspect ratio so normalized product
-  // positions map onto the photo exactly, at any screen size.
-  const aspect = Math.min(2, Math.max(0.5, roomAspect));
-  const canvasWidth = Math.min(availableWidth, MAX_CANVAS_HEIGHT * aspect);
-  const canvasHeight = canvasWidth / aspect;
+  const inView = spatial ? productsInView(session).length : products.length;
 
   const selectedProduct = products.find((p) => p.id === selectedProductId) ?? null;
   const selected3D = selectedProduct?.model3D.status === 'ready' ? selectedProduct.model3D : null;
@@ -279,12 +370,24 @@ export default function Visualization() {
                 width={canvasWidth}
                 height={canvasHeight}
                 roomImageUri={room.imageUri}
-                products={products}
+                products={shownProducts}
                 selectedProductId={selectedProductId}
                 onSelect={selectProduct}
-                onTransformEnd={handleTransformEnd}
+                onTransformEnd={onComposerTransformEnd}
                 onProductAspect={handleProductAspect}
                 onRoomAspect={setRoomAspect}
+                background={
+                  spatial ? (
+                    <SpatialBackdrop
+                      frames={spatial.frames}
+                      loops={spatial.loops}
+                      angle={viewAngle}
+                      style={StyleSheet.absoluteFill}
+                      onAspect={setRoomAspect}
+                    />
+                  ) : undefined
+                }
+                onRoomPan={onRoomPan}
               />
             ))}
 
@@ -301,8 +404,18 @@ export default function Visualization() {
           )}
         </View>
 
-        {/* Captured room views (only rooms with a 180°/360° capture). */}
-        {!showingAi && !!room.captureId && (
+        {/* Spatial room: where you're looking, and which products are in this view (= what Generate uses). */}
+        {!showingAi && spatial && (
+          <View style={styles.roomViewBar}>
+            <Text style={styles.roomViewLabel} numberOfLines={1}>
+              {`${spatial.mode}° ROOM · ≈${Math.round(viewAngle)}°`}
+              {products.length > 0 ? ` · ${inView} OF ${products.length} PRODUCTS IN VIEW` : ''}
+            </Text>
+          </View>
+        )}
+
+        {/* Views not loaded (yet): the previous way to pick a captured view. */}
+        {!showingAi && !!room.captureId && !spatial && (
           <View style={styles.roomViewBar}>
             <Text style={styles.roomViewLabel} numberOfLines={1}>
               {room.view
@@ -323,9 +436,11 @@ export default function Visualization() {
           <Text style={styles.canvasHint}>
             {showingAi
               ? 'AI render of your room. Switch to Arrange to move products, then regenerate.'
-              : selected3D
-                ? 'Drag to move · pinch to resize · twist to tilt · turn it in 3D below'
-                : 'Drag a product to move it · pinch to resize · twist to rotate'}
+              : spatial
+                ? 'Swipe the room to look around · drag a product to move it · pinch to resize · twist to rotate'
+                : selected3D
+                  ? 'Drag to move · pinch to resize · twist to tilt · turn it in 3D below'
+                  : 'Drag a product to move it · pinch to resize · twist to rotate'}
           </Text>
         )}
 

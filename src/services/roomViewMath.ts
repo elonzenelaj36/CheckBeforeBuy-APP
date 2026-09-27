@@ -88,3 +88,67 @@ export function stepFrame(frames: ViewFrame[], loops: boolean, nearest: number, 
   if (loops) return (next + n) % n;
   return Math.min(Math.max(next, 0), n - 1);
 }
+
+// ── Placing things in a captured room ────────────────────────────────────────
+//
+// A capture is one camera turning in place, so a direction in the room (an
+// angle on the same scale as the frames' angleDeg) lands at a predictable
+// horizontal position in every frame. Products placed in a spatial room store
+// that direction (their "anchor"), not a screen position, so they stay in the
+// same place in the room while the user looks around. This is exact only for
+// a pure turn with a rectilinear lens of the estimated field of view; vertical
+// position and size are kept as they are (no depth or perspective model).
+
+const DEG = Math.PI / 180;
+/** Directions this far off-axis are behind the camera for our purposes. */
+const MAX_OFF_AXIS_DEG = 85;
+
+/** a − b in degrees: shortest way round when the capture loops, plain difference otherwise. */
+export function angleDelta(a: number, b: number, loops: boolean): number {
+  const d = a - b;
+  return loops ? ((((d + 180) % 360) + 360) % 360) - 180 : d;
+}
+
+/**
+ * Horizontal position (0..1 across the frame, may be outside) where room
+ * direction `anchorDeg` appears in the frame taken at `frameDeg`.
+ */
+export function projectToFrame(anchorDeg: number, frameDeg: number, fovDeg: number, loops: boolean): number {
+  const d = Math.max(-MAX_OFF_AXIS_DEG, Math.min(MAX_OFF_AXIS_DEG, angleDelta(anchorDeg, frameDeg, loops)));
+  return 0.5 + Math.tan(d * DEG) / (2 * Math.tan((fovDeg / 2) * DEG));
+}
+
+/** Inverse of projectToFrame: the room direction at horizontal position `x` of a frame taken at `frameDeg`. */
+export function directionAt(x: number, frameDeg: number, fovDeg: number): number {
+  return frameDeg + Math.atan((x - 0.5) * 2 * Math.tan((fovDeg / 2) * DEG)) / DEG;
+}
+
+/**
+ * Where `anchorDeg` appears while the viewer shows direction `viewDeg`. The
+ * viewer cross-fades two real frames, so the position moves between its
+ * place in each of them with the same weight — it stays on the room content.
+ */
+export function projectToView(
+  frames: ViewFrame[],
+  loops: boolean,
+  fovDeg: number,
+  viewDeg: number,
+  anchorDeg: number
+): number {
+  if (frames.length === 0) return projectToFrame(anchorDeg, viewDeg, fovDeg, loops);
+  const b = blendAt(frames, loops, viewDeg);
+  const lower = projectToFrame(anchorDeg, frames[b.lower].angleDeg, fovDeg, loops);
+  const upper = projectToFrame(anchorDeg, frames[b.upper].angleDeg, fovDeg, loops);
+  return lower + (upper - lower) * b.weight;
+}
+
+/** Inverse of projectToView (same blend), for turning a dragged screen position back into a room direction. */
+export function directionAtView(frames: ViewFrame[], loops: boolean, fovDeg: number, viewDeg: number, x: number): number {
+  if (frames.length === 0) return directionAt(x, viewDeg, fovDeg);
+  const b = blendAt(frames, loops, viewDeg);
+  const lower = directionAt(x, frames[b.lower].angleDeg, fovDeg);
+  const upperAngle = frames[b.lower].angleDeg + angleDelta(frames[b.upper].angleDeg, frames[b.lower].angleDeg, loops);
+  const upper = directionAt(x, upperAngle, fovDeg);
+  const a = lower + (upper - lower) * b.weight;
+  return loops ? wrap360(a) : a;
+}

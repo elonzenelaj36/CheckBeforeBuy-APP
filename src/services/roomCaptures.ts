@@ -139,8 +139,23 @@ export async function deleteRoomCapture(roomId: string, captureId: string): Prom
 }
 
 /**
+ * A room with a 180°/360° capture is a SPATIAL room: the swipeable capture is
+ * its main visual (My Home, room page, Arrange). A room without one is a
+ * photo room and behaves exactly as before. Its photos are kept either way.
+ */
+export function isSpatialRoom(room: { capture?: RoomCaptureSummary | null }): boolean {
+  return !!room.capture && room.capture.frameCount > 0;
+}
+
+/** Still image for a room: the capture's view for spatial rooms, else the primary photo. */
+export function roomCoverImage(room: { primaryImageUri: string | null; capture?: RoomCaptureSummary | null }): string | null {
+  return (isSpatialRoom(room) ? room.capture?.coverImageUri : null) ?? room.primaryImageUri ?? room.capture?.coverImageUri ?? null;
+}
+
+/**
  * The image a new visualization of this room starts from: the selected
  * captured view if there is one, else the primary photo (exactly as before).
+ * (Spatial sessions then load all views and follow the direction the user looks.)
  */
 export function roomWorkingImage(room: {
   primaryImageUri: string | null;

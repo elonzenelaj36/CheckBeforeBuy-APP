@@ -35,7 +35,8 @@ import { File } from 'expo-file-system';
 import { apiUploadMultipart } from './api';
 import { frameIndexForYaw, loadCachedFrames } from './modelFrames';
 import { removeProductBackground, type CutoutQuality } from './productCutouts';
-import type { SessionRoomView } from './roomCaptures';
+import { CAPTURE_LENSES, type CaptureMode, type RoomCapture, type SessionRoomView } from './roomCaptures';
+import { blendAt, directionAt, projectToFrame } from './roomViewMath';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -53,6 +54,26 @@ export type SessionRoom = {
   view?: SessionRoomView | null;
   /** Id of the room's capture, when it has one (lets Arrange offer "Change view"). */
   captureId?: string | null;
+  /**
+   * Spatial (180°/360°) room: its captured views, loaded once the session
+   * starts (setSessionSpatial). Products are then placed by room direction
+   * (`transform.anchorDeg`), and `imageUri`/`view` follow the frame the user
+   * is looking at — that frame is what Generate uses.
+   */
+  spatial?: SessionSpatial | null;
+};
+
+export type SessionSpatialFrame = { id: string; angleDeg: number; imageUri: string; previewUri: string };
+
+export type SessionSpatial = {
+  captureId: string;
+  mode: CaptureMode;
+  loops: boolean;
+  /** Horizontal field of view of the frames (from the capture lens). */
+  fovDeg: number;
+  frames: SessionSpatialFrame[];
+  /** Direction the user is looking, settled on a real frame (= room.view.angleDeg). */
+  viewDeg: number;
 };
 
 /**
@@ -74,6 +95,13 @@ export type ProductTransform = {
   yawDeg: number;
   /** True once the user has moved/resized/rotated it — only then is the position sent to the AI as a hint. */
   placed: boolean;
+  /**
+   * Spatial rooms only: the room direction (degrees, on the capture's angle
+   * scale) the product's centre sits at — where it IS in the room. `x` is
+   * then just where that direction appears in the current view. y, width and
+   * rotation stay view-relative (the capture is one camera turning in place).
+   */
+  anchorDeg?: number;
 };
 
 export const MIN_LAYER_WIDTH = 0.08;
@@ -276,11 +304,14 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
     };
   }
 
+  const transform = defaultTransform(session.products.length, topZIndex(session.products) + 1);
+  const spatial = session.room.spatial;
+  if (spatial) transform.anchorDeg = directionAt(transform.x, spatial.viewDeg, spatial.fovDeg);
   const product: SessionProduct = {
     ...input,
     id: nextId('product'),
     name: input.name.trim() || `Product ${session.products.length + 1}`,
-    transform: defaultTransform(session.products.length, topZIndex(session.products) + 1),
+    transform,
     cutout: { status: 'pending' },
     model3D: { status: 'waiting' },
   };
@@ -299,7 +330,105 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
 export function setSessionRoomView(imageUri: string | null, view: SessionRoomView | null) {
   const session = getSession();
   if (!session) return;
+  if (session.room.spatial && view && view.captureId === session.room.spatial.captureId) {
+    setSessionViewAngle(view.angleDeg);
+    return;
+  }
   commit({ ...session, room: { ...session.room, imageUri, view }, generation: null });
+}
+
+/** The captured frame nearest a direction (the view that is actually shown / generated). */
+function frameAt(spatial: SessionSpatial, angleDeg: number): SessionSpatialFrame {
+  return spatial.frames[blendAt(spatial.frames, spatial.loops, angleDeg).nearest];
+}
+
+/** Products re-projected into the frame at `frameDeg` (x follows each product's room direction). */
+function projectProducts(products: SessionProduct[], spatial: SessionSpatial, frameDeg: number): SessionProduct[] {
+  return products.map((p) =>
+    p.transform.anchorDeg == null
+      ? p
+      : {
+          ...p,
+          transform: {
+            ...p.transform,
+            x: projectToFrame(p.transform.anchorDeg, frameDeg, spatial.fovDeg, spatial.loops),
+          },
+        }
+  );
+}
+
+/**
+ * Turns the session into a spatial one with the room's captured views. The
+ * view starts on the one in use (the session's, else the room's selected
+ * view, else the middle), and products already in the session get a room
+ * direction from where they are on screen. Local only.
+ */
+export function setSessionSpatial(capture: RoomCapture) {
+  const session = getSession();
+  if (!session || session.room.spatial || capture.frames.length === 0) return;
+  const frames = capture.frames.map(({ id, angleDeg, imageUri, previewUri }) => ({ id, angleDeg, imageUri, previewUri }));
+  const start =
+    frames.find((f) => f.id === session.room.view?.frameId) ??
+    frames.find((f) => f.id === capture.selectedView?.frameId) ??
+    frames[Math.floor(frames.length / 2)];
+  const spatial: SessionSpatial = {
+    captureId: capture.id,
+    mode: capture.mode,
+    loops: capture.loops,
+    fovDeg: CAPTURE_LENSES[capture.lens ?? 'wide']?.fovDeg ?? CAPTURE_LENSES.wide.fovDeg,
+    frames,
+    viewDeg: start.angleDeg,
+  };
+  const products = session.products.map((p) =>
+    p.transform.anchorDeg != null
+      ? p
+      : { ...p, transform: { ...p.transform, anchorDeg: directionAt(p.transform.x, start.angleDeg, spatial.fovDeg) } }
+  );
+  commit({
+    ...session,
+    room: {
+      ...session.room,
+      spatial,
+      captureId: capture.id,
+      imageUri: start.imageUri,
+      view: { captureId: capture.id, frameId: start.id, angleDeg: start.angleDeg, mode: capture.mode },
+    },
+    products: projectProducts(products, spatial, start.angleDeg),
+  });
+}
+
+/**
+ * The user settled on a direction in a spatial room: that frame becomes the
+ * room image (what Generate uses) and every product's on-screen x is
+ * re-projected from its room direction. Products keep their room position;
+ * the previous AI render stays viewable. Local only.
+ */
+export function setSessionViewAngle(angleDeg: number) {
+  const session = getSession();
+  const spatial = session?.room.spatial;
+  if (!session || !spatial) return;
+  const frame = frameAt(spatial, angleDeg);
+  if (frame.angleDeg === spatial.viewDeg && session.room.view?.frameId === frame.id) return;
+  commit({
+    ...session,
+    room: {
+      ...session.room,
+      imageUri: frame.imageUri,
+      view: { captureId: spatial.captureId, frameId: frame.id, angleDeg: frame.angleDeg, mode: spatial.mode },
+      spatial: { ...spatial, viewDeg: frame.angleDeg },
+    },
+    products: projectProducts(session.products, spatial, frame.angleDeg),
+  });
+}
+
+/**
+ * Products that appear in the current view (their box overlaps the frame).
+ * In a spatial room the others are elsewhere in the room — not in this
+ * picture, so they are not sent to Generate. Photo rooms: all products.
+ */
+export function productsInView(session: VisualizationSession): SessionProduct[] {
+  if (!session.room.spatial) return session.products;
+  return session.products.filter((p) => Math.abs(p.transform.x - 0.5) < 0.5 + p.transform.width / 2);
 }
 
 /** Removes from THIS session only — saved products/history are untouched. */
@@ -335,6 +464,11 @@ export function selectProduct(productId: string | null) {
 export function updateProductTransform(productId: string, patch: Partial<ProductTransform>) {
   const session = getSession();
   if (!session) return;
+  // Spatial room: a new on-screen x means a new place in the room (unless the caller already worked it out).
+  const spatial = session.room.spatial;
+  if (spatial && patch.x !== undefined && patch.anchorDeg === undefined) {
+    patch = { ...patch, anchorDeg: directionAt(patch.x, spatial.viewDeg, spatial.fovDeg) };
+  }
   commit({
     ...session,
     products: session.products.map((p) =>
@@ -620,11 +754,12 @@ export type GenerationLayer = {
   cutoutId?: string;
 };
 
+/** Spatial rooms: only the products in the current view are part of this picture (see productsInView). */
 export function buildGenerationPayload(session: VisualizationSession): GenerationPayload {
   return {
     roomImage: session.room.imageUri,
     roomType: session.room.roomType,
-    products: session.products.map((p) => ({
+    products: productsInView(session).map((p) => ({
       image: p.imageUri,
       name: p.name,
       category: p.category,
@@ -678,6 +813,8 @@ export function buildLayout(session: VisualizationSession) {
         aspect: round3(p.transform.aspect),
         zIndex: p.transform.zIndex,
         yawDeg: Math.round(p.transform.yawDeg),
+        // Spatial rooms: where the product is in the room (capture angle), independent of the view.
+        ...(p.transform.anchorDeg != null ? { anchorDeg: round3(p.transform.anchorDeg) } : {}),
       },
     })),
     generatedAt: session.generation?.generatedAt ?? null,
@@ -696,6 +833,11 @@ export async function regenerateSession(): Promise<RegenerateResult> {
   if (!session) return { ok: false, message: 'This visualization session has expired. Please start again.' };
   if (!session.room.id) return { ok: false, message: 'No room is selected for this visualization.' };
   if (session.products.length === 0) return { ok: false, message: 'Add at least one product first.' };
+  // Spatial room: the picture is the current view, so only the products in it are sent.
+  const sent = productsInView(session);
+  if (sent.length === 0) {
+    return { ok: false, message: 'None of your products are in this view. Swipe the room to where they are.' };
+  }
 
   const payload = buildGenerationPayload(session);
   if (__DEV__) {
@@ -708,7 +850,7 @@ export async function regenerateSession(): Promise<RegenerateResult> {
     // productCheckId. The room's saved primary photo is used server-side,
     // or the captured view (roomViewId) when the user picked one.
     const images: Record<string, string> = {};
-    session.products.forEach((p, i) => {
+    sent.forEach((p, i) => {
       if (p.imageUri.startsWith('file://') && (!p.productCheckId || p.selectedFromPhoto)) {
         images[`productImage${i}`] = p.imageUri;
       }
@@ -730,7 +872,7 @@ export async function regenerateSession(): Promise<RegenerateResult> {
       products: JSON.stringify(
         payload.products.map(({ image: _image, ...meta }, i) => ({
           ...meta,
-          ...(session.products[i].productCheckId ? { productCheckId: session.products[i].productCheckId } : {}),
+          ...(sent[i].productCheckId ? { productCheckId: sent[i].productCheckId } : {}),
         }))
       ),
     });

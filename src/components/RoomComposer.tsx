@@ -14,6 +14,9 @@
  * - pinch anywhere on the canvas: resize the selected product
  * - two-finger twist anywhere on the canvas: rotate the selected product
  * - tap empty space: deselect
+ * - spatial rooms (optional `onRoomPan`): one finger dragged sideways on
+ *   empty space turns the room; products then move with the room because
+ *   their x comes from their room direction (see visualization.tsx).
  */
 
 import React from 'react';
@@ -47,6 +50,14 @@ type Props = {
   onTransformEnd: (productId: string, geometry: Geometry) => void;
   onProductAspect: (productId: string, aspect: number) => void;
   onRoomAspect?: (aspect: number) => void;
+  /** Replaces the room photo (spatial rooms draw their captured views here). */
+  background?: React.ReactNode;
+  /** Spatial rooms: a sideways drag that starts on empty space turns the room (JS thread). */
+  onRoomPan?: {
+    begin: () => void;
+    update: (translationX: number) => void;
+    end: (velocityX: number) => void;
+  };
 };
 
 /** Extra touch slop around each layer, in px, so small products are easy to grab. */
@@ -98,6 +109,8 @@ export default function RoomComposer({
   onTransformEnd,
   onProductAspect,
   onRoomAspect,
+  background,
+  onRoomPan,
 }: Props) {
   // Live geometry, owned by the UI thread while this screen is mounted.
   const layers = useSharedValue<LayerMap>(toLayerMap(products));
@@ -233,8 +246,37 @@ export default function RoomComposer({
       if (!hitTest(layers.get(), width, height, event.x, event.y)) scheduleOnRN(onSelect, null);
     });
 
-    return Gesture.Simultaneous(pan, pinch, rotation, tapEmpty);
-  }, [width, height, layers, selectedId, draggingId, start, pinchStartWidth, rotationStart, onSelect, onTransformEnd]);
+    if (!onRoomPan) return Gesture.Simultaneous(pan, pinch, rotation, tapEmpty);
+
+    // Starts only off the products and only for one finger moving sideways,
+    // so product drags, pinch/twist and vertical page scrolling still work.
+    const roomPan = Gesture.Pan()
+      .runOnJS(true)
+      .maxPointers(1)
+      .activeOffsetX([-10, 10])
+      .failOffsetY([-12, 12])
+      .onTouchesDown((event, manager) => {
+        const touch = event.allTouches[0];
+        if (touch && hitTest(layers.get(), width, height, touch.x, touch.y)) manager.fail();
+      })
+      .onBegin(() => onRoomPan.begin())
+      .onUpdate((event) => onRoomPan.update(event.translationX))
+      .onEnd((event) => onRoomPan.end(event.velocityX));
+
+    return Gesture.Simultaneous(pan, pinch, rotation, tapEmpty, roomPan);
+  }, [
+    width,
+    height,
+    layers,
+    selectedId,
+    draggingId,
+    start,
+    pinchStartWidth,
+    rotationStart,
+    onSelect,
+    onTransformEnd,
+    onRoomPan,
+  ]);
 
   const ordered = React.useMemo(
     () => [...products].sort((a, b) => a.transform.zIndex - b.transform.zIndex),
@@ -244,7 +286,9 @@ export default function RoomComposer({
   return (
     <GestureDetector gesture={gesture}>
       <View style={[styles.canvas, { width, height }]} collapsable={false}>
-        {roomImageUri ? (
+        {background ? (
+          background
+        ) : roomImageUri ? (
           <Image
             source={{ uri: roomImageUri }}
             style={StyleSheet.absoluteFill}
