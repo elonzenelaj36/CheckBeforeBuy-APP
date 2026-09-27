@@ -96,6 +96,10 @@ On success you'll see:
 | DELETE | `/api/rooms/:id/photos/:photoId` | Remove a photo |
 | PATCH | `/api/rooms/:id/photos/:photoId` | Set as primary photo (`{ isPrimary: true }`) |
 | POST | `/api/rooms/:id/analyze` | AI-detect objects in the room's photos → save new ones to `user_items` (see "AI — room analysis") |
+| GET | `/api/rooms/:id/capture` | The room's 180°/360° capture with all views, or `{ capture: null }` (see "Room capture") |
+| POST | `/api/rooms/:id/capture` | Upload a room sweep (multipart `video`, `mode`, `motion`) → extract views |
+| PATCH | `/api/rooms/:id/capture/:captureId` | "USE THIS VIEW": `{ selectedFrameId }` (null = primary photo again) |
+| DELETE | `/api/rooms/:id/capture/:captureId` | Remove the capture (its view files too; room photos untouched) |
 | GET | `/api/saved-products` | List saved products |
 | POST | `/api/saved-products` | Save a product |
 | DELETE | `/api/saved-products/:id` | Unsave |
@@ -209,6 +213,92 @@ photos, with a text placement hint.
 
 `IMAGE_AI_DEBUG=1` saves each AI Render's composition, reference images and
 prompt to `uploads/render-debug/`.
+
+## Room capture (180° / 360° room views)
+
+This feature is optional. A room can have one capture: a slow room sweep
+recorded in the app, split into real views the user can swipe through. The
+room's photos are never changed. Rooms without a capture work exactly as they
+did before, and every room response carries `capture: null` for them.
+
+Database: migration `../database/migrations/004_room_captures.sql` adds two
+new tables, `room_captures` and `room_capture_frames`. Migration `005` adds
+the nullable `lens` column. Neither touches existing tables.
+
+**Lens.** On iPhones that have a physical ultra-wide camera, the app records
+with it (0.5×). It finds the lens with expo-camera's `getAvailableLensesAsync`
+and `selectedLens`, matching the device name "Ultra Wide". Otherwise, and on
+Android, it records with the normal 1× lens. expo-camera 57 has no lens
+selection on Android, and its `zoom` prop can only zoom in, so it isn't used.
+The upload sends `lens` (`wide` | `ultra-wide`), and `LENS_PROFILES` in the
+service adjusts the rules:
+
+| Lens | Slot spacing | Speed penalty starts | Rejected as too fast above |
+|---|---|---|---|
+| `wide` (1×) | 5° | 40°/s | 45°/s |
+| `ultra-wide` (0.5×) | 8° | 60°/s | 70°/s |
+
+The ultra-wide sees about twice as much of the room, so the same turning
+speed blurs about half as much. The app's pace guidance for each lens is in
+`src/services/roomCaptures.ts` (`CAPTURE_LENSES`). All these values are
+estimates, not real-phone measurements. Videos are recorded at 720p, 16:9.
+
+`services/roomCaptureService.js` does the processing. No AI or interpolation
+is involved, and it never produces viewpoints that weren't filmed:
+1. **Decode.** `ffmpeg-static` (standard ffmpeg, run as a separate process)
+   extracts 10 candidate frames per second, longest side ≤ 1280px. It reads
+   H.264 MP4 from Android and HEVC MOV from iOS, and follows the video's
+   rotation metadata.
+2. **Angles.** The app sends the phone's turn around the vertical axis,
+   integrated from the gyroscope and projected on gravity (see
+   `src/services/roomCaptureMotion.ts`). expo-sensors 57 names the axes of
+   DeviceMotion `rotationRate` differently on each platform. Android maps
+   alpha/beta/gamma to x/y/z; iOS maps them to z/y/x. `deviceRotationRate()`
+   converts both back to device axes. Mixing them up measures the wrong axis:
+   a real 180° turn read as about 2°. The camera has no "recording started"
+   event, so the video is aligned to the track by its end:
+   `videoStart = stopAt − duration`. Expect about ±0.2 s of error, a few
+   degrees at a slow turn. If the track is missing, sparse or has gaps,
+   angles are estimated from time assuming a steady turn. The capture is then
+   saved with `angle_source = 'time'`, a warning, and no 360° wrap-around.
+3. **Selection.** The range is split into 5° slots. Each slot keeps the frame
+   with the best `sharpness × exposure × turning-speed penalty`, with a mild
+   preference for the slot centre. Sharpness is the Laplacian at 320px from
+   `sharp`, and is only compared within one capture. Duplicate frames collapse
+   into their slot, and empty slots stay empty.
+4. **Validation.** The capture is rejected with HTTP 422 and a message
+   (`details.code`) in these cases:
+   - `INSUFFICIENT_COVERAGE`: a 180° capture covered less than 150°.
+   - `INCOMPLETE_360`: a 360° capture left a gap back to the start wider than
+     the lens's `maxGapDeg`. That means less than 335° at 1× or 315° at 0.5×.
+   - `COVERAGE_GAPS`: more than 25% of the covered slots are empty, or any
+     stretch between neighbouring views is wider than `maxGapDeg` + one slot.
+   - `TOO_FAST`: most views were taken at more than 45°/s.
+   - `BLURRY`, `INSUFFICIENT_FRAMES`, `TOO_SHORT`/`TOO_LONG` (3 s – 2 min),
+     `UNSUPPORTED_VIDEO`.
+
+   180° and 360° are targets, not exact numbers. A 180° capture keeps its views
+   up to 200°, so a 185° or 190° capture loses nothing; beyond that it is
+   trimmed, with a warning. A 360° capture that goes past a full turn folds
+   back into 0–360°. The app shows the same acceptance point: its progress bar
+   turns green there (`minCoverageDeg()` in `src/services/roomCaptures.ts`).
+5. **Storage.** Each view is saved as a full frame (≤ 1280px, used by
+   Arrange/AI Render) and a preview (≤ 640px, used for swiping). The uploaded
+   video is deleted after processing. A new capture replaces the previous one
+   only after it has been stored successfully. A 360° capture is about 72
+   views, about 7–15 MB (7.4 MB in testing).
+
+**USE THIS VIEW** saves `selected_frame_id`. New visualizations of the room
+then start from that view (`roomWorkingImage()` in the app).
+`POST /api/generated-images/session` accepts `roomViewId`. The backend checks
+the view belongs to this user's room and uses it as AI Render's room image
+instead of the primary photo.
+
+`ffmpeg-static` downloads its binary in an npm install script. If your npm
+blocks install scripts, run `npm approve-scripts ffmpeg-static` or
+`node node_modules/ffmpeg-static/install.js`. The binary is GPL-3.0. That's
+fine for running it on our own server, but distributing it would bring
+GPL obligations.
 
 ## Product background removal
 

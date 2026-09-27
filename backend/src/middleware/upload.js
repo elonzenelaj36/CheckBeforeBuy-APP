@@ -16,6 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const env = require('../config/env');
+const ApiError = require('../utils/ApiError');
 
 const uploadRoot = path.isAbsolute(env.uploadDir)
   ? env.uploadDir
@@ -50,9 +51,36 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
 });
 
+/**
+ * Room-capture videos (see services/roomCaptureService.js). Separate from the
+ * image uploader so image limits/types stay exactly as they were. The file
+ * is only kept while it is processed; the frames are what gets stored.
+ */
+const VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/3gpp', 'video/x-m4v']);
+
+const videoUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      cb(null, uploadRoot);
+    },
+    filename(req, file, cb) {
+      const ext = path.extname(file.originalname) || '.mp4';
+      cb(null, `capture-src-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
+    },
+  }),
+  fileFilter(req, file, cb) {
+    if (!VIDEO_MIME_TYPES.has(file.mimetype)) {
+      cb(new ApiError(415, 'Unsupported video format. Please record the room with the app (MP4 or MOV).'));
+      return;
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 150 * 1024 * 1024, fieldSize: 2 * 1024 * 1024 }, // 150MB video, 2MB rotation track
+});
+
 /** Relative path (as stored in MySQL) for a file multer just saved. */
 function relativeUploadPath(file) {
   return `/${env.uploadDir}/${path.basename(file.path)}`;
 }
 
-module.exports = { upload, uploadRoot, relativeUploadPath };
+module.exports = { upload, videoUpload, uploadRoot, relativeUploadPath };

@@ -30,6 +30,7 @@ import {
   Room,
   setRoomPrimaryPhoto,
 } from '@/services/rooms';
+import { deleteRoomCapture } from '@/services/roomCaptures';
 import { deleteUserItem, getUserItemsForRoom, UserItem } from '@/services/userItems';
 
 export default function RoomDetail() {
@@ -232,6 +233,28 @@ export default function RoomDetail() {
     ]);
   };
 
+  const openRoomCapture = () => router.push({ pathname: '/room-capture', params: { roomId: room.id } });
+
+  const handleDeleteCapture = () => {
+    const capture = room.capture;
+    if (!capture) return;
+    Alert.alert('Remove room views?', 'This removes the captured views. Your room photos are not affected.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteRoomCapture(room.id, capture.id);
+            loadData();
+          } catch (error: any) {
+            Alert.alert("Couldn't remove the views", error?.message ?? 'Please try again.');
+          }
+        },
+      },
+    ]);
+  };
+
   const handleDeleteRoom = () => {
     Alert.alert('Delete Room', `Are you sure you want to delete "${room.name}"?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -325,6 +348,51 @@ export default function RoomDetail() {
               );
             })}
           </ScrollView>
+        )}
+
+        {/* Room Views — optional 180°/360° capture; the photos above stay as they are. */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ROOM VIEWS</Text>
+          <TouchableOpacity onPress={openRoomCapture}>
+            <Text style={styles.actionText}>{room.capture ? 'RECAPTURE' : '+ CAPTURE'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {room.capture ? (
+          <TouchableOpacity
+            style={styles.captureCard}
+            activeOpacity={0.85}
+            onPress={() => router.push({ pathname: '/room-view', params: { roomId: room.id } })}
+          >
+            {room.capture.coverImageUri ? (
+              <Image source={{ uri: room.capture.coverImageUri }} style={styles.captureThumb} />
+            ) : (
+              <View style={styles.captureThumb} />
+            )}
+            <View style={styles.captureInfo}>
+              <Text style={styles.captureTitle}>
+                {room.capture.mode}° capture · {room.capture.frameCount} views
+              </Text>
+              <Text style={styles.captureMeta}>
+                {room.capture.selectedView
+                  ? `Products use the view at ≈${Math.round(room.capture.selectedView.angleDeg)}°`
+                  : 'Products use the original room photo'}
+                {room.capture.angleSource === 'time' ? ' · angles estimated' : ''}
+              </Text>
+              <Text style={styles.captureOpen}>OPEN VIEWER ›</Text>
+            </View>
+            <TouchableOpacity style={styles.captureDelete} onPress={handleDeleteCapture}>
+              <Text style={styles.removePhotoBadgeText}>✕</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.subtleInfoCard} onPress={openRoomCapture} activeOpacity={0.85}>
+            <Text style={styles.subtleInfoText}>
+              Optional: record a slow 180° or 360° turn to swipe around this room and pick the best view for your
+              products.
+            </Text>
+            <Text style={styles.captureOpen}>CAPTURE ROOM VIEWS ›</Text>
+          </TouchableOpacity>
         )}
 
         {/* Generated Images Section — creative / visual treatment */}
@@ -684,6 +752,52 @@ const styles = StyleSheet.create({
   genDeleteBtnText: {
     color: Colors.textMuted,
     fontSize: 14,
+  },
+  captureCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: Colors.myHomeSurface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.myHomeBorder,
+    padding: 10,
+  },
+  captureThumb: {
+    width: 64,
+    height: 86,
+    borderRadius: 10,
+    backgroundColor: Colors.myHomeSurfaceRaised,
+  },
+  captureInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  captureTitle: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  captureMeta: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  captureOpen: {
+    color: Colors.myHomeAccent,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginTop: 6,
+  },
+  captureDelete: {
+    alignSelf: 'flex-start',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.myHomeSurfaceRaised,
   },
   subtleInfoCard: {
     backgroundColor: Colors.myHomeSurfaceRaised,

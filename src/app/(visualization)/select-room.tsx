@@ -18,6 +18,7 @@ import { Colors } from '@/constants/colors';
 import { getRooms, Room } from '@/services/rooms';
 import { detectProductRoute, openProductSelection } from '@/services/productSelection';
 import { startSession } from '@/services/visualizationSession';
+import { roomWorkingImage } from '@/services/roomCaptures';
 
 export default function SelectRoom() {
   const router = useRouter();
@@ -64,12 +65,16 @@ export default function SelectRoom() {
   const startWithProduct = (room: Room, selectedImageUri?: string) => {
     // Starts a fresh temporary session: the room + Product 1. It lives in
     // memory (services/visualizationSession.ts), so no images go through params.
+    // The room's selected captured view if it has one, else the primary photo (as before).
+    const working = roomWorkingImage(room);
     startSession(
       {
         id: room.id,
         name: room.name,
         roomType: room.roomType,
-        imageUri: room.primaryImageUri ?? null,
+        imageUri: working.imageUri ?? null,
+        view: working.view,
+        captureId: room.capture?.id ?? null,
       },
       productImageUri
         ? {

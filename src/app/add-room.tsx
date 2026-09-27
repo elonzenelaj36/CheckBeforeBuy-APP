@@ -72,7 +72,8 @@ export default function AddRoom() {
     }
   };
 
-  const handleSave = async () => {
+  /** captureViews: after creating the room, continue to the optional 180°/360° room capture. */
+  const handleSave = async (captureViews = false) => {
     const trimmedName = name.trim();
     if (!trimmedName) {
       Alert.alert('Room name required', 'Please enter a name for your room.');
@@ -108,7 +109,11 @@ export default function AddRoom() {
         setIsAnalyzing(false);
       }
 
-      router.back();
+      if (captureViews) {
+        router.replace({ pathname: '/room-capture', params: { roomId: room.id } });
+      } else {
+        router.back();
+      }
     } catch (error: any) {
       setIsSaving(false);
       setIsAnalyzing(false);
@@ -219,7 +224,7 @@ export default function AddRoom() {
           {/* Save Button */}
           <TouchableOpacity
             style={[styles.saveButton, (isSaving || isAnalyzing) && styles.disabledButton]}
-            onPress={handleSave}
+            onPress={() => handleSave()}
             disabled={isSaving || isAnalyzing}
             activeOpacity={0.85}
           >
@@ -230,6 +235,16 @@ export default function AddRoom() {
                   ? 'CREATING ROOM...'
                   : 'CREATE ROOM'}
             </Text>
+          </TouchableOpacity>
+
+          {/* Optional: continue straight to recording 180°/360° room views. */}
+          <TouchableOpacity
+            style={[styles.captureButton, (isSaving || isAnalyzing) && styles.disabledButton]}
+            onPress={() => handleSave(true)}
+            disabled={isSaving || isAnalyzing}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.captureButtonText}>CREATE & CAPTURE 180° / 360° VIEWS</Text>
           </TouchableOpacity>
 
           {isAnalyzing && (
@@ -398,6 +413,22 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: Colors.textInverse,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  captureButton: {
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Colors.lightBorder,
+    backgroundColor: Colors.lightSurface,
+  },
+  captureButtonText: {
+    color: Colors.lightMyHomeAccentText,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1,

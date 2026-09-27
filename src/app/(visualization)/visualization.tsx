@@ -25,6 +25,7 @@ import { Colors } from '@/constants/colors';
 import { saveImageToGallery } from '@/services/gallery';
 import { saveGeneratedImageLayout } from '@/services/generatedImages';
 import { getRoomById } from '@/services/rooms';
+import { roomWorkingImage } from '@/services/roomCaptures';
 import {
   buildLayout,
   clearSession,
@@ -91,8 +92,16 @@ export default function Visualization() {
           setHydrateFailed(true);
           return;
         }
+        const working = roomWorkingImage(room);
         startSession(
-          { id: room.id, name: room.name, roomType: room.roomType, imageUri: room.primaryImageUri ?? null },
+          {
+            id: room.id,
+            name: room.name,
+            roomType: room.roomType,
+            imageUri: working.imageUri ?? null,
+            view: working.view,
+            captureId: room.capture?.id ?? null,
+          },
           {
             imageUri: params.productImageUri!,
             name: params.productName || 'Product',
@@ -291,6 +300,24 @@ export default function Visualization() {
             </View>
           )}
         </View>
+
+        {/* Captured room views (only rooms with a 180°/360° capture). */}
+        {!showingAi && !!room.captureId && (
+          <View style={styles.roomViewBar}>
+            <Text style={styles.roomViewLabel} numberOfLines={1}>
+              {room.view
+                ? `ROOM VIEW · ${room.view.mode}° CAPTURE · ≈${Math.round(room.view.angleDeg)}°`
+                : 'ROOM VIEW · ORIGINAL PHOTO'}
+            </Text>
+            <TouchableOpacity
+              style={styles.roomViewButton}
+              onPress={() => router.push({ pathname: '/room-view', params: { roomId: room.id, pick: '1' } })}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.roomViewButtonText}>CHANGE VIEW</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {products.length > 0 && (
           <Text style={styles.canvasHint}>
@@ -494,6 +521,34 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+  },
+  roomViewBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 10,
+  },
+  roomViewLabel: {
+    flex: 1,
+    color: Colors.lightTextSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  roomViewButton: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  roomViewButtonText: {
+    color: Colors.accentText,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   canvasHint: {
     color: Colors.lightTextSecondary,

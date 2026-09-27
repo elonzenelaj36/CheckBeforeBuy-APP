@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { generateRoomVisualization } = require('../services/imageGenerationService');
+const { roomViewImagePath } = require('./roomCaptureController');
 
 const MAX_PRODUCTS = 8;
 
@@ -77,7 +78,9 @@ function cutoutFile(cutoutId) {
  *     layer? — the product's Arrange layer, see parseLayer() }]),
  *   productImage0..productImage7 (file per product, in the same order; omit for a
  *   product that has productCheckId — its saved photo is used),
- *   layerImage0..layerImage7 (the 3D view a layer shows, for layers with source 'frame').
+ *   layerImage0..layerImage7 (the 3D view a layer shows, for layers with source 'frame'),
+ *   roomViewId? — a frame of this room's 180°/360° capture ("USE THIS VIEW"); it is then
+ *     the room image instead of the primary photo. The room's photos are not changed.
  *
  * When every product has a layer, AI Render uses the exact Arrange composition
  * (room photo + layers) as its spatial reference. Only the room's ORIGINAL
@@ -102,7 +105,12 @@ const generateSession = asyncHandler(async (req, res) => {
       'SELECT image_path FROM room_photos WHERE room_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1',
       [roomId]
     );
-    const roomImagePath = photoRows[0]?.image_path || null;
+    let roomImagePath = photoRows[0]?.image_path || null;
+    if (req.body.roomViewId) {
+      const viewPath = await roomViewImagePath({ frameId: req.body.roomViewId, roomId, userId: req.user.id });
+      if (!viewPath) throw new ApiError(400, 'That room view no longer exists. Pick a view again.');
+      roomImagePath = viewPath;
+    }
     if (!roomImagePath) throw new ApiError(400, 'This room has no photo yet. Add a photo to the room first.');
 
     const resolved = [];

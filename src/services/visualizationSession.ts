@@ -35,6 +35,7 @@ import { File } from 'expo-file-system';
 import { apiUploadMultipart } from './api';
 import { frameIndexForYaw, loadCachedFrames } from './modelFrames';
 import { removeProductBackground, type CutoutQuality } from './productCutouts';
+import type { SessionRoomView } from './roomCaptures';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -46,7 +47,12 @@ export type SessionRoom = {
   id: string;
   name: string;
   roomType: string;
+  /** The image products are arranged on: the primary photo, or the captured view in `view`. */
   imageUri: string | null;
+  /** Captured 180°/360° view in use ("USE THIS VIEW"); null/absent = the room's primary photo. */
+  view?: SessionRoomView | null;
+  /** Id of the room's capture, when it has one (lets Arrange offer "Change view"). */
+  captureId?: string | null;
 };
 
 /**
@@ -282,6 +288,18 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
   commit({ ...session, products: [...session.products, product], selectedProductId: product.id });
   void prepareCutout(product.id);
   return { ok: true, product };
+}
+
+/**
+ * Switches the room image to a captured view (or back to the primary photo
+ * with view = null). Product layers keep their positions (they are
+ * normalized to the image), and the last AI Render is dropped because it
+ * was made on the previous view. Local only.
+ */
+export function setSessionRoomView(imageUri: string | null, view: SessionRoomView | null) {
+  const session = getSession();
+  if (!session) return;
+  commit({ ...session, room: { ...session.room, imageUri, view }, generation: null });
 }
 
 /** Removes from THIS session only — saved products/history are untouched. */
@@ -638,7 +656,13 @@ export function buildLayout(session: VisualizationSession) {
   return {
     version: 1,
     sessionId: session.id,
-    room: { id: session.room.id, name: session.room.name, roomType: session.room.roomType },
+    room: {
+      id: session.room.id,
+      name: session.room.name,
+      roomType: session.room.roomType,
+      // Which captured viewpoint the layout was arranged on (null = primary photo).
+      view: session.room.view ?? null,
+    },
     products: session.products.map((p) => ({
       name: p.name,
       category: p.category ?? null,
@@ -681,7 +705,8 @@ export async function regenerateSession(): Promise<RegenerateResult> {
   try {
     // Only ORIGINAL local photos are uploaded (file://). Products that were
     // already analyzed have a saved photo on the backend, referenced by
-    // productCheckId. The room's saved primary photo is used server-side.
+    // productCheckId. The room's saved primary photo is used server-side,
+    // or the captured view (roomViewId) when the user picked one.
     const images: Record<string, string> = {};
     session.products.forEach((p, i) => {
       if (p.imageUri.startsWith('file://') && (!p.productCheckId || p.selectedFromPhoto)) {
@@ -701,6 +726,7 @@ export async function regenerateSession(): Promise<RegenerateResult> {
       message?: string | null;
     }>('/generated-images/session', images, {
       roomId: session.room.id,
+      ...(session.room.view ? { roomViewId: session.room.view.frameId } : {}),
       products: JSON.stringify(
         payload.products.map(({ image: _image, ...meta }, i) => ({
           ...meta,

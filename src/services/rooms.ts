@@ -17,6 +17,7 @@ import {
   apiPut,
   apiUploadMultipart,
 } from './api';
+import type { RoomCaptureSummary } from './roomCaptures';
 
 const ROOMS_CACHE_KEY = '@check_before_buy_rooms_cache_v3';
 
@@ -56,6 +57,8 @@ export type Room = {
   imageUris: string[];
   photos: RoomPhoto[];
   primaryImageUri: string | null;
+  /** Optional 180°/360° room capture (absent in older cached data, null when the room has none). */
+  capture?: RoomCaptureSummary | null;
   createdAt: string;
   updatedAt: string;
 };

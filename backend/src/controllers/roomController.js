@@ -7,6 +7,7 @@ const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { analyzeRoomImages } = require('../services/aiService');
 const { serializeUserItem } = require('./userItemController');
+const { loadCaptureSummaries } = require('./roomCaptureController');
 
 async function loadRoomWithPhotos(roomId, userId) {
   const [roomRows] = await pool.query('SELECT * FROM rooms WHERE id = ? AND user_id = ? LIMIT 1', [
@@ -20,10 +21,12 @@ async function loadRoomWithPhotos(roomId, userId) {
     [roomId]
   );
 
-  return serializeRoom(roomRows[0], photoRows);
+  const captures = await loadCaptureSummaries([roomRows[0].id]);
+  return serializeRoom(roomRows[0], photoRows, captures.get(roomRows[0].id));
 }
 
-function serializeRoom(room, photos) {
+/** `capture` is the optional 180°/360° room capture summary (null for rooms without one). */
+function serializeRoom(room, photos, capture = null) {
   const primary = photos.find((p) => p.is_primary) || photos[0] || null;
   return {
     id: String(room.id),
@@ -36,6 +39,7 @@ function serializeRoom(room, photos) {
       isPrimary: !!p.is_primary,
     })),
     primaryImageUri: primary ? toAbsoluteUrl(primary.image_path) : null,
+    capture: capture || null,
     createdAt: room.created_at,
     updatedAt: room.updated_at,
   };
@@ -54,10 +58,12 @@ const listRooms = asyncHandler(async (req, res) => {
     rooms.map((r) => r.id)
   );
 
+  const captures = await loadCaptureSummaries(rooms.map((r) => r.id));
   const roomsWithPhotos = rooms.map((room) =>
     serializeRoom(
       room,
-      photos.filter((p) => p.room_id === room.id)
+      photos.filter((p) => p.room_id === room.id),
+      captures.get(room.id)
     )
   );
 
