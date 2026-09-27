@@ -14,13 +14,22 @@ import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 import { buildModelViewerHtml } from '@/components/model3d/modelViewerHtml';
-import { loadCachedFrames, MAX_FRAME_SIZE, saveFrame, saveManifest, TURNTABLE_FRAMES } from '@/services/modelFrames';
+import {
+  DEFAULT_ELEVATION_DEG,
+  loadCachedFrames,
+  MAX_FRAME_SIZE,
+  saveFrame,
+  saveManifest,
+  TURNTABLE_FRAMES,
+} from '@/services/modelFrames';
 
 const RENDER_TIMEOUT_MS = 120000;
 
 type Props = {
   productId: string;
   modelUrl: string;
+  /** Camera elevation over the product (the room's up/down perspective). */
+  elevationDeg?: number;
   onDone: (productId: string, frames: string[], aspect: number) => void;
   onError: (productId: string, message: string) => void;
 };
@@ -30,8 +39,14 @@ export function originOf(url: string): string {
   return url.match(/^https?:\/\/[^/]+/i)?.[0] ?? 'about:blank';
 }
 
-export default function TurntableRenderer({ productId, modelUrl, onDone, onError }: Props) {
-  const cached = React.useMemo(() => loadCachedFrames(modelUrl), [modelUrl]);
+export default function TurntableRenderer({
+  productId,
+  modelUrl,
+  elevationDeg = DEFAULT_ELEVATION_DEG,
+  onDone,
+  onError,
+}: Props) {
+  const cached = React.useMemo(() => loadCachedFrames(modelUrl, elevationDeg), [modelUrl, elevationDeg]);
   const frames = React.useRef<string[]>([]);
   const settled = React.useRef(false);
 
@@ -56,10 +71,16 @@ export default function TurntableRenderer({ productId, modelUrl, onDone, onError
 
   const source = React.useMemo(
     () => ({
-      html: buildModelViewerHtml({ mode: 'turntable', modelUrl, frames: TURNTABLE_FRAMES, maxFrameSize: MAX_FRAME_SIZE }),
+      html: buildModelViewerHtml({
+        mode: 'turntable',
+        modelUrl,
+        frames: TURNTABLE_FRAMES,
+        maxFrameSize: MAX_FRAME_SIZE,
+        elevationDeg,
+      }),
       baseUrl: originOf(modelUrl),
     }),
-    [modelUrl]
+    [modelUrl, elevationDeg]
   );
 
   if (cached) return null;
@@ -73,11 +94,11 @@ export default function TurntableRenderer({ productId, modelUrl, onDone, onError
     }
     try {
       if (message.type === 'frame') {
-        frames.current[message.index] = saveFrame(modelUrl, message.index, message.base64);
+        frames.current[message.index] = saveFrame(modelUrl, message.index, message.base64, elevationDeg);
       } else if (message.type === 'done') {
         const all = frames.current.slice(0, message.frames);
         if (all.length !== message.frames || all.some((f) => !f)) throw new Error('Some 3D views are missing.');
-        finish(saveManifest(modelUrl, all, message.width / message.height));
+        finish(saveManifest(modelUrl, all, message.width / message.height, elevationDeg));
       } else if (message.type === 'error') {
         finish({ error: String(message.message) });
       }

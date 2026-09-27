@@ -92,6 +92,8 @@ export type RoomCaptureFrame = {
   imageUri: string;
   previewUri: string;
   sharpness: number;
+  /** How far the camera looked down for this view (null = not recorded; treat as level). */
+  pitchDeg?: number | null;
 };
 
 export type RoomCapture = RoomCaptureSummary & {

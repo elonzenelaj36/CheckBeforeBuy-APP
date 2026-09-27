@@ -24,8 +24,12 @@ export type MotionEvent = {
   acceleration: Vec3 | null;
 };
 
-/** [ms since the app asked the camera to record, yaw in degrees] */
-export type MotionSample = [number, number];
+/**
+ * [ms since the app asked the camera to record, yaw in degrees, camera pitch
+ * in degrees (+ = looking down)]. Pitch comes from gravity only (no turning
+ * involved); older uploads have no third value.
+ */
+export type MotionSample = [number, number, number?];
 
 /** What is uploaded with the video (see the backend's parseMotion()). */
 export type MotionTrack = {
@@ -65,7 +69,7 @@ export type YawTracker = {
   push(event: MotionEvent, tMs: number): number;
   /** Current yaw (deg); positive or negative depending on the turn direction. */
   yaw(): number;
-  /** Recorded [tMs, yaw] samples, rounded for upload. */
+  /** Recorded [tMs, yaw, pitch] samples, rounded for upload. */
   samples(): MotionSample[];
 };
 
@@ -100,12 +104,28 @@ export function createYawTracker(platform: string): YawTracker {
         }
       }
       lastT = tMs;
-      recorded.push([Math.round(tMs), Math.round(yaw * 100) / 100]);
+      const pitch = gravity ? cameraPitchDownDeg(gravity) : null;
+      recorded.push(
+        pitch == null
+          ? [Math.round(tMs), Math.round(yaw * 100) / 100]
+          : [Math.round(tMs), Math.round(yaw * 100) / 100, Math.round(pitch * 10) / 10]
+      );
       return yaw;
     },
     yaw: () => yaw,
     samples: () => recorded,
   };
+}
+
+/**
+ * How far the BACK camera looks below the horizon, from gravity in device
+ * axes (x right, y up, z out of the screen; the back camera looks along −z).
+ * Phone upright → 0°; screen tilted up so the camera faces the floor → up to 90°.
+ */
+export function cameraPitchDownDeg(gravity: Vec3): number | null {
+  const n = Math.hypot(gravity.x, gravity.y, gravity.z);
+  if (n < 1) return null;
+  return (Math.asin(Math.max(-1, Math.min(1, -gravity.z / n))) * 180) / Math.PI;
 }
 
 function gravityOf(event: MotionEvent): Vec3 | null {

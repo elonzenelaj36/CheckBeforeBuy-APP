@@ -20,15 +20,16 @@
 
 export const MODEL_VIEWER_VERSION = '4.3.1';
 
-/** Camera elevation used for room layers: slightly above, like a phone photo of a room. */
+/** Default camera elevation used for room layers: slightly above, like a phone photo of a room. */
 export const TURNTABLE_ELEVATION_DEG = 15;
 
+/** elevationDeg: camera height angle over the product (default TURNTABLE_ELEVATION_DEG). */
 export type ModelViewerHtmlOptions =
-  | { mode: 'turntable'; modelUrl: string; frames: number; maxFrameSize: number }
-  | { mode: 'viewer'; modelUrl: string; initialYawDeg: number };
+  | { mode: 'turntable'; modelUrl: string; frames: number; maxFrameSize: number; elevationDeg?: number }
+  | { mode: 'viewer'; modelUrl: string; initialYawDeg: number; elevationDeg?: number };
 
 export function buildModelViewerHtml(options: ModelViewerHtmlOptions): string {
-  const config = JSON.stringify({ ...options, elevationDeg: TURNTABLE_ELEVATION_DEG });
+  const config = JSON.stringify({ ...options, elevationDeg: options.elevationDeg ?? TURNTABLE_ELEVATION_DEG });
   const interactive = options.mode === 'viewer';
 
   return `<!doctype html>

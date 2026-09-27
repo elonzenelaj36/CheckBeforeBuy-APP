@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS room_captures (
 -- One row per viewpoint, ordered by angle (frame_index 0 = start of the sweep).
 -- image_path   : full-size frame (longest side ≤ 1280px) — what Arrange / AI Render use.
 -- preview_path : small copy (≤ 640px) for swiping.
+-- pitch_deg    : how far the camera looked down for this view (NULL = not recorded).
 CREATE TABLE IF NOT EXISTS room_capture_frames (
   id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   capture_id     BIGINT UNSIGNED NOT NULL,
@@ -124,6 +125,7 @@ CREATE TABLE IF NOT EXISTS room_capture_frames (
   video_time_ms  INT UNSIGNED    NOT NULL,
   sharpness      FLOAT           NOT NULL,
   brightness     FLOAT           NOT NULL,
+  pitch_deg      FLOAT           NULL,
   image_path     VARCHAR(500)    NOT NULL,
   preview_path   VARCHAR(500)    NOT NULL,
   PRIMARY KEY (id),

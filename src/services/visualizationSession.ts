@@ -33,10 +33,10 @@ import React from 'react';
 import { File } from 'expo-file-system';
 
 import { apiUploadMultipart } from './api';
-import { frameIndexForYaw, loadCachedFrames } from './modelFrames';
+import { DEFAULT_ELEVATION_DEG, frameIndexForYaw, loadCachedFrames } from './modelFrames';
 import { removeProductBackground, type CutoutQuality } from './productCutouts';
 import { CAPTURE_LENSES, type CaptureMode, type RoomCapture, type SessionRoomView } from './roomCaptures';
-import { blendAt, directionAt, projectToFrame } from './roomViewMath';
+import { blendAt, directionAt, productElevationDeg, projectToFrame } from './roomViewMath';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -63,7 +63,14 @@ export type SessionRoom = {
   spatial?: SessionSpatial | null;
 };
 
-export type SessionSpatialFrame = { id: string; angleDeg: number; imageUri: string; previewUri: string };
+export type SessionSpatialFrame = {
+  id: string;
+  angleDeg: number;
+  imageUri: string;
+  previewUri: string;
+  /** How far the camera looked down for this view (null/absent = not recorded → level). */
+  pitchDeg?: number | null;
+};
 
 export type SessionSpatial = {
   captureId: string;
@@ -118,8 +125,9 @@ export type SessionModel3D =
   /** Being generated on the backend; `stage`/`progress` are the provider's real state. */
   | { status: 'generating'; modelId: string | null; stage: ProductModelStage; progress: number | null }
   /** GLB ready; its views are being rendered on this device. */
-  | { status: 'rendering'; modelId: string; modelUrl: string }
-  | { status: 'ready'; modelId: string; modelUrl: string; frames: string[] }
+  /** elevationDeg: the up/down perspective the frames are rendered from (default 15°; spatial rooms: the room's). */
+  | { status: 'rendering'; modelId: string; modelUrl: string; elevationDeg?: number }
+  | { status: 'ready'; modelId: string; modelUrl: string; frames: string[]; elevationDeg?: number }
   /** `retry` says what "try again" re-runs: the backend generation, or only the on-device render. */
   | {
       status: 'failed';
@@ -127,6 +135,7 @@ export type SessionModel3D =
       retry: 'generate' | 'render';
       modelId: string | null;
       modelUrl: string | null;
+      elevationDeg?: number;
       /** 'quota' = the free daily 3D limit is used up (try again tomorrow). */
       reason?: string | null;
     }
@@ -337,6 +346,22 @@ export function setSessionRoomView(imageUri: string | null, view: SessionRoomVie
   commit({ ...session, room: { ...session.room, imageUri, view }, generation: null });
 }
 
+/**
+ * Up/down perspective to render a 3D product from so it matches the room:
+ * spatial rooms — the angle the room's camera sees the product's position at
+ * (view pitch + position below the image centre, see productElevationDeg);
+ * photo rooms — the default (no camera information), as before.
+ */
+function elevationFor(session: VisualizationSession, product: SessionProduct): number {
+  const spatial = session.room.spatial;
+  if (!spatial) return DEFAULT_ELEVATION_DEG;
+  return spatialElevation(spatial, frameAt(spatial, spatial.viewDeg), product.transform.y);
+}
+
+function spatialElevation(spatial: SessionSpatial, frame: SessionSpatialFrame, y: number): number {
+  return productElevationDeg(y, frame.pitchDeg ?? 0, spatial.fovDeg);
+}
+
 /** The captured frame nearest a direction (the view that is actually shown / generated). */
 function frameAt(spatial: SessionSpatial, angleDeg: number): SessionSpatialFrame {
   return spatial.frames[blendAt(spatial.frames, spatial.loops, angleDeg).nearest];
@@ -366,7 +391,13 @@ function projectProducts(products: SessionProduct[], spatial: SessionSpatial, fr
 export function setSessionSpatial(capture: RoomCapture) {
   const session = getSession();
   if (!session || session.room.spatial || capture.frames.length === 0) return;
-  const frames = capture.frames.map(({ id, angleDeg, imageUri, previewUri }) => ({ id, angleDeg, imageUri, previewUri }));
+  const frames = capture.frames.map(({ id, angleDeg, imageUri, previewUri, pitchDeg }) => ({
+    id,
+    angleDeg,
+    imageUri,
+    previewUri,
+    pitchDeg: pitchDeg ?? null,
+  }));
   const start =
     frames.find((f) => f.id === session.room.view?.frameId) ??
     frames.find((f) => f.id === capture.selectedView?.frameId) ??
@@ -379,11 +410,18 @@ export function setSessionSpatial(capture: RoomCapture) {
     frames,
     viewDeg: start.angleDeg,
   };
-  const products = session.products.map((p) =>
-    p.transform.anchorDeg != null
-      ? p
-      : { ...p, transform: { ...p.transform, anchorDeg: directionAt(p.transform.x, start.angleDeg, spatial.fovDeg) } }
-  );
+  const products = session.products.map((p) => {
+    const placed =
+      p.transform.anchorDeg != null
+        ? p
+        : { ...p, transform: { ...p.transform, anchorDeg: directionAt(p.transform.x, start.angleDeg, spatial.fovDeg) } };
+    // A 3D view drawn before the room's views arrived is re-drawn from the room's perspective.
+    const m = placed.model3D;
+    if (m.status !== 'ready' && m.status !== 'rendering') return placed;
+    const elevationDeg = spatialElevation(spatial, start, placed.transform.y);
+    if ((m.elevationDeg ?? DEFAULT_ELEVATION_DEG) === elevationDeg) return placed;
+    return { ...placed, model3D: { status: 'rendering' as const, modelId: m.modelId, modelUrl: m.modelUrl, elevationDeg } };
+  });
   commit({
     ...session,
     room: {
@@ -545,11 +583,15 @@ function setModel3D(sessionId: string, productId: string, model3D: SessionModel3
 /** Applies the backend's model state; returns true while it is still generating. */
 function applyModel(sessionId: string, productId: string, model: ProductModel): boolean {
   if (model.status === 'ready' && model.modelUrl) {
-    const cached = loadCachedFrames(model.modelUrl);
+    // Chosen automatically from the room's perspective (the user only turns it left/right).
+    const session = getSession();
+    const product = session?.products.find((p) => p.id === productId);
+    const elevationDeg = session && product ? elevationFor(session, product) : DEFAULT_ELEVATION_DEG;
+    const cached = loadCachedFrames(model.modelUrl, elevationDeg);
     if (cached) {
-      applyFrames(sessionId, productId, model.id, model.modelUrl, cached.frames, cached.aspect);
+      applyFrames(sessionId, productId, model.id, model.modelUrl, cached.frames, cached.aspect, elevationDeg);
     } else {
-      setModel3D(sessionId, productId, { status: 'rendering', modelId: model.id, modelUrl: model.modelUrl });
+      setModel3D(sessionId, productId, { status: 'rendering', modelId: model.id, modelUrl: model.modelUrl, elevationDeg });
     }
     return false;
   }
@@ -644,14 +686,22 @@ async function startModel3D(productId: string, retry = false, reviewed = false) 
   }
 }
 
-function applyFrames(sessionId: string, productId: string, modelId: string, modelUrl: string, frames: string[], aspect: number) {
+function applyFrames(
+  sessionId: string,
+  productId: string,
+  modelId: string,
+  modelUrl: string,
+  frames: string[],
+  aspect: number,
+  elevationDeg?: number
+) {
   patchProduct(sessionId, productId, (p) => {
     // Keep the product's on-screen HEIGHT when switching to the 3D view, so it
     // doesn't jump in size (the 3D frame box has a different aspect).
     const width = Math.min(MAX_LAYER_WIDTH, Math.max(MIN_LAYER_WIDTH, (p.transform.width / p.transform.aspect) * aspect));
     return {
       ...p,
-      model3D: { status: 'ready', modelId, modelUrl, frames },
+      model3D: { status: 'ready', modelId, modelUrl, frames, elevationDeg },
       transform: { ...p.transform, aspect, width },
     };
   });
@@ -662,7 +712,8 @@ export function setModelFrames(productId: string, frames: string[], aspect: numb
   const session = getSession();
   const product = session?.products.find((p) => p.id === productId);
   if (!session || product?.model3D.status !== 'rendering') return;
-  applyFrames(session.id, productId, product.model3D.modelId, product.model3D.modelUrl, frames, aspect);
+  const m = product.model3D;
+  applyFrames(session.id, productId, m.modelId, m.modelUrl, frames, aspect, m.elevationDeg);
 }
 
 /** Called by the on-device renderer when the model couldn't be displayed. */
@@ -677,6 +728,7 @@ export function setModelRenderFailed(productId: string, message: string) {
     retry: 'render',
     modelId: product.model3D.modelId,
     modelUrl: product.model3D.modelUrl,
+    elevationDeg: product.model3D.elevationDeg,
   });
 }
 
@@ -699,7 +751,12 @@ export function retryModel3D(productId: string) {
   if (!session || product?.model3D.status !== 'failed') return;
   const failed = product.model3D;
   if (failed.retry === 'render' && failed.modelId && failed.modelUrl) {
-    setModel3D(session.id, productId, { status: 'rendering', modelId: failed.modelId, modelUrl: failed.modelUrl });
+    setModel3D(session.id, productId, {
+      status: 'rendering',
+      modelId: failed.modelId,
+      modelUrl: failed.modelUrl,
+      elevationDeg: failed.elevationDeg,
+    });
   } else {
     void startModel3D(productId, true);
   }

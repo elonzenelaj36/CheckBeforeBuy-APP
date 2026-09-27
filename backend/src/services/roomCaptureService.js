@@ -18,10 +18,12 @@
  *
  * Rotation track (sent by the app, see src/services/roomCaptureMotion.ts):
  *   { v: 1, available: boolean, reason?: string, stopAtMs: number,
- *     samples: [[tMs, yawDeg], ...] }
+ *     samples: [[tMs, yawDeg, pitchDeg?], ...] }
  *   tMs is measured from the moment the app asked the camera to record;
  *   stopAtMs is when it asked it to stop. yawDeg is the phone's turn around
- *   the vertical (gravity) axis, integrated from the gyroscope.
+ *   the vertical (gravity) axis, integrated from the gyroscope. pitchDeg (optional,
+ *   newer app versions) is how far the camera looked below the horizon, from gravity;
+ *   it is stored per view so 3D products can be drawn from the room's perspective.
  *   The camera reports no "recording started" event, so the video is
  *   aligned to the track by its END: the video's first frame is taken to be
  *   at stopAtMs − videoDuration (camera start-up delay is larger and more
@@ -93,8 +95,9 @@ function parseMotion(raw) {
   if (!m || typeof m !== 'object') return null;
   const samples = Array.isArray(m.samples)
     ? m.samples
-        .filter((s) => Array.isArray(s) && s.length >= 2 && s.every((n) => Number.isFinite(Number(n))))
-        .map(([t, yaw]) => [Number(t), Number(yaw)])
+        .filter((s) => Array.isArray(s) && s.length >= 2 && s.every((n) => n == null || Number.isFinite(Number(n))))
+        .filter((s) => Number.isFinite(Number(s[0])) && Number.isFinite(Number(s[1])))
+        .map(([t, yaw, pitch]) => (pitch == null ? [Number(t), Number(yaw)] : [Number(t), Number(yaw), Number(pitch)]))
         .sort((a, b) => a[0] - b[0])
     : [];
   return {
@@ -166,7 +169,10 @@ function buildAngleTrack(motion, durationMs) {
     const h = 100; // ms, ± around tv
     return Math.abs(yawAt(samples, tv + offsetMs + h) - yawAt(samples, tv + offsetMs - h)) / ((2 * h) / 1000);
   };
-  return { ok: true, angleAt, speedAt, coverage, offsetMs };
+  // Camera pitch (+ = looking down) at a video time, when the app sent it.
+  const pitched = samples.filter((sm) => sm.length >= 3).map(([t, , pitch]) => [t, pitch]);
+  const pitchAt = (tv) => (pitched.length >= 2 ? yawAt(pitched, tv + offsetMs) : null);
+  return { ok: true, angleAt, speedAt, pitchAt, coverage, offsetMs };
 }
 
 // ── Frame selection (pure) ───────────────────────────────────────────────────
@@ -423,6 +429,7 @@ async function processCapture({ videoPath, mode, motion, outputDir, lens = 'wide
         timeMs,
         angle: track.ok ? track.angleAt(timeMs) : (timeMs / durationMs) * Number(mode),
         speed: track.ok ? track.speedAt(timeMs) : null,
+        pitch: track.ok ? track.pitchAt(timeMs) : null,
         ...quality,
       });
     }
@@ -449,6 +456,7 @@ async function processCapture({ videoPath, mode, motion, outputDir, lens = 'wide
         timeMs: f.timeMs,
         sharpness: Math.round(f.sharpness * 1000) / 1000,
         brightness: Math.round(f.brightness * 10) / 10,
+        pitchDeg: f.pitch == null ? null : Math.round(f.pitch * 10) / 10,
         fileName,
         previewFileName,
       });

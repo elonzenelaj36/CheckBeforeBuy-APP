@@ -145,6 +145,7 @@ export default function Visualization() {
     angle: viewAngle,
     angleNow: viewAngleNow,
     jumpTo: jumpToView,
+    settleNow: settleView,
     drag: roomDrag,
   } = useSpatialAngle(spatialFrames, spatialLoops, { onSettle: setSessionViewAngle });
 
@@ -195,9 +196,10 @@ export default function Visualization() {
             begin: roomDrag.begin,
             update: (tx: number) => roomDrag.update(tx, canvasWidth, fovDeg),
             end: (vx: number) => roomDrag.end(vx, canvasWidth, fovDeg),
+            stop: settleView,
           }
         : undefined,
-    [spatial, roomDrag, canvasWidth, fovDeg]
+    [spatial, roomDrag, canvasWidth, fovDeg, settleView]
   );
 
   // A product dragged in a spatial room gets a new place in the room.
@@ -548,9 +550,10 @@ export default function Visualization() {
 
       {renderJob && renderJob.model3D.status === 'rendering' && (
         <TurntableRenderer
-          key={`${renderJob.id}:${renderJob.model3D.modelUrl}`}
+          key={`${renderJob.id}:${renderJob.model3D.modelUrl}:${renderJob.model3D.elevationDeg ?? ''}`}
           productId={renderJob.id}
           modelUrl={renderJob.model3D.modelUrl}
+          elevationDeg={renderJob.model3D.elevationDeg}
           onDone={setModelFrames}
           onError={setModelRenderFailed}
         />
@@ -562,6 +565,7 @@ export default function Visualization() {
           productName={selectedProduct.name}
           modelUrl={selected3D.modelUrl}
           yawDeg={selectedProduct.transform.yawDeg}
+          elevationDeg={selected3D.elevationDeg}
           onUseAngle={(yawDeg) => {
             updateProductTransform(selectedProduct.id, { yawDeg });
             setViewerOpen(false);

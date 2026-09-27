@@ -32,6 +32,8 @@ function serializeFrame(f) {
     imageUri: toAbsoluteUrl(f.image_path),
     previewUri: toAbsoluteUrl(f.preview_path),
     sharpness: f.sharpness,
+    /** How far the camera looked down for this view (null = not recorded, older captures). */
+    pitchDeg: f.pitch_deg == null ? null : Number(f.pitch_deg),
   };
 }
 
@@ -188,7 +190,7 @@ const createCapture = asyncHandler(async (req, res) => {
       captureId = insert.insertId;
       await conn.query(
         `INSERT INTO room_capture_frames
-           (capture_id, frame_index, angle_deg, video_time_ms, sharpness, brightness, image_path, preview_path)
+           (capture_id, frame_index, angle_deg, video_time_ms, sharpness, brightness, pitch_deg, image_path, preview_path)
          VALUES ?`,
         [
           result.frames.map((f) => [
@@ -198,6 +200,7 @@ const createCapture = asyncHandler(async (req, res) => {
             f.timeMs,
             f.sharpness,
             f.brightness,
+            f.pitchDeg,
             storedPath(f.fileName),
             storedPath(f.previewFileName),
           ]),

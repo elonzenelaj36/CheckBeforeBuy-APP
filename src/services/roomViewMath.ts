@@ -152,3 +152,28 @@ export function directionAtView(frames: ViewFrame[], loops: boolean, fovDeg: num
   const a = lower + (upper - lower) * b.weight;
   return loops ? wrap360(a) : a;
 }
+
+// ── Up/down perspective for 3D products ───────────────────────────────────────
+
+/** Recordings are 16:9, held in portrait: width / height of every frame. */
+export const CAPTURE_FRAME_ASPECT = 9 / 16;
+
+/**
+ * Elevation (degrees above the object, 0 = eye level) from which the room's
+ * camera sees something at vertical position `y` (0 = top … 1 = bottom of
+ * the frame): the camera's own downward tilt plus how far below the image
+ * centre the object sits, for the frame's vertical field of view. The 3D
+ * product is rendered from this elevation so it matches the room's
+ * perspective. Rounded to 5° (so renders can be reused) and kept to 0–60°.
+ */
+export function productElevationDeg(
+  y: number,
+  cameraPitchDownDeg: number,
+  horizontalFovDeg: number,
+  frameAspect: number = CAPTURE_FRAME_ASPECT
+): number {
+  const halfV = Math.atan(Math.tan((horizontalFovDeg / 2) * DEG) / frameAspect); // radians
+  const belowCentre = Math.atan((y - 0.5) * 2 * Math.tan(halfV)) / DEG;
+  const elevation = cameraPitchDownDeg + belowCentre;
+  return Math.min(60, Math.max(0, Math.round(elevation / 5) * 5));
+}

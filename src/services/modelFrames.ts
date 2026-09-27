@@ -7,8 +7,16 @@
 
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { TURNTABLE_ELEVATION_DEG } from '@/components/model3d/modelViewerHtml';
+
 export const TURNTABLE_FRAMES = 16;
 export const MAX_FRAME_SIZE = 512;
+/**
+ * Default camera elevation of the turntable (degrees above the product):
+ * slightly above, like a phone photo of a room. Spatial rooms render each
+ * product from the room's own perspective instead (see productElevationDeg).
+ */
+export const DEFAULT_ELEVATION_DEG = TURNTABLE_ELEVATION_DEG;
 
 export type ModelFrames = {
   frames: string[];
@@ -18,24 +26,26 @@ export type ModelFrames = {
 
 const memory = new Map<string, ModelFrames>();
 
-function cacheKey(modelUrl: string): string {
+/** One frame set per model AND elevation; the default elevation keeps the original key (existing caches stay valid). */
+function cacheKey(modelUrl: string, elevationDeg: number): string {
   const name = modelUrl.split('?')[0].split('/').pop() || modelUrl;
-  return name.replace(/\.glb$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const base = name.replace(/\.glb$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return elevationDeg === DEFAULT_ELEVATION_DEG ? base : `${base}-e${Math.round(elevationDeg)}`;
 }
 
-function folder(modelUrl: string): Directory {
-  return new Directory(Paths.cache, 'model3d', cacheKey(modelUrl));
+function folder(modelUrl: string, elevationDeg: number): Directory {
+  return new Directory(Paths.cache, 'model3d', cacheKey(modelUrl, elevationDeg));
 }
 
-export function loadCachedFrames(modelUrl: string): ModelFrames | null {
-  const key = cacheKey(modelUrl);
+export function loadCachedFrames(modelUrl: string, elevationDeg: number = DEFAULT_ELEVATION_DEG): ModelFrames | null {
+  const key = cacheKey(modelUrl, elevationDeg);
   const hit = memory.get(key);
   if (hit) return hit;
   try {
-    const manifest = new File(folder(modelUrl), 'manifest.json');
+    const manifest = new File(folder(modelUrl, elevationDeg), 'manifest.json');
     if (!manifest.exists) return null;
     const parsed = JSON.parse(manifest.textSync()) as { count: number; aspect: number };
-    const frames = Array.from({ length: parsed.count }, (_, i) => new File(folder(modelUrl), `frame-${i}.png`));
+    const frames = Array.from({ length: parsed.count }, (_, i) => new File(folder(modelUrl, elevationDeg), `frame-${i}.png`));
     if (!frames.every((f) => f.exists)) return null;
     const result = { frames: frames.map((f) => f.uri), aspect: parsed.aspect };
     memory.set(key, result);
@@ -46,8 +56,8 @@ export function loadCachedFrames(modelUrl: string): ModelFrames | null {
 }
 
 /** Writes one frame (base64 PNG) and returns its file URI. */
-export function saveFrame(modelUrl: string, index: number, base64: string): string {
-  const dir = folder(modelUrl);
+export function saveFrame(modelUrl: string, index: number, base64: string, elevationDeg: number = DEFAULT_ELEVATION_DEG): string {
+  const dir = folder(modelUrl, elevationDeg);
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
   const file = new File(dir, `frame-${index}.png`);
   if (file.exists) file.delete();
@@ -57,13 +67,18 @@ export function saveFrame(modelUrl: string, index: number, base64: string): stri
 }
 
 /** Marks the frame set complete; only then is it reused. */
-export function saveManifest(modelUrl: string, frames: string[], aspect: number): ModelFrames {
-  const manifest = new File(folder(modelUrl), 'manifest.json');
+export function saveManifest(
+  modelUrl: string,
+  frames: string[],
+  aspect: number,
+  elevationDeg: number = DEFAULT_ELEVATION_DEG
+): ModelFrames {
+  const manifest = new File(folder(modelUrl, elevationDeg), 'manifest.json');
   if (manifest.exists) manifest.delete();
   manifest.create();
   manifest.write(JSON.stringify({ count: frames.length, aspect }));
   const result = { frames, aspect };
-  memory.set(cacheKey(modelUrl), result);
+  memory.set(cacheKey(modelUrl, elevationDeg), result);
   return result;
 }
 

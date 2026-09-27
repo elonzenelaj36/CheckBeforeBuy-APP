@@ -111,6 +111,19 @@ export function useSpatialAngle(
     [loops, moveTo, snapToNearest, stopAnimation, angleNow, animation]
   );
 
+  /**
+   * Stops a glide right away and rests on the nearest real frame (reported as
+   * settled). Used when a finger lands on the room or a product mid-glide, so
+   * nothing keeps moving under the finger.
+   */
+  const settleNow = React.useCallback(() => {
+    if (animation.get() == null || frames.length === 0) return;
+    stopAnimation();
+    const target = frames[blendAt(frames, loops, angleNow.get()).nearest].angleDeg;
+    moveTo(target);
+    onSettle?.(target);
+  }, [animation, frames, loops, angleNow, moveTo, stopAnimation, onSettle]);
+
   /** Drag handlers (JS thread) for a view `width` px wide showing `fovDeg` degrees. */
   const drag = React.useMemo(
     () => ({
@@ -125,5 +138,5 @@ export function useSpatialAngle(
     [stopAnimation, dragStart, angleNow, moveTo, fling]
   );
 
-  return { angle, angleNow, jumpTo, snapTo, snapToNearest, fling, stopAnimation, drag };
+  return { angle, angleNow, jumpTo, snapTo, snapToNearest, fling, stopAnimation, settleNow, drag };
 }

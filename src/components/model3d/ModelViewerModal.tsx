@@ -21,19 +21,32 @@ type Props = {
   productName: string;
   modelUrl: string;
   yawDeg: number;
+  /** The up/down perspective the product is drawn with in the room; the viewer opens at it. */
+  elevationDeg?: number;
   onUseAngle: (yawDeg: number) => void;
   onClose: () => void;
 };
 
-export default function ModelViewerModal({ visible, productName, modelUrl, yawDeg, onUseAngle, onClose }: Props) {
+export default function ModelViewerModal({
+  visible,
+  productName,
+  modelUrl,
+  yawDeg,
+  elevationDeg,
+  onUseAngle,
+  onClose,
+}: Props) {
   const [state, setState] = React.useState<'loading' | 'ready' | 'error'>('loading');
   const [orbitYaw, setOrbitYaw] = React.useState<number | null>(null);
 
   // The page is built once per opening, starting at the product's current angle.
   const [initialYaw] = React.useState(yawDeg);
   const source = React.useMemo(
-    () => ({ html: buildModelViewerHtml({ mode: 'viewer', modelUrl, initialYawDeg: initialYaw }), baseUrl: originOf(modelUrl) }),
-    [modelUrl, initialYaw]
+    () => ({
+      html: buildModelViewerHtml({ mode: 'viewer', modelUrl, initialYawDeg: initialYaw, elevationDeg }),
+      baseUrl: originOf(modelUrl),
+    }),
+    [modelUrl, initialYaw, elevationDeg]
   );
 
   const handleMessage = (event: WebViewMessageEvent) => {

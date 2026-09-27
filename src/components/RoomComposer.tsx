@@ -15,8 +15,13 @@
  * - two-finger twist anywhere on the canvas: rotate the selected product
  * - tap empty space: deselect
  * - spatial rooms (optional `onRoomPan`): one finger dragged sideways on
- *   empty space turns the room; products then move with the room because
- *   their x comes from their room direction (see visualization.tsx).
+ *   empty space turns the room (and deselects); products then move with the
+ *   room because their x comes from their room direction (see visualization.tsx).
+ *
+ * Touch ownership is decided ONCE, on the UI thread, when the first finger
+ * lands: on a product → that product owns the touch (selected + dragged, the
+ * room can't move); on empty space → the room owns it. `owner` makes this
+ * explicit so the product drag and the room turn can never run together.
  */
 
 import React from 'react';
@@ -57,6 +62,8 @@ type Props = {
     begin: () => void;
     update: (translationX: number) => void;
     end: (velocityX: number) => void;
+    /** A finger landed (on the room or a product): stop any glide of the room. */
+    stop?: () => void;
   };
 };
 
@@ -119,6 +126,11 @@ export default function RoomComposer({
   const start = useSharedValue<Geometry>({ x: 0, y: 0, width: 0, rotation: 0 });
   const pinchStartWidth = useSharedValue(0);
   const rotationStart = useSharedValue(0);
+  /** Who the current one-finger touch belongs to (spatial rooms). */
+  const owner = useSharedValue<'product' | 'room' | null>(null);
+  const roomTouchStart = useSharedValue({ x: 0, y: 0 });
+  /** translationX when the room turn activated, so the room doesn't jump by the activation slop. */
+  const roomTxStart = useSharedValue(0);
 
   // Bring store changes onto the UI thread (products added/removed, aspect,
   // layer order, turn angle, and any geometry the store itself changed), but
@@ -161,6 +173,7 @@ export default function RoomComposer({
     selectedId.set(selectedProductId);
   }, [selectedProductId, selectedId]);
 
+  const roomStop = onRoomPan?.stop;
   const gesture = React.useMemo(() => {
     const commit = (id: string) => {
       'worklet';
@@ -181,12 +194,18 @@ export default function RoomComposer({
       .manualActivation(true)
       .onTouchesDown((event, manager) => {
         if (draggingId.get() !== null) return; // a second finger — already dragging
+        if (owner.get() === 'room') {
+          manager.fail(); // the room is being turned — this touch isn't a product drag
+          return;
+        }
         const touch = event.allTouches[0];
         const hit = hitTest(layers.get(), width, height, touch.x, touch.y);
         if (!hit) {
           manager.fail();
           return;
         }
+        owner.set('product');
+        if (roomStop) scheduleOnRN(roomStop); // the room must not glide under a product drag
         draggingId.set(hit);
         selectedId.set(hit);
         const t = layers.get()[hit];
@@ -208,6 +227,7 @@ export default function RoomComposer({
       })
       .onFinalize(() => {
         draggingId.set(null);
+        if (owner.get() === 'product') owner.set(null);
       });
 
     // Pinch/rotate act on the selected product wherever the fingers are, so
@@ -247,21 +267,67 @@ export default function RoomComposer({
     });
 
     if (!onRoomPan) return Gesture.Simultaneous(pan, pinch, rotation, tapEmpty);
+    const { begin: roomBegin, update: roomUpdate, end: roomEnd } = onRoomPan;
 
-    // Starts only off the products and only for one finger moving sideways,
-    // so product drags, pinch/twist and vertical page scrolling still work.
+    // Owned by the room only when the first finger lands on EMPTY space (same
+    // hit test as the product drag, same thread, same moment) and then moves
+    // sideways. A product touch, a second finger or a vertical move fails it,
+    // so product drags, pinch/twist and page scrolling keep working.
     const roomPan = Gesture.Pan()
-      .runOnJS(true)
+      .manualActivation(true)
       .maxPointers(1)
-      .activeOffsetX([-10, 10])
-      .failOffsetY([-12, 12])
       .onTouchesDown((event, manager) => {
         const touch = event.allTouches[0];
-        if (touch && hitTest(layers.get(), width, height, touch.x, touch.y)) manager.fail();
+        if (
+          !touch ||
+          event.allTouches.length > 1 ||
+          owner.get() === 'product' ||
+          draggingId.get() !== null ||
+          hitTest(layers.get(), width, height, touch.x, touch.y)
+        ) {
+          manager.fail();
+          return;
+        }
+        roomTouchStart.set({ x: touch.absoluteX, y: touch.absoluteY });
+        if (roomStop) scheduleOnRN(roomStop); // touching the room stops its glide
       })
-      .onBegin(() => onRoomPan.begin())
-      .onUpdate((event) => onRoomPan.update(event.translationX))
-      .onEnd((event) => onRoomPan.end(event.velocityX));
+      .onTouchesMove((event, manager) => {
+        const touch = event.allTouches[0];
+        if (!touch || event.allTouches.length > 1 || owner.get() === 'product') {
+          manager.fail();
+          return;
+        }
+        const dx = touch.absoluteX - roomTouchStart.get().x;
+        const dy = touch.absoluteY - roomTouchStart.get().y;
+        if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) {
+          manager.fail(); // vertical — let the page scroll
+        } else if (Math.abs(dx) > 10) {
+          owner.set('room');
+          manager.activate();
+        }
+      })
+      .onStart((event) => {
+        roomTxStart.set(event.translationX);
+        // Touching the empty room deselects; the room is now what moves.
+        if (selectedId.get() !== null) {
+          selectedId.set(null);
+          scheduleOnRN(onSelect, null);
+        }
+        scheduleOnRN(roomBegin);
+      })
+      .onUpdate((event) => {
+        scheduleOnRN(roomUpdate, event.translationX - roomTxStart.get());
+      })
+      .onEnd((event) => {
+        scheduleOnRN(roomEnd, event.velocityX);
+      })
+      .onFinalize((_event, success) => {
+        if (owner.get() !== 'room') return;
+        owner.set(null);
+        // Cancelled (finger left the screen, interrupted) instead of released:
+        // still come to rest on a real view instead of stopping between two.
+        if (!success) scheduleOnRN(roomEnd, 0);
+      });
 
     return Gesture.Simultaneous(pan, pinch, rotation, tapEmpty, roomPan);
   }, [
@@ -273,9 +339,13 @@ export default function RoomComposer({
     start,
     pinchStartWidth,
     rotationStart,
+    owner,
+    roomTouchStart,
+    roomTxStart,
     onSelect,
     onTransformEnd,
     onRoomPan,
+    roomStop,
   ]);
 
   const ordered = React.useMemo(
