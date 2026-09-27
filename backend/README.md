@@ -168,7 +168,11 @@ To enable it: get an API key at https://console.anthropic.com/, set
 ## AI — room visualization
 
 `services/imageGenerationService.js` uses Cloudflare Workers AI with FLUX.2
-[klein] 9B (`IMAGE_AI_MODEL`). It needs `IMAGE_AI_PROVIDER=cloudflare`,
+[klein] 4B (`IMAGE_AI_MODEL`, default `@cf/black-forest-labs/flux-2-klein-4b`).
+The 4B weights are Apache-2.0. Don't switch to `flux-2-klein-9b`: its weights
+are under BFL's non-commercial license. 4B is also much cheaper: about 125
+neurons per 1024x1024 render with 4 references, against about 1,550 for 9B, out
+of 10,000 free neurons per day. It needs `IMAGE_AI_PROVIDER=cloudflare`,
 `IMAGE_AI_API_KEY` and `IMAGE_AI_ACCOUNT_ID`. Without them, the request is
 stored with status `pending`.
 
@@ -184,9 +188,20 @@ zIndex, and which image the layer shows (3D view, cutout or photo).
 sharp, using the same math as `RoomComposer.tsx`. The request then contains:
 - `input_image_0`: the Arrange composition. This is the spatial reference for
   position, size, rotation, overlap and the number of products.
-- `input_image_1..3`: cutouts of the (up to 3) largest products, as references
-  for their appearance.
+- `input_image_1..3`: the ORIGINAL product photos (background-removed
+  cutouts) of up to 3 products, as the authority for appearance. Layers showing
+  a 3D view get these slots first, then the largest products.
 - `width`/`height`: the composition's size, so the render lines up with Arrange.
+
+The Arrange composition decides where each product is: position, size,
+rotation and facing. The product photo decides what it looks like. The prompt
+calls a 3D-view layer a "rough 3D preview" whose shape, proportions, colors and
+materials may be wrong. It asks the model to redraw that product from its photo
+and correct the reconstruction instead of copying it. Sides the photo doesn't
+show are only inferred, and the prompt asks for them to stay simple and
+consistent. The prompt order is arrangement, then product, then room, then
+realism, then clutter. The model may remove only small loose clutter (towels,
+clothes, packaging), and anything uncertain is kept.
 
 Requests without layers (older app builds, and `POST /api/generated-images`
 for a single product) use the previous request: the room photo plus product

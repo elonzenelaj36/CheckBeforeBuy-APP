@@ -1,17 +1,21 @@
 /**
  * Room-visualization (product-in-room image generation) abstraction.
  *
- * Provider: Cloudflare Workers AI, FLUX.2 [klein] (image editing with
+ * Provider: Cloudflare Workers AI, FLUX.2 [klein] 4B (image editing with
  * multiple reference images) via its REST API. Documented limits: up to 4
  * reference images named input_image_0..input_image_3, each smaller than
  * 512x512; output 256-1920px per side; 4 fixed steps; no mask/strength input.
+ * The 4B weights are Apache-2.0; the 9B variant is under BFL's
+ * non-commercial license, so it is not the default.
  *
  * Two request types:
  *  - ARRANGED (AI Render of the Visualization screen): the user's exact
  *    Arrange composition (room + product layers, rebuilt by
- *    arrangeCompositionService.js) is input_image_0 — the spatial reference —
- *    and up to 3 product cutouts are input_image_1..3 as appearance
- *    references. The model is asked to make that exact scene photorealistic.
+ *    arrangeCompositionService.js) is input_image_0 — the authority for
+ *    position/size/rotation — and up to 3 ORIGINAL product photos (their
+ *    background-removed cutouts) are input_image_1..3 — the authority for
+ *    appearance. A layer showing a 3D view is treated as a stand-in whose
+ *    reconstruction errors the model should correct from the product photo.
  *  - LEGACY (single product, no arrangement): the room photo and the product
  *    photos are sent and the model places the products itself.
  *
@@ -208,39 +212,76 @@ function describeArea({ x, y }) {
   return vertical === 'middle' && horizontal === 'center' ? 'center' : `${vertical} ${horizontal}`;
 }
 
-/** Products with the most visible area get the few appearance-reference slots. */
+/**
+ * Picks the few appearance-reference slots. Layers showing a 3D view come
+ * first: a 3D reconstruction can drift from the real product (proportions,
+ * arms, legs, colors), while a cutout/photo layer already IS the original
+ * photo. Within each group the products with the most visible area win.
+ */
 function pickAppearanceReferences(products) {
   const area = (t) => (t.width * t.width) / t.aspect;
+  const needsFix = (p) => (p.layer.source === 'frame' ? 1 : 0);
   return products
     .map((product, index) => ({ product, index }))
-    .sort((a, b) => area(b.product.layer.transform) - area(a.product.layer.transform))
+    .sort(
+      (a, b) =>
+        needsFix(b.product) - needsFix(a.product) || area(b.product.layer.transform) - area(a.product.layer.transform)
+    )
     .slice(0, MAX_REFERENCE_IMAGES - 1)
     .sort((a, b) => a.index - b.index)
     .map((ref, i) => ({ ...ref, imageIndex: i + 1 }));
 }
 
+/**
+ * One product's entry in the prompt's product list. The Arrange layer is the
+ * authority for WHERE the product is; the original product photo is the
+ * authority for WHAT it looks like. A 3D-view layer is only a stand-in.
+ */
+function productEntry(product, imageIndex) {
+  const where = `the ${product.name || product.category || 'product'} at the ${describeArea(product.layer.transform)}`;
+  if (product.layer.source === 'frame') {
+    return imageIndex ? `${where} (3D preview; real product: image ${imageIndex})` : `${where} (3D preview)`;
+  }
+  return imageIndex ? `${where} (cut from its real photo, image ${imageIndex})` : `${where} (cut from its real photo)`;
+}
+
+/**
+ * Prompt for the arranged AI Render, in the product's priority order:
+ * 1 arrangement, 2 original product appearance, 3 room, 4 realism,
+ * 5 (conservative) removal of incidental clutter. Kept short: the text
+ * encoder only reads a limited number of tokens.
+ */
 function buildArrangedPrompt({ roomType, products, references }) {
   const n = products.length;
-  const label = (p) => p.name || p.category || 'product';
-  const list = products.map((p) => `the ${label(p)} at the ${describeArea(p.layer.transform)}`).join(', ');
-  const refs = references
-    .map(
-      ({ product, imageIndex }) =>
-        `Image ${imageIndex} is a photo of the real ${label(product)} (the one at the ${describeArea(product.layer.transform)} ` +
-        "of image 0): match that product's exact shape, proportions, color, material and details. "
-    )
-    .join('');
+  const refIndex = new Map(references.map(({ product, imageIndex }) => [product, imageIndex]));
+  const list = products.map((p) => productEntry(p, refIndex.get(p))).join('; ');
+  const any3D = products.some((p) => p.layer.source === 'frame');
   return (
     `Image 0 is a mock-up of a ${roomType || 'room'} arranged by the user: the real room photo with ` +
-    `${n} product cut-out${n === 1 ? '' : 's'} pasted onto it (${list}). ` +
-    'Turn image 0 into one realistic photograph of exactly this scene. ' +
-    "Keep image 0's composition exactly: the same camera view and framing, the same room, and every product at the " +
-    'same position, size, rotation, viewing angle and overlap as in image 0. ' +
-    `Keep exactly ${n} product${n === 1 ? '' : 's'}; do not move, resize, rotate, add, remove, merge or replace any ` +
-    'object, and do not redesign the room. ' +
-    refs +
-    'Make it photorealistic: natural lighting that matches the room, soft contact shadows where each product touches ' +
-    'the floor or wall, realistic reflections and materials, and seamless edges instead of pasted cut-out edges.'
+    `${n} product${n === 1 ? '' : 's'} pasted onto it: ${list}. ` +
+    'Turn image 0 into one realistic photograph of this exact scene. ' +
+    // 1. Arrangement
+    "Keep image 0's camera view and every product's position, size, rotation, facing direction and overlap exactly. " +
+    `Keep exactly ${n} product${n === 1 ? '' : 's'}; do not add, remove, merge or replace any. ` +
+    // 2. Original product appearance
+    (any3D
+      ? 'A 3D preview is a rough 3D-model render: use it only for where the product stands, its size and which way ' +
+        'it faces; its shape, proportions, colors and materials may be wrong. Redraw it to look like its real product ' +
+        'photo (same design, silhouette, proportions, color, material and details) seen from that direction, ' +
+        "correcting the preview's distortions instead of copying them. "
+      : '') +
+    (products.some((p) => p.layer.source !== 'frame')
+      ? 'Products cut from their real photo already show the real product: keep their shape, color and material. '
+      : '') +
+    'Never design a different product. Where a photo does not show a side, keep it simple and consistent with the ' +
+    'visible design. ' +
+    // 3. Room
+    'Keep the room as it is: layout, walls, floor, ceiling, doors, windows, curtains, fixtures and existing furniture. ' +
+    // 4. Visual refinement
+    'Photorealistic: lighting that matches the room, soft contact shadows under each product, realistic materials ' +
+    'and reflections, seamless edges instead of pasted cut-out edges. ' +
+    // 5. Incidental clutter (conservative)
+    'You may remove only small loose clutter such as towels, loose clothes, packaging or bottles; if unsure, keep it.'
   );
 }
 
@@ -303,7 +344,10 @@ async function generateArrangedWithCloudflare({ roomImagePath, products, roomTyp
     output: { width: composition.width, height: composition.height },
     input_image_0: `arranged composition (${products.length} product layer${products.length === 1 ? '' : 's'})`,
     ...Object.fromEntries(
-      references.map(({ product, imageIndex }) => [`input_image_${imageIndex}`, `appearance: ${product.name || 'product'}`])
+      references.map(({ product, imageIndex }) => [
+        `input_image_${imageIndex}`,
+        `appearance: ${product.name || 'product'} (original photo${product.appearancePath === product.imagePath ? '' : ' cutout'})`,
+      ])
     ),
     layers: products.map((p) => ({ name: p.name, fit: p.layer.fit, source: p.layer.source, transform: p.layer.transform })),
     prompt,
