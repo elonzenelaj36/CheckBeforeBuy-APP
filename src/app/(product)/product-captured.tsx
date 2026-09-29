@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import { updateProductCheckName } from '@/services/productChecks';
+import { getRooms, Room } from '@/services/rooms';
 import { saveProduct } from '@/services/savedProducts';
 
 export default function ProductCaptured() {
@@ -49,6 +50,23 @@ export default function ProductCaptured() {
   const [isSaving, setIsSaving] = React.useState(false);
 
   const [isUpdating, setIsUpdating] = React.useState(false);
+
+  // Optional: which room the product is for. Its detected items are then
+  // taken into account by the analysis. Nothing selected = analysis as before.
+  const [rooms, setRooms] = React.useState<Room[]>([]);
+  const [roomId, setRoomId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let active = true;
+    getRooms()
+      .then((list) => {
+        if (active) setRooms(list);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const isHistoryItem = Boolean(productCheckId);
 
@@ -184,6 +202,8 @@ export default function ProductCaptured() {
         ...(productName.trim() ? { productName: productName.trim() } : {}),
         // Optional: the price the user saw in the shop (EUR).
         ...(normalizedPrice ? { userPrice: normalizedPrice } : {}),
+        // Optional: the room it is for (its detected items inform the analysis).
+        ...(roomId ? { roomId } : {}),
       },
     });
   };
@@ -320,6 +340,43 @@ export default function ProductCaptured() {
             returnKeyType="done"
             maxLength={10}
           />
+
+          {rooms.length > 0 && (
+            <>
+              <Text style={styles.inputLabel}>
+                WHICH ROOM IS IT FOR? (OPTIONAL)
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.roomChips}
+              >
+                {[{ id: null, name: 'No room' }, ...rooms].map((room) => {
+                  const selected = roomId === room.id;
+                  return (
+                    <TouchableOpacity
+                      key={room.id ?? 'none'}
+                      style={[styles.roomChip, selected && styles.roomChipSelected]}
+                      onPress={() => setRoomId(room.id)}
+                      activeOpacity={0.85}
+                    >
+                      <Text
+                        style={[styles.roomChipText, selected && styles.roomChipTextSelected]}
+                        numberOfLines={1}
+                      >
+                        {room.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              {roomId && (
+                <Text style={styles.roomHint}>
+                  The analysis will consider the items detected in this room.
+                </Text>
+              )}
+            </>
+          )}
 
           <Text style={styles.sectionTitle}>
             WHAT DO YOU WANT TO DO?
@@ -530,6 +587,44 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.8,
+  },
+
+  roomChips: {
+    gap: 8,
+    paddingRight: 8,
+  },
+
+  roomChip: {
+    height: 38,
+    maxWidth: 180,
+    paddingHorizontal: 14,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: Colors.lightBorder,
+    backgroundColor: Colors.lightSurface,
+    justifyContent: 'center',
+  },
+
+  roomChipSelected: {
+    backgroundColor: Colors.lightMyHomeAccentDim,
+    borderColor: Colors.lightMyHomeAccent,
+  },
+
+  roomChipText: {
+    color: Colors.lightTextBody,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  roomChipTextSelected: {
+    color: Colors.lightMyHomeAccentText,
+    fontWeight: '700',
+  },
+
+  roomHint: {
+    color: Colors.lightTextSecondary,
+    fontSize: 12,
+    marginTop: 8,
   },
 
   sectionTitle: {

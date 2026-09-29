@@ -17,8 +17,12 @@ import ScreenHeader from '@/components/ScreenHeader';
 import { Colors } from '@/constants/colors';
 import {
   analyzeProduct,
+  LocalStoreResult,
   ProductAlternative,
   ProductCheckResult,
+  RoomContextResult,
+  RoomFit,
+  SocialProfileResult,
 } from '@/services/productChecks';
 
 function formatMoney(amount: number, currency: string | null): string {
@@ -55,13 +59,105 @@ function AlternativeCard({ item }: { item: ProductAlternative }) {
   );
 }
 
+function LocalStoreCard({ item }: { item: LocalStoreResult }) {
+  return (
+    <View style={styles.matchRow}>
+      <Text style={styles.matchStore}>
+        {[item.source, item.localityLabel].filter(Boolean).join(' · ')}
+      </Text>
+      {item.address && <Text style={styles.matchTitle}>{item.address}</Text>}
+      <Text style={styles.text}>{item.reason}</Text>
+      <TouchableOpacity onPress={() => Linking.openURL(item.url)}>
+        <Text style={styles.matchLink}>OPEN STORE →</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const PLATFORM_LABEL: Record<string, string> = {
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  tiktok: 'TikTok',
+};
+
+function SocialProfileCard({ item }: { item: SocialProfileResult }) {
+  return (
+    <View style={styles.matchRow}>
+      <Text style={styles.matchStore}>
+        {[item.title, PLATFORM_LABEL[item.sourcePlatform ?? ''], item.localityLabel]
+          .filter(Boolean)
+          .join(' · ')}
+      </Text>
+      {item.snippet && (
+        <Text style={styles.matchTitle} numberOfLines={3}>
+          {item.snippet}
+        </Text>
+      )}
+      <Text style={styles.text}>{item.reason}</Text>
+      <TouchableOpacity onPress={() => Linking.openURL(item.url)}>
+        <Text style={styles.matchLink}>
+          {item.linkKind === 'profile' ? 'OPEN PROFILE →' : 'VIEW POST →'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const FIT_LABEL: Record<RoomFit['relation'], string> = {
+  duplicate: 'Similar item already there',
+  replacement: 'Possible replacement',
+  complement: 'Complements your room',
+  fills_gap: 'Adds something new',
+  unclear: 'Fit unclear',
+};
+
+function RoomFitCard({ context }: { context: RoomContextResult }) {
+  const { room, items, fit } = context;
+  const detected = items.filter((i) => i.certainty !== 'possible');
+  const possible = items.filter((i) => i.certainty === 'possible');
+  const names = (list: typeof items) =>
+    list.map((i) => (i.count > 1 ? `${i.name} ×${i.count}` : i.name)).join(', ');
+  const kind = room.kind === 'photo' ? 'photo' : `${room.kind}° view`;
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>FOR YOUR ROOM · {room.name.toUpperCase()}</Text>
+      {fit ? (
+        <>
+          <View style={[styles.verdictBadge, { backgroundColor: Colors.myHomeAccentDim }]}>
+            <Text style={[styles.verdictText, { color: Colors.myHomeAccentText }]}>
+              {FIT_LABEL[fit.relation]}
+            </Text>
+          </View>
+          <Text style={styles.text}>{fit.summary}</Text>
+        </>
+      ) : (
+        <Text style={styles.text}>
+          We couldn&apos;t assess how this product fits the room this time.
+        </Text>
+      )}
+      <Text style={styles.roomItemsText}>
+        {items.length === 0
+          ? `No items have been detected in this room yet (${kind}). Open the room and tap DETECT ITEMS for a room-aware result.`
+          : [
+              detected.length ? `Detected in the room's ${kind}: ${names(detected)}.` : null,
+              possible.length ? `Possibly present: ${names(possible)}.` : null,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+      </Text>
+    </View>
+  );
+}
+
 export default function ProductAnalysis() {
   const router = useRouter();
 
-  const { imageUri, productName, userPrice } = useLocalSearchParams<{
+  const { imageUri, productName, userPrice, roomId } = useLocalSearchParams<{
     imageUri?: string;
     productName?: string;
     userPrice?: string;
+    roomId?: string;
   }>();
 
   const [result, setResult] = React.useState<ProductCheckResult | null>(null);
@@ -81,7 +177,8 @@ export default function ProductAnalysis() {
     analyzeProduct(
       imageUri,
       userPrice ? Number(userPrice) : undefined,
-      productName
+      productName,
+      roomId
     )
       .then((res) => {
         setResult(res);
@@ -94,7 +191,7 @@ export default function ProductAnalysis() {
         );
         setLoading(false);
       });
-  }, [imageUri, productName, userPrice]);
+  }, [imageUri, productName, userPrice, roomId]);
 
   React.useEffect(() => {
     runAnalysis();
@@ -159,6 +256,9 @@ export default function ProductAnalysis() {
   const otherAlternatives = comparison
     ? comparison.alternatives.filter((a) => a !== comparison.exactMatch)
     : [];
+  const localStores = comparison?.localStores ?? [];
+  const socialProfiles = comparison?.socialProfiles ?? [];
+  const hasOnline = !!comparison?.exactMatch || otherAlternatives.length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -246,6 +346,9 @@ export default function ProductAnalysis() {
           </View>
         )}
 
+        {/* How it fits the room the user chose */}
+        {result.roomContext && <RoomFitCard context={result.roomContext} />}
+
         {/* Description */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>WHAT WE SEE</Text>
@@ -273,6 +376,8 @@ export default function ProductAnalysis() {
               </Text>
             )}
 
+          {hasOnline && <Text style={styles.groupTitle}>ONLINE STORES</Text>}
+
           {comparison?.exactMatch && (
             <>
               <Text style={styles.scoreLabel}>EXACT / POSSIBLE MATCH</Text>
@@ -289,12 +394,35 @@ export default function ProductAnalysis() {
             </>
           )}
 
-          {comparison && comparison.alternatives.length > 0 && (
-            <Text style={styles.text}>
-              Listed prices come from search results, not from us, and may not
-              be current. You will open the original website.
-            </Text>
+          {localStores.length > 0 && (
+            <>
+              <Text style={styles.groupTitle}>NEARBY STORES</Text>
+              {localStores.map((item, index) => (
+                <LocalStoreCard key={`${item.url}-${index}`} item={item} />
+              ))}
+            </>
           )}
+
+          {socialProfiles.length > 0 && (
+            <>
+              <Text style={styles.groupTitle}>SOCIAL MEDIA</Text>
+              {socialProfiles.map((item, index) => (
+                <SocialProfileCard key={`${item.url}-${index}`} item={item} />
+              ))}
+            </>
+          )}
+
+          {comparison &&
+            (comparison.alternatives.length > 0 ||
+              localStores.length > 0 ||
+              socialProfiles.length > 0) && (
+              <Text style={styles.text}>
+                Prices and availability come from search results, not from us,
+                and may not be current — stores and profiles may not have this
+                exact product. You will open the original website, map or
+                profile.
+              </Text>
+            )}
         </View>
 
         {/* Actions */}
@@ -559,6 +687,21 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 13,
     marginLeft: 10,
+  },
+
+  groupTitle: {
+    color: Colors.textPrimary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginTop: 18,
+  },
+
+  roomItemsText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
   },
 
   matchRow: {

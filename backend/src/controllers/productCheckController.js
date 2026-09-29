@@ -7,6 +7,8 @@ const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { analyzeProductImage } = require('../services/aiService');
 const webSearch = require('../services/webSearchService');
 const { buildComparison, toLegacyFields } = require('../services/comparisonService');
+const localDiscovery = require('../services/localDiscoveryService');
+const { buildRoomContext, parseRoomFit } = require('../services/roomContextService');
 const { getApproximateLocationFromIp, getClientIp } = require('../services/locationService');
 const path = require('path');
 
@@ -40,7 +42,11 @@ function serializeCheck(row) {
 
 /**
  * POST /api/product-checks
- * multipart/form-data: image (required), userPrice (optional)
+ * multipart/form-data: image (required), userPrice, productName, roomId, city, country (all optional)
+ *
+ * roomId: the room the product is for. Its already-detected items (Items
+ * Detected) are given to the analysis as evidence; an unknown/foreign room is
+ * ignored (the analysis then runs exactly as without one).
  *
  * Flow: save uploaded photo -> call AI service -> upsert a `products` row
  * -> insert a `product_checks` row -> (if a price was estimated) record it
@@ -61,12 +67,23 @@ const createProductCheck = asyncHandler(async (req, res) => {
     [req.user.id]
   );
 
+  // Room context never blocks the analysis: on any problem it is just left out.
+  let roomContext = null;
+  if (req.body.roomId) {
+    try {
+      roomContext = await buildRoomContext(req.user.id, req.body.roomId);
+    } catch (err) {
+      console.error('[product-checks] room context failed:', err.message);
+    }
+  }
+
   let aiResult;
   try {
     aiResult = await analyzeProductImage({
       absoluteImagePath,
       userPrice,
       userItems: ownedItems,
+      roomContext: roomContext?.promptText,
     });
   } catch (err) {
     throw new ApiError(502, "We couldn't analyze this product. Please try again.", err.message);
@@ -81,22 +98,30 @@ const createProductCheck = asyncHandler(async (req, res) => {
   const characteristics = Array.isArray(aiResult.raw?.visibleSpecifications) ? aiResult.raw.visibleSpecifications : [];
   let matches = [];
   let searchStatus = 'skipped';
+  // Nearby stores and social profiles: separate searches that fail on their own.
+  let local = { status: 'skipped', stores: [] };
+  let social = { status: 'skipped', profiles: [] };
   if (!isMock) {
     if (!webSearch.isConfigured()) {
       searchStatus = 'not_configured';
+      local.status = 'not_configured';
+      social.status = 'not_configured';
     } else {
-      try {
-        // Coarse city only: one the client sent, else best-effort IP lookup
-        // (null on private/dev IPs). Never stored; only a word in the query.
-        let city = req.body.city ? String(req.body.city).trim().slice(0, 60) : null;
-        let country = req.body.country ? String(req.body.country).trim().slice(0, 60) : null;
-        if (!city) {
-          const geo = await getApproximateLocationFromIp(getClientIp(req));
-          city = geo?.city || null;
-          country = geo?.country || country;
-        }
+      // Coarse city only: one the client sent, else best-effort IP lookup
+      // (null on private/dev IPs). Never stored; only a word in the query.
+      let city = req.body.city ? String(req.body.city).trim().slice(0, 60) : null;
+      let country = req.body.country ? String(req.body.country).trim().slice(0, 60) : null;
+      if (!city) {
+        const geo = await getApproximateLocationFromIp(getClientIp(req)).catch(() => null);
+        city = geo?.city || null;
+        country = geo?.country || country;
+      }
+      // Kosovo is the default market; a city abroad is not used (same rule as the online search).
+      const localCity = city && (!country || /kosov/i.test(country)) ? city : null;
+      const discovery = { name: finalProductName, category: product.category, city: localCity };
 
-        const found = await webSearch.searchProductWeb({
+      const [online, stores, profiles] = await Promise.allSettled([
+        webSearch.searchProductWeb({
           name: finalProductName,
           brand: product.brand,
           category: product.category,
@@ -104,13 +129,19 @@ const createProductCheck = asyncHandler(async (req, res) => {
           city,
           country,
           characteristics,
-        });
-        matches = found.matches;
+        }),
+        localDiscovery.searchLocalStores(discovery),
+        localDiscovery.searchSocialProfiles(discovery),
+      ]);
+      if (online.status === 'fulfilled') {
+        matches = online.value.matches;
         searchStatus = 'ok';
-      } catch (err) {
-        console.error('[product-checks] alternative search failed:', err.message);
+      } else {
+        console.error('[product-checks] alternative search failed:', online.reason?.message);
         searchStatus = 'unavailable';
       }
+      local = stores.status === 'fulfilled' ? stores.value : { status: 'unavailable', stores: [] };
+      social = profiles.status === 'fulfilled' ? profiles.value : { status: 'unavailable', profiles: [] };
     }
   }
 
@@ -120,6 +151,7 @@ const createProductCheck = asyncHandler(async (req, res) => {
     characteristics,
     matches,
     searchStatus,
+    nearbyStoreCount: local.stores.length,
   });
   // Only override the stored verdict when a real comparison ran; otherwise it
   // is 'unknown' (we never force BUY/SKIP without evidence).
@@ -186,8 +218,20 @@ const createProductCheck = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     ...serializeCheck(rows[0]),
-    comparison,
+    comparison: {
+      ...comparison,
+      localStores: local.stores,
+      socialProfiles: social.profiles,
+      search: { ...comparison.search, localStatus: local.status, socialStatus: social.status },
+    },
     characteristics,
+    roomContext: roomContext
+      ? {
+          room: roomContext.room,
+          items: roomContext.items,
+          fit: parseRoomFit(aiResult.raw, roomContext.items),
+        }
+      : null,
   });
 });
 

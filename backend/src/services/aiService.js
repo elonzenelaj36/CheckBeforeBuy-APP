@@ -560,14 +560,17 @@ async function detectProductsInImage({ absoluteImagePath }) {
  * @param {string} params.absoluteImagePath - path on disk to the uploaded photo
  * @param {number|null} [params.userPrice] - price the user says the product costs, if known
  * @param {Array<{name: string, category: string}>} [params.userItems] - items the user already owns, for redundancy checks
+ * @param {string} [params.roomContext] - prompt text from roomContextService (the room the product is for, with its
+ *   detected items); replaces the plain owned-items note when present
  */
-async function analyzeProductImage({ absoluteImagePath, userPrice, userItems }) {
+async function analyzeProductImage({ absoluteImagePath, userPrice, userItems, roomContext }) {
   const priceContext = userPrice
     ? `The user says this product costs ${userPrice}. Compare your market estimate against that figure and set priceAssessment to "fair", "good_deal", or "overpriced" accordingly.`
     : 'No user-supplied price was given. Set priceAssessment to "unknown" unless you are genuinely confident about typical market pricing for this exact kind of item.';
 
-  const ownedItemsContext =
-    userItems && userItems.length
+  const ownedItemsContext = roomContext
+    ? `\n\n${roomContext}`
+    : userItems && userItems.length
       ? `The user already owns: ${userItems.map((i) => `${i.name} (${i.category})`).join(', ')}. Mention in your reasoning if this product looks redundant with something they already have.`
       : '';
 

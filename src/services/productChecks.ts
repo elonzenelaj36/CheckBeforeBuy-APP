@@ -29,6 +29,9 @@ export type ProductAlternative = {
   priceComparisonAvailable: boolean;
   url: string;
   source: string | null;
+  /** Where the result comes from (absent on older responses = online store). */
+  sourceType?: 'online_store' | 'local_store' | 'social_profile';
+  sourcePlatform?: 'web' | 'google_maps' | 'instagram' | 'facebook' | 'tiktok';
   locality: 'city' | 'kosovo' | 'regional' | 'unknown' | 'international';
   localityLabel: string | null;
   matchType: 'strong' | 'similar' | 'general';
@@ -37,6 +40,27 @@ export type ProductAlternative = {
   category: 'same' | 'better_value' | 'better_price' | 'other';
   reason: string;
 };
+
+/** A nearby physical store/showroom (Google Maps via the backend). `url` opens the place on Google Maps. */
+export type LocalStoreResult = ProductAlternative & {
+  sourceType: 'local_store';
+  website: string | null;
+  address: string | null;
+  rating: number | null;
+  reviews: number | null;
+  placeType: string | null;
+};
+
+/** A public social-media business profile. `url` is the profile, or the public post when no profile could be read. */
+export type SocialProfileResult = ProductAlternative & {
+  sourceType: 'social_profile';
+  linkKind: 'profile' | 'post';
+  postUrl: string;
+  handle: string | null;
+  snippet: string | null;
+};
+
+type SearchStatus = 'ok' | 'unavailable' | 'not_configured' | 'skipped';
 
 export type ProductComparison = {
   decision: ComparisonDecision;
@@ -56,12 +80,39 @@ export type ProductComparison = {
   currency: string;
   exactMatch: ProductAlternative | null;
   alternatives: ProductAlternative[];
+  /** Nearby stores and social profiles (absent on older responses). */
+  localStores?: LocalStoreResult[];
+  socialProfiles?: SocialProfileResult[];
   search: {
     provider: string;
-    status: 'ok' | 'unavailable' | 'not_configured' | 'skipped';
+    status: SearchStatus;
     resultsFound: number;
     pricedResults: number;
+    localStatus?: SearchStatus;
+    socialStatus?: SearchStatus;
   };
+};
+
+/** How the product relates to what was detected in the room the user chose. */
+export type RoomFit = {
+  relation: 'duplicate' | 'replacement' | 'complement' | 'fills_gap' | 'unclear';
+  summary: string;
+  relatedItems: string[];
+};
+
+export type RoomContextResult = {
+  room: { id: string; name: string; roomType: string; kind: 'photo' | '180' | '360' };
+  items: {
+    name: string;
+    category: string;
+    count: number;
+    confidence: number | null;
+    views: number;
+    /** detected = high confidence; possible = lower/unknown confidence; listed = added by the user. */
+    certainty: 'detected' | 'possible' | 'listed';
+  }[];
+  /** null if the AI didn't return a usable room assessment. */
+  fit: RoomFit | null;
 };
 
 export type ProductCheckResult = {
@@ -91,6 +142,8 @@ export type ProductCheckResult = {
   /** Only present on the response of the analyze request itself. */
   comparison?: ProductComparison;
   characteristics?: string[];
+  /** Only when a room was chosen for the analysis. */
+  roomContext?: RoomContextResult | null;
 };
 
 /**
@@ -99,11 +152,14 @@ export type ProductCheckResult = {
  * @param imageUri local (file://) URI of the captured/picked photo
  * @param userPrice optional price the user says the product costs, used to
  *   judge price fairness
+ * @param roomId optional room the product is for: its detected items are
+ *   taken into account by the analysis
  */
 export async function analyzeProduct(
   imageUri: string,
   userPrice?: number,
-  productName?: string
+  productName?: string,
+  roomId?: string
 ): Promise<ProductCheckResult> {
   return apiUploadImage<ProductCheckResult>(
     '/product-checks',
@@ -116,6 +172,7 @@ export async function analyzeProduct(
       ...(productName?.trim()
         ? { productName: productName.trim() }
         : {}),
+      ...(roomId ? { roomId } : {}),
     }
   );
 }

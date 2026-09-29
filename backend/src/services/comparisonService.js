@@ -76,6 +76,8 @@ function describeAlternative(rawAlt, userPrice, currency, characteristics) {
     priceComparisonAvailable: comparablePrice,
     url: alt.url,
     source: alt.store,
+    sourceType: 'online_store',
+    sourcePlatform: 'web',
     locality: alt.locality,
     localityLabel: LOCALITY_LABEL[alt.locality] ?? null,
     matchType: alt.matchType,
@@ -152,8 +154,9 @@ function pickAlternatives(described) {
  * @param {string[]} [p.characteristics]
  * @param {Array} p.matches - normalized results from webSearchService
  * @param {'ok'|'unavailable'|'not_configured'|'skipped'} p.searchStatus
+ * @param {number} [p.nearbyStoreCount] - physical stores found nearby (localDiscoveryService), only for wording
  */
-function buildComparison({ userPrice, currency = 'EUR', characteristics = [], matches = [], searchStatus }) {
+function buildComparison({ userPrice, currency = 'EUR', characteristics = [], matches = [], searchStatus, nearbyStoreCount = 0 }) {
   const price = userPrice !== null && userPrice !== undefined && Number.isFinite(userPrice) && userPrice > 0 ? userPrice : null;
   const described = matches.map((m) => describeAlternative(m, price, currency, characteristics));
   const alternatives = pickAlternatives(described);
@@ -251,7 +254,13 @@ function buildComparison({ userPrice, currency = 'EUR', characteristics = [], ma
   if (exact) reasoning.push('A possible exact match was found — see below.');
   const localCount = alternatives.filter((a) => a.locality === 'city' || a.locality === 'kosovo').length;
   if (alternatives.length && searchStatus === 'ok') {
-    reasoning.push(localCount ? `${localCount} of the ${alternatives.length} results ${localCount === 1 ? 'is' : 'are'} from Kosovo/local sources.` : 'No results were clearly identified as Kosovo/local sources.');
+    reasoning.push(
+      localCount
+        ? `${localCount} of the ${alternatives.length} results ${localCount === 1 ? 'is' : 'are'} from Kosovo/local sources.`
+        : nearbyStoreCount
+          ? `No online listing was clearly from Kosovo, but ${nearbyStoreCount} nearby ${nearbyStoreCount === 1 ? 'store was' : 'stores were'} found (see Nearby stores).`
+          : 'No results were clearly identified as Kosovo/local sources.'
+    );
   }
   if (searchStatus === 'ok' && matches.length === 0) {
     reasoning.push("No comparable products were found; we couldn't find reliable alternatives.");

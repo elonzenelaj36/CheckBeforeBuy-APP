@@ -169,6 +169,41 @@ either failing or pretending to have real results.
 To enable it: get an API key at https://console.anthropic.com/, set
 `AI_API_KEY` (and optionally `AI_MODEL`) in `.env`.
 
+### Room context (`roomId`)
+
+`POST /api/product-checks` accepts an optional `roomId` (the app's "Which room
+is it for?" chips). `services/roomContextService.js` reads that room's
+existing Items Detected data (`user_items` + `room_item_observations`; photo,
+180° and 360° rooms alike, nothing is re-detected) and adds it to the prompt:
+
+- confidence ≥ 0.8 → "was detected"; lower or unknown → "a …-like item may be present"; manual items → "added by the user"
+- an item missing from the list is "not detected in the selected room", never "not owned" (the rest of the inventory is listed as "elsewhere in the home")
+- the model reasons about duplicate / replacement / complement / fills-a-gap, not "already have a chair = skip"
+
+The response then has `roomContext: { room, items, fit: { relation, summary, relatedItems } | null }`.
+Without `roomId` (or for a room that isn't the user's) the prompt is exactly as before.
+
+### Where to find it: online, nearby, social
+
+Three SerpApi searches run in parallel after the analysis, each failing on its own:
+
+| Group | Service | SerpApi engine | Response field |
+| --- | --- | --- | --- |
+| Online stores | `webSearchService.js` (unchanged) | `google` | `comparison.alternatives` / `exactMatch` (`sourceType: online_store`) |
+| Nearby stores | `localDiscoveryService.js` | `google_maps` (`type=search`, place word in `q`) | `comparison.localStores` (`local_store`, `google_maps`) |
+| Social media | `localDiscoveryService.js` | `google` + `site:instagram.com OR site:facebook.com OR site:tiktok.com` | `comparison.socialProfiles` (`social_profile`, `instagram`/`facebook`/`tiktok`) |
+
+Statuses: `comparison.search.status` / `localStatus` / `socialStatus`. Location is the
+coarse city the client sends (`city`, `country`) or the IP lookup; none → Kosovo-wide.
+Map results outside Kosovo's bounding box are dropped. Nothing is scraped: social
+profiles come from the URL/label Google returns (else the public post link is shown).
+Local and social results never carry a price or an exact-match claim.
+
+**SerpApi budget (free plan: 250 searches/month):** one analysis uses up to 6
+online + 2 maps + 1 social searches (identical searches within an hour are served
+from SerpApi's cache for free). SerpApi sometimes answers in 20–30 s; the
+nearby/social searches wait up to 30 s, the online search keeps its 15 s timeout.
+
 ## AI — room visualization
 
 `services/imageGenerationService.js` uses Cloudflare Workers AI with FLUX.2

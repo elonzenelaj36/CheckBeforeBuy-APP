@@ -236,20 +236,19 @@ function isRelevantResult(m, typeWords) {
 }
 
 async function callSerpApi(q, hl = 'en') {
-  const params = new URLSearchParams({
-    engine: 'google',
-    q,
-    hl,
-    num: '10',
-    api_key: env.search.apiKey,
-  });
+  return serpApiRequest({ engine: 'google', q, hl, num: '10' });
+}
+
+/** One SerpApi call with any documented engine's parameters (the key is added here and never logged). */
+async function serpApiRequest(query, { timeoutMs = TIMEOUT_MS } = {}) {
+  const params = new URLSearchParams({ ...query, api_key: env.search.apiKey });
 
   let response;
   try {
-    response = await fetch(`${SERPAPI_ENDPOINT}?${params}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    response = await fetch(`${SERPAPI_ENDPOINT}?${params}`, { signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
-      throw new Error(`SerpApi request timed out after ${TIMEOUT_MS}ms`);
+      throw new Error(`SerpApi request timed out after ${timeoutMs}ms`);
     }
     throw new Error(`SerpApi request failed: ${err.message}`);
   }
@@ -461,4 +460,19 @@ async function searchProductWeb({ name, brand, category, confidence, city, count
   };
 }
 
-module.exports = { isConfigured, searchProductWeb, buildBaseQuery, buildLevels, localityOf };
+module.exports = {
+  isConfigured,
+  searchProductWeb,
+  buildBaseQuery,
+  buildLevels,
+  localityOf,
+  // shared with localDiscoveryService.js
+  serpApiRequest,
+  albanianTerm,
+  productTypeWords,
+  cityRegex,
+  hostnameFromUrl,
+  isHttpUrl,
+  GEO_WORDS,
+  SQ_TERMS,
+};
