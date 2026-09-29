@@ -32,6 +32,7 @@ import {
 } from '@/services/rooms';
 import RoomSpatialHero from '@/components/spatial/RoomSpatialHero';
 import { deleteRoomCapture, isSpatialRoom } from '@/services/roomCaptures';
+import ItemHighlight from '@/components/ItemHighlight';
 import { deleteUserItem, getUserItemsForRoom, UserItem } from '@/services/userItems';
 
 /** A spatial room's main visual is taller than a photo banner: the capture is portrait and it IS the room. */
@@ -48,6 +49,12 @@ export default function RoomDetail() {
   const [loading, setLoading] = React.useState(true);
   const [analyzing, setAnalyzing] = React.useState(false);
   const [heroWidth, setHeroWidth] = React.useState(0);
+  /** Items Detected: the item outlined on the room (selection only — nothing moves). */
+  const [selectedItemId, setSelectedItemId] = React.useState<string | null>(null);
+  const [detectError, setDetectError] = React.useState<string | null>(null);
+  const [bannerSize, setBannerSize] = React.useState({ width: 0, height: 0 });
+  const [photoAspect, setPhotoAspect] = React.useState<{ uri: string; aspect: number } | null>(null);
+  const scrollRef = React.useRef<ScrollView>(null);
 
   const loadData = React.useCallback(async () => {
     if (!roomId) {
@@ -75,6 +82,31 @@ export default function RoomDetail() {
       loadData();
     }, [loadData])
   );
+
+  // Items Detected selection → which sighting to outline on the room.
+  const selectedItem = userItems.find((i) => i.id === selectedItemId) ?? null;
+  const selectedObs = selectedItem?.observations?.[0] ?? null;
+  // Photo room: show the photo the item was seen on (normally the primary photo).
+  const bannerPhoto =
+    (room && !isSpatialRoom(room) && selectedObs?.photoId
+      ? room.photos.find((p) => p.id === selectedObs.photoId)?.imageUri
+      : null) ??
+    room?.primaryImageUri ??
+    room?.imageUris[0] ??
+    null;
+  // The outline needs the photo's real shape (the banner crops it to fill).
+  React.useEffect(() => {
+    if (!bannerPhoto) return;
+    let cancelled = false;
+    Image.getSize(
+      bannerPhoto,
+      (w, h) => !cancelled && w > 0 && h > 0 && setPhotoAspect({ uri: bannerPhoto, aspect: w / h }),
+      () => {}
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [bannerPhoto]);
 
   if (loading) {
     return (
@@ -107,6 +139,12 @@ export default function RoomDetail() {
 
   const primaryPhoto = room.primaryImageUri || room.imageUris[0] || null;
 
+  const selectItem = (item: UserItem) => {
+    if (!item.observations?.length) return; // manual items have no location to show
+    setSelectedItemId((cur) => (cur === item.id ? null : item.id));
+    scrollRef.current?.scrollTo({ y: 0, animated: true }); // the outline is on the room at the top
+  };
+
   // Best-effort: re-analyzing after a new photo is added must never block
   // or fail the photo add itself, which has already succeeded by the time
   // this runs. Already-known items are not re-added (see
@@ -115,17 +153,16 @@ export default function RoomDetail() {
   const analyzeAndRefreshItems = async () => {
     if (!roomId) return;
     setAnalyzing(true);
+    setDetectError(null);
+    setSelectedItemId(null);
     try {
-      const result = await analyzeRoom(roomId);
-      if (result.items.length > 0) {
-        setUserItems((prev) => [...result.items, ...prev]);
-        Alert.alert(
-          'Room analyzed',
-          `${result.items.length} item${result.items.length === 1 ? '' : 's'} added to My Items.`
-        );
-      }
-    } catch (error) {
+      await analyzeRoom(roomId);
+      // Detection replaces this room's previous AI items — reload the list as stored.
+      setUserItems(await getUserItemsForRoom(roomId));
+    } catch (error: any) {
       console.error('[room-detail] Room analysis failed:', error);
+      // The room itself is unaffected; only the detection didn't work.
+      setDetectError(error?.message ?? "We couldn't detect furniture in this room.");
     }
     setAnalyzing(false);
   };
@@ -277,6 +314,7 @@ export default function RoomDetail() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
@@ -293,6 +331,11 @@ export default function RoomDetail() {
                 <RoomSpatialHero
                   roomId={room.id}
                   capture={room.capture!}
+                  selectedItem={
+                    selectedItem && selectedObs?.frameId
+                      ? { id: selectedItem.id, name: selectedItem.name, observation: selectedObs }
+                      : null
+                  }
                   width={heroWidth}
                   height={SPATIAL_BANNER_HEIGHT - 2}
                   onTap={() => router.push({ pathname: '/room-view', params: { roomId: room.id } })}
@@ -309,9 +352,12 @@ export default function RoomDetail() {
           </View>
         ) : (
           <View style={styles.bannerOuter}>
-            <View style={styles.bannerContainer}>
+            <View
+              style={styles.bannerContainer}
+              onLayout={(e) => setBannerSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
+            >
               {primaryPhoto ? (
-                <Image source={{ uri: primaryPhoto }} style={styles.bannerImage} />
+                <Image source={{ uri: bannerPhoto ?? primaryPhoto }} style={styles.bannerImage} />
               ) : (
                 <View style={styles.bannerPlaceholder}>
                   <Text style={styles.placeholderIcon}>🏠</Text>
@@ -320,6 +366,16 @@ export default function RoomDetail() {
               )}
 
               <View style={styles.bannerScrim} pointerEvents="none" />
+
+              {selectedItem && selectedObs?.photoId && photoAspect?.uri === bannerPhoto && (
+                <ItemHighlight
+                  box={selectedObs.box}
+                  containerWidth={bannerSize.width}
+                  containerHeight={bannerSize.height}
+                  imageAspect={photoAspect.aspect}
+                  label={selectedItem.name}
+                />
+              )}
 
               <View style={styles.bannerBadge}>
                 <Text style={styles.bannerBadgeText}>{room.roomType}</Text>
@@ -482,38 +538,75 @@ export default function RoomDetail() {
           )}
         </View>
 
-        {/* Items detected in this room — clean / structured treatment */}
+        {/* Items detected in this room — clean / structured treatment. Tap an
+            item to outline it on the room above (selection only; nothing moves). */}
         <View style={styles.itemsSectionCard}>
           <View style={styles.itemsSectionHeader}>
             <Text style={[styles.sectionTitle, { color: Colors.textMuted }]}>ITEMS DETECTED ({userItems.length})</Text>
+            {(isSpatialRoom(room) || room.imageUris.length > 0) && (
+              <TouchableOpacity onPress={analyzeAndRefreshItems} disabled={analyzing}>
+                <Text style={styles.detectAction}>
+                  {analyzing ? 'DETECTING…' : userItems.some((i) => i.source === 'ai') ? 'DETECT AGAIN' : 'DETECT ITEMS'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {analyzing ? (
             <View style={styles.subtleInfoCard}>
-              <Text style={styles.subtleInfoText}>Analyzing your room photo...</Text>
+              <Text style={styles.subtleInfoText}>
+                {isSpatialRoom(room)
+                  ? 'Looking for furniture across your room views… this can take a minute.'
+                  : 'Looking for furniture in your room photo…'}
+              </Text>
+            </View>
+          ) : detectError ? (
+            <View style={styles.subtleInfoCard}>
+              <Text style={styles.subtleInfoText}>
+                We couldn&apos;t detect furniture in this room. Your room is fine — tap DETECT ITEMS to try again.
+              </Text>
             </View>
           ) : userItems.length === 0 ? (
             <View style={styles.subtleInfoCard}>
               <Text style={styles.subtleInfoText}>
-                No items detected in this room yet. Add a room photo and AI will look for recognizable furniture.
+                {isSpatialRoom(room) || room.imageUris.length > 0
+                  ? 'No items detected yet. Tap DETECT ITEMS to find the furniture in this room.'
+                  : 'No items detected in this room yet. Add a room photo and AI will look for recognizable furniture.'}
               </Text>
             </View>
           ) : (
             <View style={styles.itemsList}>
-              {userItems.map((item) => (
-                <View key={item.id} style={styles.itemRow}>
-                  <View style={styles.itemRowText}>
-                    <Text style={styles.itemName}>{item.name}</Text>
-                    <Text style={styles.itemCategory}>{item.category}</Text>
-                  </View>
+              {userItems.map((item) => {
+                const selected = item.id === selectedItemId;
+                const views = item.observations?.length ?? 0;
+                const details = [
+                  item.category,
+                  item.source === 'ai' ? 'Detected automatically' : 'Added by you',
+                  views > 1 ? `seen in ${views} views` : null,
+                  item.confidence != null ? `${Math.round(item.confidence * 100)}%` : null,
+                ].filter(Boolean);
+                return (
                   <TouchableOpacity
-                    style={styles.itemDeleteBtn}
-                    onPress={() => handleDeleteItem(item)}
+                    key={item.id}
+                    style={[styles.itemRow, selected && styles.itemRowSelected]}
+                    onPress={() => selectItem(item)}
+                    activeOpacity={views > 0 ? 0.8 : 1}
+                    accessibilityState={{ selected }}
                   >
-                    <Text style={styles.itemDeleteBtnText}>✕</Text>
+                    <View style={styles.itemRowText}>
+                      <Text style={styles.itemName}>{item.name}</Text>
+                      <Text style={styles.itemCategory}>{details.join(' · ')}</Text>
+                    </View>
+                    {selected && <Text style={styles.itemShown}>SHOWN ABOVE</Text>}
+                    <TouchableOpacity
+                      style={styles.itemDeleteBtn}
+                      onPress={() => handleDeleteItem(item)}
+                    >
+                      <Text style={styles.itemDeleteBtnText}>✕</Text>
+                    </TouchableOpacity>
                   </TouchableOpacity>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -864,6 +957,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
+  },
+  detectAction: {
+    color: Colors.myHomeAccent,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  itemRowSelected: {
+    borderColor: Colors.myHomeAccent,
+    backgroundColor: 'rgba(94, 214, 196, 0.12)',
+  },
+  itemShown: {
+    color: Colors.myHomeAccent,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginRight: 10,
   },
   itemsList: {
     gap: 8,

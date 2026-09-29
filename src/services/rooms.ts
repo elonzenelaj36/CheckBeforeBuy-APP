@@ -18,6 +18,7 @@ import {
   apiUploadMultipart,
 } from './api';
 import type { RoomCaptureSummary } from './roomCaptures';
+import type { ItemObservation } from './userItems';
 
 const ROOMS_CACHE_KEY = '@check_before_buy_rooms_cache_v3';
 
@@ -222,6 +223,8 @@ export type DetectedRoomItem = {
   roomId: string | null;
   source: 'manual' | 'ai';
   createdAt: string;
+  confidence?: number | null;
+  observations?: ItemObservation[];
 };
 
 export type AnalyzeRoomResult = {
@@ -230,6 +233,9 @@ export type AnalyzeRoomResult = {
   isMock: boolean;
   provider?: string | null;
   message?: string;
+  /** Spatial rooms: how many captured views were analysed / failed. */
+  viewsAnalyzed?: number;
+  viewsFailed?: number;
 };
 
 /**

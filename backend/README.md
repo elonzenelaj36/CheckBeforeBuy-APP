@@ -300,6 +300,47 @@ blocks install scripts, run `npm approve-scripts ffmpeg-static` or
 fine for running it on our own server, but distributing it would bring
 GPL obligations.
 
+## Items Detected (room item detection)
+
+`POST /api/rooms/:id/analyze` finds a room's existing furniture and records
+where each item appears. This is selection only: detected furniture is not a
+movable object.
+
+- **Provider:** the project's existing Groq vision model (`AI_PROVIDER=groq`,
+  `AI_API_KEY`, `AI_MODEL`), in `services/roomItemDetectionService.js`. No new
+  service and nothing installed. It only looks for furniture-sized objects:
+  sofa, armchair, chair, dining chair, bed, coffee table, dining table, table,
+  desk, nightstand, dresser, cabinet, wardrobe, bookshelf, tv stand, tv, lamp,
+  floor lamp, mirror, rug, fireplace and plant. Small clutter, specks and
+  low-confidence results are dropped.
+- **Box coordinates:** the model returns 0–1000 coordinates measured against
+  the image's LONGER side on both axes. `parseDetections()` converts them
+  (checked on portrait, landscape and square images).
+- **Photo room:** only the primary photo is analysed, giving one sighting per
+  item. Two different photos can't be told apart from two objects without a
+  shared coordinate system.
+- **180°/360° room:** a few evenly spaced views are analysed, spaced about
+  0.7 × the lens field of view and at most 8 (a 180° 0.5× room uses 5 of 22
+  views). Each box becomes the room-direction range it covers. Sightings of
+  the same kind of object, in the same direction and height range, are merged
+  into one item as connected groups, so the result doesn't depend on order.
+  Merging handles the 0°/360° seam. Directions are 2D; there are no 3D
+  coordinates.
+- **Storage:** each item is a `user_items` row (`source = 'ai'`, the
+  inventory). Where it was seen goes in `room_item_observations` (migration
+  007): a box on a room photo or a captured view, plus the direction range for
+  spatial rooms. Re-running detection replaces the room's previous AI items;
+  manual items are kept. `GET /api/items?roomId=` returns items with their
+  `observations`.
+- **Free tier:** Groq allows about 7,000 input tokens per minute for this model
+  and reserves about 2,250 per image, so roughly 3 views per minute. Requests
+  follow Groq's "try again in …" hint. A 180° room takes about 1 minute, a
+  360° room about 1.5–2 minutes.
+- **Failures:** a failed detection returns 502 with a friendly message. The
+  room and its existing items are untouched.
+- **Without Groq:** other AI providers use the previous name-only analysis
+  (`aiService.analyzeRoomImages`).
+
 ## Product background removal
 
 `services/backgroundRemovalService.js` → `removeBackground({ imagePath })`,

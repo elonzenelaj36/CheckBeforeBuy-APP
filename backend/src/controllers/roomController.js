@@ -6,7 +6,8 @@ const { requireString } = require('../utils/validate');
 const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { analyzeRoomImages } = require('../services/aiService');
-const { serializeUserItem } = require('./userItemController');
+const { serializeUserItem, serializeWithObservations } = require('./userItemController');
+const roomItemDetection = require('../services/roomItemDetectionService');
 const { loadCaptureSummaries } = require('./roomCaptureController');
 
 async function loadRoomWithPhotos(roomId, userId) {
@@ -145,6 +146,10 @@ const analyzeRoom = asyncHandler(async (req, res) => {
   const existing = await loadRoomWithPhotos(req.params.id, req.user.id);
   if (!existing) throw new ApiError(404, 'Room not found.');
 
+  // Groq configured (the project's AI provider): detect furniture WITH where it
+  // appears — the primary photo, or a few views of the 180°/360° capture.
+  if (roomItemDetection.isAvailable()) return detectItemsWithLocations(req, res, existing);
+
   if (existing.imageUris.length === 0) {
     return res.json({ items: [], totalDetected: 0, isMock: false, message: 'Add a room photo before analyzing.' });
   }
@@ -206,6 +211,103 @@ const analyzeRoom = asyncHandler(async (req, res) => {
     provider: aiResult.provider,
   });
 });
+
+/**
+ * Items Detected for a room (Groq): the primary photo of a photo room, or a
+ * few evenly spaced views of a 180°/360° capture, merged so one sofa seen in
+ * several views is one item. Replaces this room's previous AI-detected items
+ * (manual items are kept) and stores where each item was seen
+ * (room_item_observations). Detection problems never affect the room itself.
+ */
+async function detectItemsWithLocations(req, res, room) {
+  let input = null;
+  if (room.capture) {
+    const [frames] = await pool.query(
+      'SELECT id, angle_deg, image_path FROM room_capture_frames WHERE capture_id = ? ORDER BY frame_index ASC',
+      [room.capture.id]
+    );
+    input = {
+      capture: {
+        loops: room.capture.loops,
+        lens: room.capture.lens,
+        frames: frames.map((f) => ({
+          id: f.id,
+          angleDeg: Number(f.angle_deg),
+          path: path.join(uploadRoot, path.basename(f.image_path)),
+        })),
+      },
+    };
+  } else {
+    const [photoRows] = await pool.query(
+      'SELECT id, image_path FROM room_photos WHERE room_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1',
+      [room.id]
+    );
+    if (photoRows.length === 0) {
+      return res.json({ items: [], totalDetected: 0, isMock: false, message: 'Add a room photo before analyzing.' });
+    }
+    input = { photo: { id: photoRows[0].id, path: path.join(uploadRoot, path.basename(photoRows[0].image_path)) } };
+  }
+
+  let result;
+  try {
+    result = await roomItemDetection.detectRoomItems(input);
+  } catch (err) {
+    console.error('[roomItems] detection failed:', err.message);
+    throw new ApiError(502, "We couldn't detect furniture in this room. Please try again later.");
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query("DELETE FROM user_items WHERE user_id = ? AND room_id = ? AND source = 'ai'", [req.user.id, room.id]);
+    for (const item of result.items) {
+      const name = item.label.charAt(0).toUpperCase() + item.label.slice(1);
+      const views = item.observations.length;
+      const [ins] = await conn.query(
+        `INSERT INTO user_items (user_id, room_id, name, category, description, source) VALUES (?, ?, ?, ?, ?, 'ai')`,
+        [req.user.id, room.id, name, item.category, views > 1 ? `Detected automatically in ${views} views` : 'Detected automatically']
+      );
+      for (const o of item.observations) {
+        await conn.query(
+          `INSERT INTO room_item_observations
+             (user_item_id, room_photo_id, capture_frame_id, box_x1, box_y1, box_x2, box_y2, confidence, direction_deg, half_width_deg)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            ins.insertId,
+            o.roomPhotoId ?? null,
+            o.captureFrameId ?? null,
+            o.box.x1,
+            o.box.y1,
+            o.box.x2,
+            o.box.y2,
+            o.confidence,
+            o.directionDeg,
+            o.halfWidthDeg,
+          ]
+        );
+      }
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
+  }
+
+  const [rows] = await pool.query(
+    "SELECT * FROM user_items WHERE user_id = ? AND room_id = ? AND source = 'ai' ORDER BY id ASC",
+    [req.user.id, room.id]
+  );
+  res.json({
+    items: await serializeWithObservations(rows),
+    totalDetected: rows.length,
+    isMock: false,
+    provider: 'groq',
+    viewsAnalyzed: result.viewsAnalyzed,
+    viewsFailed: result.viewsFailed,
+  });
+}
 
 /** DELETE /api/rooms/:id */
 const deleteRoom = asyncHandler(async (req, res) => {

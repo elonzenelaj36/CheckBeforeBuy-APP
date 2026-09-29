@@ -9,8 +9,26 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
+import ItemHighlight from '@/components/ItemHighlight';
+import { CAPTURE_FRAME_ASPECT, projectToView } from '@/services/roomViewMath';
+
 import SpatialBackdrop, { type SpatialFrame } from './SpatialBackdrop';
 import { useSpatialAngle } from './useSpatialAngle';
+
+/**
+ * A detected room item to outline: the view it was seen best in (the room
+ * turns there when it changes) and the room-direction range + vertical extent
+ * it covers, so the outline stays on the object while the user keeps turning.
+ */
+export type SpatialHighlight = {
+  key: string;
+  frameAngleDeg: number;
+  directionDeg: number;
+  halfWidthDeg: number;
+  y1: number;
+  y2: number;
+  label?: string;
+};
 
 type Props = {
   frames: SpatialFrame[];
@@ -21,12 +39,31 @@ type Props = {
   width: number;
   height: number;
   onTap?: () => void;
+  highlight?: SpatialHighlight | null;
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
 };
 
-export default function SpatialRoomView({ frames, loops, fovDeg, initialAngle, width, height, onTap, style, children }: Props) {
-  const { angle, drag } = useSpatialAngle(frames, loops, { initialAngle });
+export default function SpatialRoomView({
+  frames,
+  loops,
+  fovDeg,
+  initialAngle,
+  width,
+  height,
+  onTap,
+  highlight,
+  style,
+  children,
+}: Props) {
+  const { angle, drag, snapTo } = useSpatialAngle(frames, loops, { initialAngle });
+
+  // Turn to the view the selected item was seen best in.
+  const highlightKey = highlight?.key ?? null;
+  const highlightAngle = highlight?.frameAngleDeg ?? null;
+  React.useEffect(() => {
+    if (highlightKey != null && highlightAngle != null) snapTo(highlightAngle);
+  }, [highlightKey, highlightAngle, snapTo]);
 
   // Swiping swaps images constantly — load every preview up front so it never flashes.
   React.useEffect(() => {
@@ -56,6 +93,20 @@ export default function SpatialRoomView({ frames, loops, fovDeg, initialAngle, w
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           {children}
         </View>
+        {highlight && (
+          <ItemHighlight
+            box={{
+              x1: projectToView(frames, loops, fovDeg, angle, highlight.directionDeg - highlight.halfWidthDeg),
+              x2: projectToView(frames, loops, fovDeg, angle, highlight.directionDeg + highlight.halfWidthDeg),
+              y1: highlight.y1,
+              y2: highlight.y2,
+            }}
+            containerWidth={width}
+            containerHeight={height}
+            imageAspect={CAPTURE_FRAME_ASPECT}
+            label={highlight.label}
+          />
+        )}
       </View>
     </GestureDetector>
   );

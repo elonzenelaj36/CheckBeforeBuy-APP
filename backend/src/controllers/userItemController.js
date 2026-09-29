@@ -18,6 +18,39 @@ function serialize(row) {
   };
 }
 
+/**
+ * Serialized items plus WHERE each AI-detected item was seen (see
+ * room_item_observations, migration 007): a box on a room photo or on a
+ * captured 180°/360° view, with the room direction for spatial rooms.
+ * Manual items simply have no observations.
+ */
+async function serializeWithObservations(rows) {
+  const items = rows.map(serialize);
+  if (rows.length === 0) return items;
+  const [obs] = await pool.query(
+    `SELECT * FROM room_item_observations WHERE user_item_id IN (${rows.map(() => '?').join(',')}) ORDER BY confidence DESC, id ASC`,
+    rows.map((r) => r.id)
+  );
+  return items.map((item) => {
+    const mine = obs.filter((o) => String(o.user_item_id) === item.id);
+    return {
+      ...item,
+      confidence: mine.some((o) => o.confidence != null)
+        ? Math.max(...mine.filter((o) => o.confidence != null).map((o) => o.confidence))
+        : null,
+      observations: mine.map((o) => ({
+        id: String(o.id),
+        photoId: o.room_photo_id ? String(o.room_photo_id) : null,
+        frameId: o.capture_frame_id ? String(o.capture_frame_id) : null,
+        box: { x1: o.box_x1, y1: o.box_y1, x2: o.box_x2, y2: o.box_y2 },
+        confidence: o.confidence,
+        directionDeg: o.direction_deg,
+        halfWidthDeg: o.half_width_deg,
+      })),
+    };
+  });
+}
+
 /** GET /api/items?roomId= */
 const listUserItems = asyncHandler(async (req, res) => {
   const { roomId } = req.query;
@@ -29,7 +62,7 @@ const listUserItems = asyncHandler(async (req, res) => {
       ])
     : await pool.query('SELECT * FROM user_items WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
 
-  res.json({ items: rows.map(serialize) });
+  res.json({ items: await serializeWithObservations(rows) });
 });
 
 /** POST /api/items — multipart/form-data: name, category, roomId (optional), image (optional) */
@@ -97,4 +130,5 @@ module.exports = {
   updateUserItem,
   deleteUserItem,
   serializeUserItem: serialize,
+  serializeWithObservations,
 };

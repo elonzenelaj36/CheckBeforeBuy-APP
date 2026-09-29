@@ -276,6 +276,36 @@ CREATE TABLE IF NOT EXISTS product_models (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ── room_item_observations ───────────────────────────────────────────────────
+-- Where each AI-detected room item (user_items, source = 'ai') was seen: a box
+-- on a room photo or on a captured 180°/360° view. See migration 007.
+-- direction_deg / half_width_deg : spatial rooms only — the room direction of
+--   the box centre and half its angular width (same angle scale as the
+--   capture's frames), used to merge repeated sightings and to follow the item
+--   while the user turns the room. NULL for photo rooms.
+CREATE TABLE IF NOT EXISTS room_item_observations (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_item_id      BIGINT UNSIGNED NOT NULL,
+  room_photo_id     BIGINT UNSIGNED NULL,
+  capture_frame_id  BIGINT UNSIGNED NULL,
+  box_x1            FLOAT           NOT NULL,
+  box_y1            FLOAT           NOT NULL,
+  box_x2            FLOAT           NOT NULL,
+  box_y2            FLOAT           NOT NULL,
+  confidence        FLOAT           NULL,
+  direction_deg     FLOAT           NULL,
+  half_width_deg    FLOAT           NULL,
+  created_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_room_item_obs_item (user_item_id),
+  CONSTRAINT fk_room_item_obs_item
+    FOREIGN KEY (user_item_id) REFERENCES user_items(id) ON DELETE CASCADE,
+  CONSTRAINT fk_room_item_obs_photo
+    FOREIGN KEY (room_photo_id) REFERENCES room_photos(id) ON DELETE CASCADE,
+  CONSTRAINT fk_room_item_obs_frame
+    FOREIGN KEY (capture_frame_id) REFERENCES room_capture_frames(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ── price_history ───────────────────────────────────────────────────────────
 -- Historical price points for a product, recorded whenever an AI check (or
 -- a user) reports a price for it. Lets us later show price trends.

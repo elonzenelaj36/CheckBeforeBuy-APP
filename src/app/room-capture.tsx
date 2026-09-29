@@ -44,6 +44,7 @@ import {
   type CaptureLens,
   type CaptureMode,
 } from '@/services/roomCaptures';
+import { analyzeRoom } from '@/services/rooms';
 
 const MAX_SECONDS = 90;
 /** Stop a little past the target so the last direction has frames too. */
@@ -207,6 +208,9 @@ export default function RoomCapture() {
     try {
       await uploadRoomCapture(roomId, recording.uri, recording.mode, recording.motion, recording.lens);
       setLastRecording(null);
+      // Find the furniture in the new views in the background (Items Detected on the room page).
+      // It can take a minute; a failure never affects the capture or the room.
+      analyzeRoom(roomId).catch((e) => console.warn('[room-capture] item detection failed:', e?.message ?? e));
       router.replace({ pathname: '/room-view', params: { roomId } });
     } catch (e: any) {
       const status: number | undefined = e?.status;

@@ -14,6 +14,21 @@ const USER_ITEMS_CACHE_KEY = '@check_before_buy_user_items_cache_v2';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * Where an AI-detected item was seen: a box (0..1 on that image) on a room
+ * photo (`photoId`) or on a captured 180°/360° view (`frameId`, plus the room
+ * direction range it covers). 2D only — no 3D room coordinates.
+ */
+export type ItemObservation = {
+  id: string;
+  photoId: string | null;
+  frameId: string | null;
+  box: { x1: number; y1: number; x2: number; y2: number };
+  confidence: number | null;
+  directionDeg: number | null;
+  halfWidthDeg: number | null;
+};
+
 export type UserItem = {
   id: string;
   name: string;
@@ -23,6 +38,10 @@ export type UserItem = {
   category: string;
   source: 'manual' | 'ai';
   createdAt: string;
+  /** Highest detection confidence (AI items; null/absent otherwise). */
+  confidence?: number | null;
+  /** Strongest sighting first. Absent for manual items and older cached data. */
+  observations?: ItemObservation[];
 };
 
 // ── Cache helpers ────────────────────────────────────────────────────────────
