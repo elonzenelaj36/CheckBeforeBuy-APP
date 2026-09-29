@@ -4,12 +4,16 @@
  * everywhere: drag moves the direction, a flick keeps it gliding, and it
  * comes to rest exactly on a real captured frame.
  *
- * The live angle is kept in a shared value (read by gestures/animations
- * without rebuilding them) and mirrored into React state for rendering.
+ * The live angle, the drag's start angle and the running animation are kept
+ * in plain refs (read by the drag/animation callbacks without rebuilding them)
+ * and the angle is mirrored into React state for rendering. Everything here
+ * runs on the JS thread. (These used to be Reanimated shared values: a value
+ * written from the JS thread reaches the UI runtime asynchronously, so the
+ * first drag update could read the PREVIOUS drag's start angle — the room
+ * flashed back to where the last swipe began for one frame at every touch.)
  */
 
 import React from 'react';
-import { useSharedValue } from 'react-native-reanimated';
 
 import { blendAt, dragToDegrees, normalizeAngle, type ViewFrame } from '@/services/roomViewMath';
 
@@ -27,24 +31,27 @@ export function useSpatialAngle(
 ) {
   const { onSettle } = options;
   const [angle, setAngle] = React.useState(options.initialAngle ?? frames[0]?.angleDeg ?? 0);
-  const angleNow = useSharedValue(angle);
-  const dragStart = useSharedValue(0);
-  const animation = useSharedValue<number | null>(null);
+  const angleRef = React.useRef(angle);
+  const dragStart = React.useRef(0);
+  const animation = React.useRef<number | null>(null);
 
   const moveTo = React.useCallback(
     (a: number) => {
       const next = normalizeAngle(frames, loops, a);
-      angleNow.set(next);
+      angleRef.current = next;
       setAngle(next);
     },
-    [frames, loops, angleNow]
+    [frames, loops]
   );
 
+  /** The live angle right now (also between renders), for callbacks. */
+  const getAngle = React.useCallback(() => angleRef.current, []);
+
   const stopAnimation = React.useCallback(() => {
-    const id = animation.get();
+    const id = animation.current;
     if (id != null) cancelAnimationFrame(id);
-    animation.set(null);
-  }, [animation]);
+    animation.current = null;
+  }, []);
 
   React.useEffect(() => stopAnimation, [stopAnimation]);
 
@@ -61,7 +68,7 @@ export function useSpatialAngle(
   const snapTo = React.useCallback(
     (target: number) => {
       stopAnimation();
-      const from = angleNow.get();
+      const from = angleRef.current;
       let delta = target - from;
       if (loops) delta = ((delta + 540) % 360) - 180;
       const started = Date.now();
@@ -69,22 +76,22 @@ export function useSpatialAngle(
         const t = Math.min((Date.now() - started) / SNAP_MS, 1);
         moveTo(from + delta * (1 - (1 - t) ** 3));
         if (t < 1) {
-          animation.set(requestAnimationFrame(tick));
+          animation.current = requestAnimationFrame(tick);
         } else {
-          animation.set(null);
-          onSettle?.(angleNow.get());
+          animation.current = null;
+          onSettle?.(angleRef.current);
         }
       };
-      animation.set(requestAnimationFrame(tick));
+      animation.current = requestAnimationFrame(tick);
     },
-    [loops, moveTo, stopAnimation, angleNow, animation, onSettle]
+    [loops, moveTo, stopAnimation, onSettle]
   );
 
   const snapToNearest = React.useCallback(() => {
     if (frames.length === 0) return;
-    const { nearest } = blendAt(frames, loops, angleNow.get());
+    const { nearest } = blendAt(frames, loops, angleRef.current);
     snapTo(frames[nearest].angleDeg);
-  }, [frames, loops, snapTo, angleNow]);
+  }, [frames, loops, snapTo]);
 
   const fling = React.useCallback(
     (velocityDegS: number) => {
@@ -95,20 +102,20 @@ export function useSpatialAngle(
         const now = Date.now();
         const dt = Math.min((now - last) / 1000, 0.05);
         last = now;
-        const before = angleNow.get();
+        const before = angleRef.current;
         moveTo(before + v * dt);
         v *= FLING_DECAY ** (dt / 0.016);
-        const hitEnd = !loops && angleNow.get() === before && v !== 0;
+        const hitEnd = !loops && angleRef.current === before && v !== 0;
         if (Math.abs(v) < FLING_STOP_DEG_S || hitEnd) {
-          animation.set(null);
+          animation.current = null;
           snapToNearest();
           return;
         }
-        animation.set(requestAnimationFrame(tick));
+        animation.current = requestAnimationFrame(tick);
       };
-      animation.set(requestAnimationFrame(tick));
+      animation.current = requestAnimationFrame(tick);
     },
-    [loops, moveTo, snapToNearest, stopAnimation, angleNow, animation]
+    [loops, moveTo, snapToNearest, stopAnimation]
   );
 
   /**
@@ -117,26 +124,26 @@ export function useSpatialAngle(
    * nothing keeps moving under the finger.
    */
   const settleNow = React.useCallback(() => {
-    if (animation.get() == null || frames.length === 0) return;
+    if (animation.current == null || frames.length === 0) return;
     stopAnimation();
-    const target = frames[blendAt(frames, loops, angleNow.get()).nearest].angleDeg;
+    const target = frames[blendAt(frames, loops, angleRef.current).nearest].angleDeg;
     moveTo(target);
     onSettle?.(target);
-  }, [animation, frames, loops, angleNow, moveTo, stopAnimation, onSettle]);
+  }, [frames, loops, moveTo, stopAnimation, onSettle]);
 
   /** Drag handlers (JS thread) for a view `width` px wide showing `fovDeg` degrees. */
   const drag = React.useMemo(
     () => ({
       begin: () => {
         stopAnimation();
-        dragStart.set(angleNow.get());
+        dragStart.current = angleRef.current;
       },
       update: (translationX: number, width: number, fovDeg: number) =>
-        moveTo(dragStart.get() + dragToDegrees(translationX, width, fovDeg)),
+        moveTo(dragStart.current + dragToDegrees(translationX, width, fovDeg)),
       end: (velocityX: number, width: number, fovDeg: number) => fling(dragToDegrees(velocityX, width, fovDeg)),
     }),
-    [stopAnimation, dragStart, angleNow, moveTo, fling]
+    [stopAnimation, moveTo, fling]
   );
 
-  return { angle, angleNow, jumpTo, snapTo, snapToNearest, fling, stopAnimation, settleNow, drag };
+  return { angle, getAngle, jumpTo, snapTo, snapToNearest, fling, stopAnimation, settleNow, drag };
 }

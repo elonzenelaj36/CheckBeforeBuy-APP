@@ -9,7 +9,7 @@ import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
-import { CAPTURE_LENSES, getRoomCapture, type RoomCapture, type RoomCaptureSummary } from '@/services/roomCaptures';
+import { captureFovDeg, getRoomCapture, type RoomCapture, type RoomCaptureSummary } from '@/services/roomCaptures';
 import type { ItemObservation } from '@/services/userItems';
 
 import SpatialRoomView, { type SpatialHighlight } from './SpatialRoomView';
@@ -88,7 +88,7 @@ export default function RoomSpatialHero({ roomId, capture, width, height, onTap,
     <SpatialRoomView
       frames={full.frames}
       loops={full.loops}
-      fovDeg={CAPTURE_LENSES[full.lens ?? 'wide']?.fovDeg ?? CAPTURE_LENSES.wide.fovDeg}
+      fovDeg={captureFovDeg(full)}
       initialAngle={initial}
       width={width}
       height={height}

@@ -52,6 +52,9 @@ const env = {
     // Web product search (SerpApi) — see webSearchService.js. Backend-only.
     provider: required('SEARCH_PROVIDER', 'serpapi'),
     apiKey: required('SEARCH_API_KEY', ''),
+    // Google Lens market for visual search (visualSearchService.js). "xk" returns
+    // nothing; a euro country gives EUR prices for the same product.
+    lensCountry: required('LENS_COUNTRY', 'de'),
   },
 
   imageAi: {

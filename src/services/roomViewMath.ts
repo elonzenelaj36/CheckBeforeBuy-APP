@@ -10,7 +10,15 @@
  *     direction is clamped to the first..last frame — no wrap.
  */
 
-export type ViewFrame = { angleDeg: number };
+/**
+ * `alignScore` (from the backend's picture check) = how well this frame lines
+ * up with the next one; 0 means they don't, so the viewer switches between
+ * them quickly (SNAP_BAND) instead of showing both half-faded.
+ */
+export type ViewFrame = { angleDeg: number; alignScore?: number | null };
+
+/** Share of a gap over which two frames that don't line up are faded (a quick snap at the midpoint). */
+export const SNAP_BAND = 0.15;
 
 export type ViewBlend = {
   /** Frame drawn underneath (fully opaque). */
@@ -65,7 +73,9 @@ export function blendAt(frames: ViewFrame[], loops: boolean, angle: number): Vie
     span = frames[upper].angleDeg - frames[lower].angleDeg;
     offset = a - frames[lower].angleDeg;
   }
-  const weight = span > 0 ? Math.min(Math.max(offset / span, 0), 1) : 0;
+  const raw = span > 0 ? Math.min(Math.max(offset / span, 0), 1) : 0;
+  const snap = upper === lower + 1 && frames[lower].alignScore === 0;
+  const weight = snap ? Math.min(Math.max((raw - (0.5 - SNAP_BAND / 2)) / SNAP_BAND, 0), 1) : raw;
   return { lower, upper, weight, nearest: weight < 0.5 ? lower : upper };
 }
 

@@ -1,4 +1,5 @@
 const { pool } = require('../db/connection');
+const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { optionalNumber, requireString } = require('../utils/validate');
@@ -8,6 +9,9 @@ const { analyzeProductImage } = require('../services/aiService');
 const webSearch = require('../services/webSearchService');
 const { buildComparison, toLegacyFields } = require('../services/comparisonService');
 const localDiscovery = require('../services/localDiscoveryService');
+const visualSearch = require('../services/visualSearchService');
+const { writeVerdict } = require('../services/verdictService');
+const { toEur } = require('../services/fxService');
 const { buildRoomContext, parseRoomFit } = require('../services/roomContextService');
 const { getApproximateLocationFromIp, getClientIp } = require('../services/locationService');
 const path = require('path');
@@ -77,6 +81,28 @@ const createProductCheck = asyncHandler(async (req, res) => {
     }
   }
 
+  // Coarse city only: one the client sent, else best-effort IP lookup
+  // (null on private/dev IPs). Never stored; only a word in search queries.
+  let city = req.body.city ? String(req.body.city).trim().slice(0, 60) : null;
+  let country = req.body.country ? String(req.body.country).trim().slice(0, 60) : null;
+  if (!city) {
+    const geo = await getApproximateLocationFromIp(getClientIp(req)).catch(() => null);
+    city = geo?.city || null;
+    country = geo?.country || country;
+  }
+  // Kosovo is the default market; a city abroad is not used (same rule as the online search).
+  const localCity = city && (!country || /kosov/i.test(country)) ? city : null;
+
+  // Visual search (Google Lens) needs only the photo, so it runs while the AI
+  // analyses it. It never throws (failures come back as a status).
+  // (Skipped when the AI isn't configured: the analysis is then a mock and its results are never searched.)
+  const lensPromise = webSearch.isConfigured() && env.ai.apiKey
+    ? visualSearch.searchByImage(absoluteImagePath, { city: localCity }).catch((err) => {
+        console.error('[product-checks] visual search failed:', err.message);
+        return { status: 'unavailable', identity: null, matches: [], social: [] };
+      })
+    : null;
+
   let aiResult;
   try {
     aiResult = await analyzeProductImage({
@@ -90,7 +116,10 @@ const createProductCheck = asyncHandler(async (req, res) => {
   }
 
   const { product, analysis, isMock, provider, model } = aiResult;
-  const finalProductName = userProductName || product.name;
+  // A model recognised by image search ("IKEA POÄNG armchair") names the product
+  // better than the AI's generic guess; a name the user typed always wins.
+  const lensResult = lensPromise && !isMock ? await lensPromise : null;
+  const finalProductName = userProductName || lensResult?.identity || product.name;
 
   // ── Web search + price-aware comparison ────────────────────────────────
   // Groq output is used as-is. A search failure never fails the analysis:
@@ -101,28 +130,25 @@ const createProductCheck = asyncHandler(async (req, res) => {
   // Nearby stores and social profiles: separate searches that fail on their own.
   let local = { status: 'skipped', stores: [] };
   let social = { status: 'skipped', profiles: [] };
+  let lens = { status: 'skipped', identity: null, matches: [], social: [] };
+  let shopStatus = 'skipped';
   if (!isMock) {
     if (!webSearch.isConfigured()) {
       searchStatus = 'not_configured';
       local.status = 'not_configured';
       social.status = 'not_configured';
+      lens.status = 'not_configured';
+      shopStatus = 'not_configured';
     } else {
-      // Coarse city only: one the client sent, else best-effort IP lookup
-      // (null on private/dev IPs). Never stored; only a word in the query.
-      let city = req.body.city ? String(req.body.city).trim().slice(0, 60) : null;
-      let country = req.body.country ? String(req.body.country).trim().slice(0, 60) : null;
-      if (!city) {
-        const geo = await getApproximateLocationFromIp(getClientIp(req)).catch(() => null);
-        city = geo?.city || null;
-        country = geo?.country || country;
-      }
-      // Kosovo is the default market; a city abroad is not used (same rule as the online search).
-      const localCity = city && (!country || /kosov/i.test(country)) ? city : null;
-      const discovery = { name: finalProductName, category: product.category, city: localCity };
+      lens = lensResult || lens;
+      // When Lens recognised a specific model (e.g. "IKEA POÄNG armchair") the
+      // text searches look for THAT, unless the user named the product themselves.
+      const searchName = !userProductName && lens.identity ? lens.identity : finalProductName;
+      const discovery = { name: searchName, category: product.category, city: localCity };
 
-      const [online, stores, profiles] = await Promise.allSettled([
+      const [online, shops, stores, profiles] = await Promise.allSettled([
         webSearch.searchProductWeb({
-          name: finalProductName,
+          name: searchName,
           brand: product.brand,
           category: product.category,
           confidence: analysis.confidence,
@@ -130,18 +156,61 @@ const createProductCheck = asyncHandler(async (req, res) => {
           country,
           characteristics,
         }),
+        // Kosovo online shops (GjirafaMall, Foleja, MerrJep…) searched directly for this model / product type.
+        webSearch.searchKosovoShops({
+          name: searchName,
+          identity: lens.identity,
+          brand: product.brand,
+          category: product.category,
+          confidence: analysis.confidence,
+          city: localCity,
+        }),
         localDiscovery.searchLocalStores(discovery),
         localDiscovery.searchSocialProfiles(discovery),
       ]);
-      if (online.status === 'fulfilled') {
-        matches = online.value.matches;
-        searchStatus = 'ok';
-      } else {
-        console.error('[product-checks] alternative search failed:', online.reason?.message);
-        searchStatus = 'unavailable';
-      }
+      const textMatches = online.status === 'fulfilled' ? online.value.matches : [];
+      if (online.status === 'rejected') console.error('[product-checks] alternative search failed:', online.reason?.message);
+      const shopMatches = shops.status === 'fulfilled' ? shops.value.matches : [];
+      shopStatus = shops.status === 'fulfilled' ? shops.value.status : 'unavailable';
+      // Kosovo shops and image matches first, then text results; one entry per page.
+      const seenUrls = new Set();
+      matches = [...shopMatches, ...lens.matches, ...textMatches].filter((m) => {
+        const key = m.url.replace(/[#?].*$/, '');
+        if (seenUrls.has(key)) return false;
+        seenUrls.add(key);
+        return true;
+      });
+      // Prices in other currencies get an approximate EUR value (ECB reference rates) — reference only.
+      await Promise.all(
+        matches
+          .filter((m) => m.price !== null && m.price !== undefined && m.currency && m.currency !== 'EUR')
+          .map(async (m) => {
+            m.convertedEur = await toEur(m.price, m.currency).catch(() => null);
+          })
+      );
+      searchStatus = online.status === 'fulfilled' || lens.status === 'ok' || shopStatus === 'ok' ? 'ok' : 'unavailable';
+
       local = stores.status === 'fulfilled' ? stores.value : { status: 'unavailable', stores: [] };
       social = profiles.status === 'fulfilled' ? profiles.value : { status: 'unavailable', profiles: [] };
+      // Posts that show the same-looking product (image match) lead the social group.
+      const seenSocial = new Set();
+      social = {
+        ...social,
+        status: social.status === 'ok' || lens.social.length ? 'ok' : social.status,
+        profiles: [...lens.social, ...social.profiles]
+          .filter((p) => {
+            const key = `${p.sourcePlatform}|${(p.handle || p.url).toLowerCase()}`;
+            if (seenSocial.has(key)) return false;
+            seenSocial.add(key);
+            return true;
+          })
+          // Nearby first (a salon in the city/Kosovo), image matches before profiles found by text.
+          .sort((a, b) => {
+            const near = (p) => (p.locality === 'city' ? 0 : p.locality === 'kosovo' || p.locality === 'regional' ? 1 : 2);
+            return near(a) - near(b) || (b.imageMatch ? 1 : 0) - (a.imageMatch ? 1 : 0);
+          })
+          .slice(0, 6),
+      };
     }
   }
 
@@ -216,22 +285,33 @@ const createProductCheck = asyncHandler(async (req, res) => {
 
   const [rows] = await pool.query('SELECT * FROM product_checks WHERE id = ?', [checkResult.insertId]);
 
+  const fullComparison = {
+    ...comparison,
+    identifiedAs: lens.identity,
+    localStores: local.stores,
+    socialProfiles: social.profiles,
+    search: { ...comparison.search, localStatus: local.status, socialStatus: social.status, lensStatus: lens.status, kosovoShopsStatus: shopStatus },
+  };
+  const roomResult = roomContext
+    ? { room: roomContext.room, items: roomContext.items, fit: parseRoomFit(aiResult.raw, roomContext.items) }
+    : null;
+  // One paragraph joining price, room fit and the product (never fails the request).
+  const verdict = isMock
+    ? null
+    : await writeVerdict({
+        product: { name: finalProductName, category: product.category, brand: product.brand },
+        characteristics,
+        identifiedAs: lens.identity,
+        comparison: fullComparison,
+        roomContext: roomResult,
+      });
+
   res.status(201).json({
     ...serializeCheck(rows[0]),
-    comparison: {
-      ...comparison,
-      localStores: local.stores,
-      socialProfiles: social.profiles,
-      search: { ...comparison.search, localStatus: local.status, socialStatus: social.status },
-    },
+    comparison: fullComparison,
     characteristics,
-    roomContext: roomContext
-      ? {
-          room: roomContext.room,
-          items: roomContext.items,
-          fit: parseRoomFit(aiResult.raw, roomContext.items),
-        }
-      : null,
+    roomContext: roomResult,
+    verdict,
   });
 });
 

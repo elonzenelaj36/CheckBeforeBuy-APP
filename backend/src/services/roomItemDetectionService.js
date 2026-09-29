@@ -34,6 +34,7 @@ const env = require('../config/env');
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const REQUEST_TIMEOUT_MS = 60000;
 const MAX_RATE_LIMIT_RETRIES = 5;
+const MAX_NETWORK_RETRIES = 2;
 const SEND_SIDE = 1280;
 
 /** Furniture-oriented categories (what the model is allowed to return). */
@@ -54,7 +55,7 @@ const MIN_CONFIDENCE = 0.5;
 const MIN_AREA = 0.0015;
 
 /** Horizontal field of view per capture lens (mirrors CAPTURE_LENSES in src/services/roomCaptures.ts). */
-const LENS_FOV_DEG = { wide: 42, 'ultra-wide': 75 };
+const LENS_FOV_DEG = { wide: 42, 'ultra-wide': 60 }; // 0.5×: ≈60° measured in portrait (was 75°)
 /** Views are this share of a field of view apart, so every object is fully in at least one view. */
 const VIEW_SPACING_OF_FOV = 0.7;
 const MAX_VIEWS = 8;
@@ -69,7 +70,9 @@ const PROMPT =
   'List each physical object once.\n' +
   'For each object return a tight bounding box in coordinates normalized 0-1000 (x1,y1 = top-left, x2,y2 = ' +
   'bottom-right) and your confidence 0-1.\n' +
-  'Return JSON only: {"items":[{"label":"short name","category":"one of the categories","x1":0,"y1":0,"x2":0,"y2":0,"confidence":0.0}]}';
+  'Also give its main visible color (1-3 words, e.g. "dark brown", "light gray") and main material if you can tell ' +
+  '(e.g. "wood", "fabric", "leather", "metal", "glass"; "" if unsure).\n' +
+  'Return JSON only: {"items":[{"label":"short name","category":"one of the categories","x1":0,"y1":0,"x2":0,"y2":0,"confidence":0.0,"color":"","material":""}]}';
 
 class DetectionUnavailableError extends Error {}
 
@@ -97,7 +100,8 @@ function groupOf(category) {
  * low confidence and tiny boxes.
  */
 function parseDetections(raw, width, height) {
-  const items = Array.isArray(raw?.items) ? raw.items : [];
+  // Usually {"items":[…]}, but the model sometimes returns the bare array (seen 2026-09-29).
+  const items = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
   const L = Math.max(width, height);
   const out = [];
   for (const it of items) {
@@ -117,7 +121,8 @@ function parseDetections(raw, width, height) {
     const confidence = Number.isFinite(Number(it.confidence)) ? Math.min(1, Math.max(0, Number(it.confidence))) : null;
     if (confidence != null && confidence < MIN_CONFIDENCE) continue;
     const label = String(it.label || category).trim().slice(0, 60) || category;
-    out.push({ category, label, confidence, box });
+    const text = (v) => (typeof v === 'string' && v.trim() ? v.trim().toLowerCase().slice(0, 40) : null);
+    out.push({ category, label, confidence, box, color: text(it.color), material: text(it.material) });
   }
   return out;
 }
@@ -146,13 +151,25 @@ async function detectInImage(absoluteImagePath) {
     ],
   });
 
+  let networkRetries = 0;
   for (let attempt = 0; ; attempt += 1) {
-    const response = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.ai.apiKey}` },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      body,
-    });
+    let response;
+    try {
+      response = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.ai.apiKey}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        body,
+      });
+    } catch (err) {
+      // A dropped connection ("fetch failed") is usually transient: retry a couple of times.
+      if (networkRetries < MAX_NETWORK_RETRIES && err.name !== 'TimeoutError') {
+        networkRetries += 1;
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        continue;
+      }
+      throw err;
+    }
     const text = await response.text();
     if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
       // Free tier: wait as long as Groq asks (plus a little), then retry.
@@ -241,10 +258,14 @@ function mergeObservations(observations, { loops }) {
     const clear = obsList.filter((o) => o.box.x1 > 0.01 && o.box.x2 < 0.99);
     const best = [...(clear.length ? clear : obsList)].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
     const known = obsList.map((o) => o.confidence).filter((c) => c != null);
+    // Color/material: from the clearest sighting, else the first one that has it.
+    const ranked = [best, ...obsList.filter((o) => o !== best)];
     return {
       category: best.category,
       label: best.label,
       confidence: known.length ? Math.max(...known) : null,
+      color: ranked.find((o) => o.color)?.color ?? null,
+      material: ranked.find((o) => o.material)?.material ?? null,
       observations: [...obsList].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)),
     };
   });
@@ -260,7 +281,8 @@ async function detectRoomItems({ photo, capture }) {
   if (!isAvailable()) throw new DetectionUnavailableError('Item detection needs AI_PROVIDER=groq and AI_API_KEY.');
 
   if (capture) {
-    const fovDeg = LENS_FOV_DEG[capture.lens] || LENS_FOV_DEG.wide;
+    // The field of view measured from this capture's own views when known (captureAlignmentService).
+    const fovDeg = capture.fovDeg || LENS_FOV_DEG[capture.lens] || LENS_FOV_DEG.wide;
     const views = pickViews(capture.frames, { loops: capture.loops, fovDeg });
     const observations = [];
     let failed = 0;
@@ -300,6 +322,8 @@ async function detectRoomItems({ photo, capture }) {
         category: d.category,
         label: d.label,
         confidence: d.confidence,
+        color: d.color,
+        material: d.material,
         observations: [{ ...d, roomPhotoId: photo.id, directionDeg: null, halfWidthDeg: null }],
       })),
       viewsAnalyzed: 1,

@@ -37,6 +37,9 @@ export type UserItem = {
   roomId: string | null;
   category: string;
   source: 'manual' | 'ai';
+  /** Detected main color / material (AI items; null when unknown or detected before this existed). */
+  color?: string | null;
+  material?: string | null;
   createdAt: string;
   /** Highest detection confidence (AI items; null/absent otherwise). */
   confidence?: number | null;

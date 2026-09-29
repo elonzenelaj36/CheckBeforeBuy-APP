@@ -230,6 +230,7 @@ async function detectItemsWithLocations(req, res, room) {
       capture: {
         loops: room.capture.loops,
         lens: room.capture.lens,
+        fovDeg: room.capture.fovDeg ?? null,
         frames: frames.map((f) => ({
           id: f.id,
           angleDeg: Number(f.angle_deg),
@@ -264,8 +265,16 @@ async function detectItemsWithLocations(req, res, room) {
       const name = item.label.charAt(0).toUpperCase() + item.label.slice(1);
       const views = item.observations.length;
       const [ins] = await conn.query(
-        `INSERT INTO user_items (user_id, room_id, name, category, description, source) VALUES (?, ?, ?, ?, ?, 'ai')`,
-        [req.user.id, room.id, name, item.category, views > 1 ? `Detected automatically in ${views} views` : 'Detected automatically']
+        `INSERT INTO user_items (user_id, room_id, name, category, description, color, material, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'ai')`,
+        [
+          req.user.id,
+          room.id,
+          name,
+          item.category,
+          views > 1 ? `Detected automatically in ${views} views` : 'Detected automatically',
+          item.color ?? null,
+          item.material ?? null,
+        ]
       );
       for (const o of item.observations) {
         await conn.query(

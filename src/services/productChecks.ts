@@ -29,10 +29,14 @@ export type ProductAlternative = {
   priceComparisonAvailable: boolean;
   url: string;
   source: string | null;
+  /** Found by image search (Google Lens) rather than by text. */
+  imageMatch?: boolean;
   /** Where the result comes from (absent on older responses = online store). */
   sourceType?: 'online_store' | 'local_store' | 'social_profile';
   sourcePlatform?: 'web' | 'google_maps' | 'instagram' | 'facebook' | 'tiktok';
-  locality: 'city' | 'kosovo' | 'regional' | 'unknown' | 'international';
+  locality: 'city' | 'kosovo' | 'regional' | 'eu' | 'unknown' | 'international';
+  /** A price in another currency converted to EUR with ECB reference rates (reference only). */
+  convertedPrice?: { eur: number; rateDate: string | null } | null;
   localityLabel: string | null;
   matchType: 'strong' | 'similar' | 'general';
   priceDifference: number | null;
@@ -56,6 +60,8 @@ export type SocialProfileResult = ProductAlternative & {
   sourceType: 'social_profile';
   linkKind: 'profile' | 'post';
   postUrl: string;
+  /** For image-matched posts: the profile that posted it, when it could be read. */
+  profileUrl?: string | null;
   handle: string | null;
   snippet: string | null;
 };
@@ -74,12 +80,29 @@ export type ProductComparison = {
     difference: number;
     differencePercent: number;
     currency: string;
+    /** true when the cheaper listing is the same model (not just similar). */
+    sameModel?: boolean;
+    source?: string | null;
   } | null;
   priceComparisonAvailable: boolean;
   userPrice: number | null;
   currency: string;
   exactMatch: ProductAlternative | null;
   alternatives: ProductAlternative[];
+  /** How much price evidence the decision rests on (null when no price judgment was made). */
+  confidence?: 'high' | 'medium' | 'low' | null;
+  evidence?: {
+    eurPrices: number;
+    sameModelEurPrices: number;
+    ranges: number;
+    convertedReferences: number;
+    unpriced: number;
+    currencies: string[];
+  };
+  /** Price range of same-model listings with a comparable price (null if none). */
+  exactPriceStats?: { count: number; min: number; max: number } | null;
+  /** What image search recognised, e.g. "IKEA POÄNG armchair" (null if nothing specific). */
+  identifiedAs?: string | null;
   /** Nearby stores and social profiles (absent on older responses). */
   localStores?: LocalStoreResult[];
   socialProfiles?: SocialProfileResult[];
@@ -90,6 +113,8 @@ export type ProductComparison = {
     pricedResults: number;
     localStatus?: SearchStatus;
     socialStatus?: SearchStatus;
+    lensStatus?: SearchStatus;
+    kosovoShopsStatus?: SearchStatus;
   };
 };
 
@@ -144,6 +169,14 @@ export type ProductCheckResult = {
   characteristics?: string[];
   /** Only when a room was chosen for the analysis. */
   roomContext?: RoomContextResult | null;
+  /** One paragraph joining price, room fit and the product (null for mock analyses). */
+  verdict?: {
+    title: string;
+    text: string;
+    decision: ComparisonDecision;
+    /** 'ai' = written by the AI from checked facts; 'template' = plain fallback sentence. */
+    source: 'ai' | 'template';
+  } | null;
 };
 
 /**
@@ -159,7 +192,8 @@ export async function analyzeProduct(
   imageUri: string,
   userPrice?: number,
   productName?: string,
-  roomId?: string
+  roomId?: string,
+  location?: { city: string; country: string | null } | null
 ): Promise<ProductCheckResult> {
   return apiUploadImage<ProductCheckResult>(
     '/product-checks',
@@ -173,6 +207,9 @@ export async function analyzeProduct(
         ? { productName: productName.trim() }
         : {}),
       ...(roomId ? { roomId } : {}),
+      // City name only (see services/userLocation.ts) — never coordinates.
+      ...(location?.city ? { city: location.city } : {}),
+      ...(location?.country ? { country: location.country } : {}),
     }
   );
 }

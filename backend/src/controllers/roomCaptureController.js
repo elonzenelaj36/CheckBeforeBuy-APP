@@ -34,6 +34,8 @@ function serializeFrame(f) {
     sharpness: f.sharpness,
     /** How far the camera looked down for this view (null = not recorded, older captures). */
     pitchDeg: f.pitch_deg == null ? null : Number(f.pitch_deg),
+    /** How well this view lines up with the next one (0..1; 0 = don't cross-fade, snap). Null = not checked. */
+    alignScore: f.align_score == null ? null : Number(f.align_score),
   };
 }
 
@@ -57,6 +59,8 @@ function serializeCaptureSummary(c, selectedFrame, coverFrame) {
     mode: c.mode,
     /** Lens that recorded it; older captures have none → the normal 1× lens. */
     lens: c.lens || 'wide',
+    /** Field of view measured from the views (null = not measured: use the lens's nominal value). */
+    fovDeg: c.fov_deg == null ? null : Number(c.fov_deg),
     angleSource: c.angle_source,
     coverageDeg: Number(c.coverage_deg),
     loops: !!c.loops,
@@ -173,13 +177,14 @@ const createCapture = asyncHandler(async (req, res) => {
       await conn.beginTransaction();
       const [insert] = await conn.query(
         `INSERT INTO room_captures
-           (room_id, mode, angle_source, lens, coverage_deg, loops, frame_count, video_duration_ms, warnings)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (room_id, mode, angle_source, lens, fov_deg, coverage_deg, loops, frame_count, video_duration_ms, warnings)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           req.params.id,
           result.mode,
           result.angleSource,
           result.lens,
+          result.fovDeg ?? null,
           result.coverageDeg,
           result.loops,
           result.frames.length,
@@ -190,17 +195,19 @@ const createCapture = asyncHandler(async (req, res) => {
       captureId = insert.insertId;
       await conn.query(
         `INSERT INTO room_capture_frames
-           (capture_id, frame_index, angle_deg, video_time_ms, sharpness, brightness, pitch_deg, image_path, preview_path)
+           (capture_id, frame_index, angle_deg, gyro_angle_deg, video_time_ms, sharpness, brightness, pitch_deg, align_score, image_path, preview_path)
          VALUES ?`,
         [
           result.frames.map((f) => [
             captureId,
             f.index,
             f.angleDeg,
+            f.gyroAngleDeg ?? null,
             f.timeMs,
             f.sharpness,
             f.brightness,
             f.pitchDeg,
+            f.alignScore ?? null,
             storedPath(f.fileName),
             storedPath(f.previewFileName),
           ]),

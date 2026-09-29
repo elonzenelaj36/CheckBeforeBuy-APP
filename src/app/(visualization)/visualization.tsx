@@ -143,7 +143,7 @@ export default function Visualization() {
   const needsSpatial = !!session?.room.captureId && !spatial;
   const {
     angle: viewAngle,
-    angleNow: viewAngleNow,
+    getAngle: getViewAngle,
     jumpTo: jumpToView,
     settleNow: settleView,
     drag: roomDrag,
@@ -206,10 +206,10 @@ export default function Visualization() {
   const onComposerTransformEnd = React.useCallback(
     (productId: string, geometry: Pick<ProductTransform, 'x' | 'y' | 'width' | 'rotation'>) => {
       if (!spatial) return handleTransformEnd(productId, geometry);
-      const anchorDeg = directionAtView(spatialFrames, spatialLoops, fovDeg, viewAngleNow.get(), geometry.x);
+      const anchorDeg = directionAtView(spatialFrames, spatialLoops, fovDeg, getViewAngle(), geometry.x);
       updateProductTransform(productId, { ...geometry, placed: true, anchorDeg });
     },
-    [spatial, spatialFrames, spatialLoops, fovDeg, viewAngleNow]
+    [spatial, spatialFrames, spatialLoops, fovDeg, getViewAngle]
   );
 
   if (!session) {

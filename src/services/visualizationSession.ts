@@ -35,7 +35,7 @@ import { File } from 'expo-file-system';
 import { apiUploadMultipart } from './api';
 import { DEFAULT_ELEVATION_DEG, frameIndexForYaw, loadCachedFrames } from './modelFrames';
 import { removeProductBackground, type CutoutQuality } from './productCutouts';
-import { CAPTURE_LENSES, type CaptureMode, type RoomCapture, type SessionRoomView } from './roomCaptures';
+import { captureFovDeg, type CaptureMode, type RoomCapture, type SessionRoomView } from './roomCaptures';
 import { blendAt, directionAt, productElevationDeg, projectToFrame } from './roomViewMath';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
@@ -70,13 +70,15 @@ export type SessionSpatialFrame = {
   previewUri: string;
   /** How far the camera looked down for this view (null/absent = not recorded → level). */
   pitchDeg?: number | null;
+  /** How well it lines up with the next view (0 = snap, see roomViewMath.blendAt). */
+  alignScore?: number | null;
 };
 
 export type SessionSpatial = {
   captureId: string;
   mode: CaptureMode;
   loops: boolean;
-  /** Horizontal field of view of the frames (from the capture lens). */
+  /** Horizontal field of view of the frames (measured from the capture, else the lens's nominal value). */
   fovDeg: number;
   frames: SessionSpatialFrame[];
   /** Direction the user is looking, settled on a real frame (= room.view.angleDeg). */
@@ -391,12 +393,13 @@ function projectProducts(products: SessionProduct[], spatial: SessionSpatial, fr
 export function setSessionSpatial(capture: RoomCapture) {
   const session = getSession();
   if (!session || session.room.spatial || capture.frames.length === 0) return;
-  const frames = capture.frames.map(({ id, angleDeg, imageUri, previewUri, pitchDeg }) => ({
+  const frames = capture.frames.map(({ id, angleDeg, imageUri, previewUri, pitchDeg, alignScore }) => ({
     id,
     angleDeg,
     imageUri,
     previewUri,
     pitchDeg: pitchDeg ?? null,
+    alignScore: alignScore ?? null,
   }));
   const start =
     frames.find((f) => f.id === session.room.view?.frameId) ??
@@ -406,7 +409,7 @@ export function setSessionSpatial(capture: RoomCapture) {
     captureId: capture.id,
     mode: capture.mode,
     loops: capture.loops,
-    fovDeg: CAPTURE_LENSES[capture.lens ?? 'wide']?.fovDeg ?? CAPTURE_LENSES.wide.fovDeg,
+    fovDeg: captureFovDeg(capture),
     frames,
     viewDeg: start.angleDeg,
   };

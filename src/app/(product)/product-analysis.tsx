@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ScreenHeader from '@/components/ScreenHeader';
+import { getApproximateCity } from '@/services/userLocation';
 import { Colors } from '@/constants/colors';
 import {
   analyzeProduct,
@@ -32,9 +33,11 @@ function formatMoney(amount: number, currency: string | null): string {
 
 function priceLabel(item: ProductAlternative): string {
   if (item.price !== null) {
-    return item.originalPrice !== null
-      ? `${formatMoney(item.price, item.currency)} (was ${formatMoney(item.originalPrice, item.currency)})`
-      : formatMoney(item.price, item.currency);
+    const base =
+      item.originalPrice !== null
+        ? `${formatMoney(item.price, item.currency)} (was ${formatMoney(item.originalPrice, item.currency)})`
+        : formatMoney(item.price, item.currency);
+    return item.convertedPrice ? `${base} ≈ ${formatMoney(item.convertedPrice.eur, 'EUR')}` : base;
   }
   if (item.priceMin !== null && item.priceMax !== null) {
     return `${formatMoney(item.priceMin, item.currency)} – ${formatMoney(item.priceMax, item.currency)}`;
@@ -99,6 +102,11 @@ function SocialProfileCard({ item }: { item: SocialProfileResult }) {
           {item.linkKind === 'profile' ? 'OPEN PROFILE →' : 'VIEW POST →'}
         </Text>
       </TouchableOpacity>
+      {item.linkKind === 'post' && item.profileUrl && (
+        <TouchableOpacity onPress={() => Linking.openURL(item.profileUrl!)}>
+          <Text style={styles.matchLink}>OPEN PROFILE →</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -163,6 +171,7 @@ export default function ProductAnalysis() {
   const [result, setResult] = React.useState<ProductCheckResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [showDetails, setShowDetails] = React.useState(false);
 
   const runAnalysis = React.useCallback(() => {
     if (!imageUri) {
@@ -174,12 +183,17 @@ export default function ProductAnalysis() {
     setLoading(true);
     setError(null);
 
-    analyzeProduct(
-      imageUri,
-      userPrice ? Number(userPrice) : undefined,
-      productName,
-      roomId
-    )
+    // City-level location for nearby results (null if unavailable/denied — analysis runs anyway).
+    getApproximateCity()
+      .then((location) =>
+        analyzeProduct(
+          imageUri,
+          userPrice ? Number(userPrice) : undefined,
+          productName,
+          roomId,
+          location
+        )
+      )
       .then((res) => {
         setResult(res);
         setLoading(false);
@@ -232,6 +246,7 @@ export default function ProductAnalysis() {
   }
 
   const { analysis, product } = result;
+  const verdict = result.verdict ?? null;
   const comparison = result.comparison;
   const characteristics = result.characteristics ?? [];
 
@@ -253,8 +268,12 @@ export default function ProductAnalysis() {
           ? Colors.dangerDim
           : Colors.surface2;
 
+  // Same model (exact / image match) vs merely similar products.
+  const sameModelMore = comparison
+    ? comparison.alternatives.filter((a) => a !== comparison.exactMatch && a.matchType === 'strong')
+    : [];
   const otherAlternatives = comparison
-    ? comparison.alternatives.filter((a) => a !== comparison.exactMatch)
+    ? comparison.alternatives.filter((a) => a !== comparison.exactMatch && a.matchType !== 'strong')
     : [];
   const localStores = comparison?.localStores ?? [];
   const socialProfiles = comparison?.socialProfiles ?? [];
@@ -280,52 +299,33 @@ export default function ProductAnalysis() {
           </View>
         )}
 
-        {/* Product info */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>PRODUCT</Text>
-          <Text style={styles.productName}>{product.name || 'Unknown product'}</Text>
-          <Text style={styles.productMeta}>
-            {[product.category, product.brand].filter(Boolean).join(' · ') || 'Category unknown'}
-          </Text>
-          {characteristics.map((c, i) => (
-            <Text key={`${c}-${i}`} style={styles.text}>
-              • {c}
-            </Text>
-          ))}
-        </View>
-
-        {/* User price */}
-        <View style={styles.priceCard}>
-          <Text style={styles.cardTitle}>PRICE YOU ENTERED</Text>
-          <Text style={styles.priceRange}>
-            {analysis.userPrice !== null
-              ? formatMoney(analysis.userPrice, analysis.currency)
-              : 'Price not provided'}
-          </Text>
-        </View>
-
-        {/* Result */}
-        {comparison && (
+        {/* Verdict: price + room fit + what it is, in one paragraph */}
+        {verdict && comparison && (
           <View style={styles.scoreCard}>
-            <Text style={styles.scoreLabel}>YOUR RESULT</Text>
-
-            <View
-              style={[styles.recommendationBadge, { backgroundColor: decisionBg }]}
-            >
-              <Text style={[styles.recommendation, { color: decisionColor }]}>
-                {comparison.title}
-              </Text>
+            <Text style={styles.scoreLabel}>OUR VERDICT</Text>
+            <View style={[styles.recommendationBadge, { backgroundColor: decisionBg }]}>
+              <Text style={[styles.recommendation, { color: decisionColor }]}>{verdict.title}</Text>
             </View>
-
-            <Text style={styles.text}>{comparison.summary}</Text>
+            <Text style={styles.verdictParagraph}>{verdict.text}</Text>
+            {comparison.confidence && (
+              <Text style={styles.identifiedText}>
+                {comparison.confidence === 'low'
+                  ? 'Confidence: low — a rough guide based on limited price information.'
+                  : comparison.confidence === 'medium'
+                    ? 'Confidence: medium — based on a few listed prices.'
+                    : 'Confidence: high — based on several listed prices.'}
+              </Text>
+            )}
 
             {comparison.highlight && (
-              <View style={{ marginTop: 10 }}>
+              <View style={styles.highlightBox}>
                 <Text style={styles.text}>
                   Your price: {formatMoney(comparison.highlight.userPrice, comparison.highlight.currency)}
                 </Text>
                 <Text style={styles.text}>
-                  Similar option: {formatMoney(comparison.highlight.similarPrice, comparison.highlight.currency)}
+                  {comparison.highlight.sameModel ? 'Same model' : 'Similar option'}
+                  {comparison.highlight.source ? ` at ${comparison.highlight.source}` : ''}:{' '}
+                  {formatMoney(comparison.highlight.similarPrice, comparison.highlight.currency)}
                 </Text>
                 <Text style={styles.text}>
                   Potential difference: {formatMoney(comparison.highlight.difference, comparison.highlight.currency)}
@@ -333,29 +333,107 @@ export default function ProductAnalysis() {
               </View>
             )}
 
-            {comparison.reasoning.length > 0 && (
-              <>
-                <Text style={[styles.cardTitle, { marginTop: 14 }]}>WHY?</Text>
-                {comparison.reasoning.map((line, i) => (
-                  <Text key={i} style={styles.text}>
-                    ✓ {line}
-                  </Text>
-                ))}
-              </>
+            {comparison.identifiedAs && (
+              <Text style={styles.identifiedText}>
+                Recognised by image search as “{comparison.identifiedAs}”.
+              </Text>
             )}
+
+            <TouchableOpacity
+              style={styles.detailsToggle}
+              onPress={() => setShowDetails((v) => !v)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.detailsToggleText}>
+                {showDetails ? 'HIDE DETAILS ▲' : 'SEE DETAILS ▼'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* How it fits the room the user chose */}
-        {result.roomContext && <RoomFitCard context={result.roomContext} />}
+        {/* Details: product, price, price reasoning, room fit, description */}
+        {(showDetails || !verdict) && (
+          <>
+          {/* Product info */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>PRODUCT</Text>
+            <Text style={styles.productName}>{product.name || 'Unknown product'}</Text>
+            <Text style={styles.productMeta}>
+              {[product.category, product.brand].filter(Boolean).join(' · ') || 'Category unknown'}
+            </Text>
+            {characteristics.map((c, i) => (
+              <Text key={`${c}-${i}`} style={styles.text}>
+                • {c}
+              </Text>
+            ))}
+          </View>
 
-        {/* Description */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>WHAT WE SEE</Text>
-          <Text style={styles.text}>
-            {analysis.description || 'No description available.'}
-          </Text>
-        </View>
+          {/* User price */}
+          <View style={styles.priceCard}>
+            <Text style={styles.cardTitle}>PRICE YOU ENTERED</Text>
+            <Text style={styles.priceRange}>
+              {analysis.userPrice !== null
+                ? formatMoney(analysis.userPrice, analysis.currency)
+                : 'Price not provided'}
+            </Text>
+          </View>
+
+          {/* Result */}
+          {comparison && (
+            <View style={styles.scoreCard}>
+              <Text style={styles.scoreLabel}>YOUR RESULT</Text>
+
+              <View
+                style={[styles.recommendationBadge, { backgroundColor: decisionBg }]}
+              >
+                <Text style={[styles.recommendation, { color: decisionColor }]}>
+                  {comparison.title}
+                </Text>
+              </View>
+
+              <Text style={styles.text}>{comparison.summary}</Text>
+
+              {comparison.highlight && (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={styles.text}>
+                    Your price: {formatMoney(comparison.highlight.userPrice, comparison.highlight.currency)}
+                  </Text>
+                  <Text style={styles.text}>
+                    {comparison.highlight.sameModel ? 'Same model' : 'Similar option'}:{' '}
+                    {formatMoney(comparison.highlight.similarPrice, comparison.highlight.currency)}
+                  </Text>
+                  <Text style={styles.text}>
+                    Potential difference: {formatMoney(comparison.highlight.difference, comparison.highlight.currency)}
+                  </Text>
+                </View>
+              )}
+
+              {comparison.reasoning.length > 0 && (
+                <>
+                  <Text style={[styles.cardTitle, { marginTop: 14 }]}>WHY?</Text>
+                  {comparison.reasoning.map((line, i) => (
+                    <Text key={i} style={styles.text}>
+                      ✓ {line}
+                    </Text>
+                  ))}
+                </>
+              )}
+            </View>
+          )}
+
+          {/* How it fits the room the user chose */}
+          {result.roomContext && <RoomFitCard context={result.roomContext} />}
+
+          {/* Description */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>WHAT WE SEE</Text>
+            <Text style={styles.text}>
+              {analysis.description || 'No description available.'}
+            </Text>
+          </View>
+
+          </>
+        )}
 
         {/* Find where to buy */}
         <View style={styles.card}>
@@ -382,6 +460,9 @@ export default function ProductAnalysis() {
             <>
               <Text style={styles.scoreLabel}>EXACT / POSSIBLE MATCH</Text>
               <AlternativeCard item={comparison.exactMatch} />
+              {sameModelMore.map((item, index) => (
+                <AlternativeCard key={`${item.url}-same-${index}`} item={item} />
+              ))}
             </>
           )}
 
@@ -421,6 +502,9 @@ export default function ProductAnalysis() {
                 and may not be current — stores and profiles may not have this
                 exact product. You will open the original website, map or
                 profile.
+                {comparison.alternatives.some((a) => a.convertedPrice)
+                  ? ' Converted prices (≈ €) use European Central Bank reference rates and exclude shipping and import costs.'
+                  : ''}
               </Text>
             )}
         </View>
@@ -687,6 +771,44 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 13,
     marginLeft: 10,
+  },
+
+  verdictParagraph: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 23,
+    marginTop: 14,
+    textAlign: 'left',
+    alignSelf: 'stretch',
+  },
+
+  highlightBox: {
+    alignSelf: 'stretch',
+    marginTop: 12,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+
+  identifiedText: {
+    alignSelf: 'stretch',
+    color: Colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 12,
+  },
+
+  detailsToggle: {
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+
+  detailsToggleText: {
+    color: Colors.accentText,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 
   groupTitle: {

@@ -9,7 +9,7 @@ import { Image } from 'expo-image';
 
 import { blendAt } from '@/services/roomViewMath';
 
-export type SpatialFrame = { id: string; angleDeg: number; previewUri: string };
+export type SpatialFrame = { id: string; angleDeg: number; previewUri: string; alignScore?: number | null };
 
 type Props = {
   frames: SpatialFrame[];

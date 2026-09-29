@@ -199,10 +199,60 @@ Map results outside Kosovo's bounding box are dropped. Nothing is scraped: socia
 profiles come from the URL/label Google returns (else the public post link is shown).
 Local and social results never carry a price or an exact-match claim.
 
-**SerpApi budget (free plan: 250 searches/month):** one analysis uses up to 6
-online + 2 maps + 1 social searches (identical searches within an hour are served
-from SerpApi's cache for free). SerpApi sometimes answers in 20–30 s; the
-nearby/social searches wait up to 30 s, the online search keeps its 15 s timeout.
+### Same product by image (Google Lens)
+
+`services/visualSearchService.js` searches with the photo itself, in parallel with
+the AI analysis (no extra waiting):
+
+1. The photo (resized JPEG ≤ 500 KB) is uploaded to `https://serpapi.com/image`
+   → `image_id`. SerpApi deletes it after **10 minutes**; the upload is free.
+2. `engine=google_lens&image_id=…&type=all&hl=en&country=$LENS_COUNTRY` (1 search).
+   `country=xk` returns nothing; the default `de` gives EUR prices.
+
+Lens's `related_content` names the model ("IKEA POÄNG armchair"); it is trusted
+only when its distinctive words appear in ≥ 2 listing titles. Then listings whose
+title carries those words are `matchType: 'strong'` (same model, `imageMatch: true`),
+the Kosovo text search looks for that name, and it becomes the check's product name
+(unless the user typed one). Prices come only from Lens's structured `price` field.
+`comparison.exactPriceStats` / `highlight.sameModel` / "Same model cheaper elsewhere"
+compare your price with the same model first; the reasoning always warns that
+listings can be another color/size or from another country.
+
+### Verdict
+
+`services/verdictService.js` writes `verdict: { title, text, decision, source }`:
+one text-only Groq call over facts that were already computed (price comparison,
+room fit, recognised name, nearby stores). The text is rejected — and a plain
+template used instead — if it contains a number not in the facts or contradicts
+`decision`. The app shows it as "Our verdict" with the old cards under "See details".
+
+### Nearer results, honest prices (2026-09-29)
+
+- **Kosovo shops:** `webSearch.searchKosovoShops` searches GjirafaMall, Foleja, MerrJep,
+  Gjirafa50, Neptun and JYSK Kosovo directly (`site:` filter) for the recognised model,
+  else the Albanian product noun. Results count as Kosovo listings.
+- **Ranking:** Prizren → Kosovo → region → EU (`.de`, `ikea.com/de/…`) → the rest.
+  US/international listings are hidden when 3+ nearer results exist.
+- **Social image matches:** a second Lens search on the same upload with `q=instagram`
+  returns Instagram posts of the same product; posts/profiles in the user's city or
+  Kosovo are listed first. (Longer `q` values returned nothing when tested.)
+- **Currency:** non-EUR prices get `convertedPrice` via `services/fxService.js`
+  (European Central Bank daily reference rates — free, cite the ECB; "for information
+  only"). Converted prices are reference only (shipping/import not included).
+- **Verdict with confidence** (`comparison.confidence`, `comparison.evidence`): same-model
+  EUR prices → high/medium; 2+ similar EUR prices → high/medium; one EUR listing,
+  EUR price ranges, or converted foreign prices → a verdict marked `low` ("rough guide");
+  UNKNOWN only when no usable price exists at all.
+- **City from the phone:** the app (`src/services/userLocation.ts`, `expo-location`) sends
+  only `city`/`country` from a lowest-accuracy fix + on-device reverse geocoding; no
+  coordinates leave the phone. Cached 6 h. Denied/unavailable → IP lookup / Kosovo-wide.
+- Lens results are cached in memory for 24 h per photo (same photo again = no credits).
+
+**SerpApi budget (free plan: 250 searches/month):** one analysis uses up to
+2 Lens + 3 online + 2 Kosovo shops + 2 maps + 1 social = **10 searches** (the image
+upload is free; identical searches within an hour are served from SerpApi's cache for
+free) — about 25 analyses a month. SerpApi sometimes answers in 20–30 s; Lens/shops/
+nearby/social wait up to 30 s, the online search keeps its 15 s timeout.
 
 ## AI — room visualization
 
@@ -335,10 +385,32 @@ blocks install scripts, run `npm approve-scripts ffmpeg-static` or
 fine for running it on our own server, but distributing it would bring
 GPL obligations.
 
+### Picture-checked angles (captureAlignmentService.js)
+
+The rotation sensor's total turn is reliable, but locally it drifts from the video,
+and the real field of view differs from the lens's nominal one (a 0.5× capture measured
+≈60° in portrait, not 75°). Every new capture is therefore checked against its own
+pictures during upload (pure image maths, ~5 s):
+
+- the horizontal shift between each pair of neighbouring views (normalised
+  cross-correlation, sub-pixel) gives the **measured field of view** (`room_captures.fov_deg`)
+  and **corrected angles** (`angle_deg`; the sensor's value stays in `gyro_angle_deg`,
+  the total turn is kept);
+- pairs that don't line up get `align_score = 0` and the viewer **snaps** between them
+  instead of cross-fading (`roomViewMath.blendAt`, `SNAP_BAND`);
+- the app, item detection and product placement use the measured field of view
+  (`captureFovDeg()`), else the lens default (0.5× now 60°).
+
+Migration `009_capture_alignment.sql`. Existing captures: `node scripts/align-captures.js [captureId…]`
+(re-runnable; also recomputes the directions of detected items). On room 16 it cut the
+mismatch between two views of the same object from 6–12° to 1–2°.
+
 ## Items Detected (room item detection)
 
 `POST /api/rooms/:id/analyze` finds a room's existing furniture and records
-where each item appears. This is selection only: detected furniture is not a
+where each item appears, with each item's main `color` and `material`
+(migration `008_user_item_color_material.sql`; rooms detected earlier need
+DETECT AGAIN to get them). This is selection only: detected furniture is not a
 movable object.
 
 - **Provider:** the project's existing Groq vision model (`AI_PROVIDER=groq`,

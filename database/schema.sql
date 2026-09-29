@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS room_captures (
   mode               ENUM('180', '360') NOT NULL,
   angle_source       ENUM('gyro', 'time') NOT NULL,
   lens               ENUM('wide', 'ultra-wide') NULL,
+  fov_deg            FLOAT           NULL,  -- field of view measured from the views
   coverage_deg       DECIMAL(6,1)    NOT NULL,
   loops              BOOLEAN         NOT NULL DEFAULT FALSE,
   frame_count        INT UNSIGNED    NOT NULL,
@@ -121,11 +122,13 @@ CREATE TABLE IF NOT EXISTS room_capture_frames (
   id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   capture_id     BIGINT UNSIGNED NOT NULL,
   frame_index    INT UNSIGNED    NOT NULL,
-  angle_deg      DECIMAL(6,2)    NOT NULL,
+  angle_deg      DECIMAL(6,2)    NOT NULL,  -- picture-corrected when aligned (see gyro_angle_deg)
+  gyro_angle_deg DECIMAL(6,2)    NULL,      -- rotation sensor's original angle (NULL = not aligned)
   video_time_ms  INT UNSIGNED    NOT NULL,
   sharpness      FLOAT           NOT NULL,
   brightness     FLOAT           NOT NULL,
   pitch_deg      FLOAT           NULL,
+  align_score    FLOAT           NULL,      -- how well it lines up with the next view (0 = snap)
   image_path     VARCHAR(500)    NOT NULL,
   preview_path   VARCHAR(500)    NOT NULL,
   PRIMARY KEY (id),
@@ -147,6 +150,8 @@ CREATE TABLE IF NOT EXISTS user_items (
   name        VARCHAR(255)    NOT NULL,
   category    VARCHAR(120)    NOT NULL DEFAULT 'Other',
   description TEXT            NULL,
+  color       VARCHAR(60)     NULL,  -- detected main color (Items Detected), e.g. "dark brown"
+  material    VARCHAR(60)     NULL,  -- detected main material, e.g. "wood"
   image_path  VARCHAR(500)    NULL,
   source      ENUM('manual', 'ai') NOT NULL DEFAULT 'manual',
   created_at  TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,

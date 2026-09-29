@@ -31,7 +31,7 @@ const SERPAPI_ENDPOINT = 'https://serpapi.com/search.json';
 const TIMEOUT_MS = 15000;
 const MAX_RESULTS = 10;
 const ENOUGH_RESULTS = 3; // useful results at a level that make widening unnecessary
-const MAX_SEARCHES = 6; // SerpApi calls per analysis
+const MAX_SEARCHES = 3; // SerpApi calls per analysis (was 6; Google Lens and the Kosovo-shops search now run beside it)
 const BROAD_CAP = 6; // total list size once the broad fallback was needed
 const STRONG_CONFIDENCE = 0.7;
 
@@ -460,9 +460,69 @@ async function searchProductWeb({ name, brand, category, confidence, city, count
   };
 }
 
+// Kosovo online shops searched directly (Google `site:` filter). Verified
+// 2026-09-29 with a real query: GjirafaMall, Foleja and MerrJep return product
+// pages in Albanian. Prices come only from what Google returns (extractPrice);
+// the pages themselves are never fetched.
+const KOSOVO_SHOPS = ['merrjep.com', 'gjirafamall.com', 'gjirafa50.com', 'foleja.com', 'neptun-ks.com', 'jysk-ks.com'];
+const LISTING_PAGE = /\/(q-|search|kerko)|[?&](q|query|search)=/i;
+
+/**
+ * One search restricted to Kosovo shops for this product: the recognised model
+ * name when there is one (e.g. "IKEA POÄNG armchair"), else the Albanian product
+ * noun ("kolltuk"). A second search (the noun) only if the model name finds
+ * fewer than 2 products.
+ * @returns {Promise<{status: 'ok'|'unavailable'|'skipped', matches: Array, queries: string[]}>}
+ */
+async function searchKosovoShops({ name, identity = null, brand, category, confidence, city }) {
+  const product = { name: identity || name, brand, category, confidence };
+  const base = buildBaseQuery({ name, brand, category, confidence });
+  const noun = albanianTerm(base) || albanianTerm(identity || '');
+  const terms = [identity, noun].filter(Boolean);
+  if (!terms.length) return { status: 'skipped', matches: [], queries: [] };
+
+  const sites = `(${KOSOVO_SHOPS.map((d) => `site:${d}`).join(' OR ')})`;
+  const typeWords = productTypeWords(identity || name, category);
+  const seen = new Set();
+  const matches = [];
+  const queries = [];
+  let failed = false;
+  for (const term of terms) {
+    const q = `${term} ${sites}`;
+    let body;
+    try {
+      body = await serpApiRequest({ engine: 'google', q, hl: 'sq', num: '10' }, { timeoutMs: 30000 });
+    } catch (err) {
+      if (/hasn't returned any results/i.test(err.message)) {
+        queries.push(q);
+        continue;
+      }
+      console.error('[webSearch] Kosovo shops search failed:', err.message);
+      failed = true;
+      break;
+    }
+    queries.push(q);
+    for (const m of normalize(body, product, city)) {
+      const key = m.url.replace(/[#?].*$/, '');
+      if (seen.has(key) || LISTING_PAGE.test(m.url)) continue;
+      seen.add(key);
+      if (!isRelevantResult(m, typeWords)) continue;
+      // A product page of the same kind of product (e.g. "Kolltuk …" for an armchair) is a similar product.
+      const matchType = m.matchType === 'general' ? 'similar' : m.matchType;
+      // These shops are in Kosovo whatever the page text says.
+      matches.push({ ...m, matchType, locality: m.locality === 'city' ? 'city' : 'kosovo', searchScope: 'kosovo-shops' });
+    }
+    if (matches.length >= 2) break;
+  }
+  if (!queries.length && failed) return { status: 'unavailable', matches: [], queries };
+  console.log(`[webSearch] Kosovo shops: ${queries.length} search(es) -> ${matches.length} products`);
+  return { status: 'ok', matches: matches.slice(0, 6), queries };
+}
+
 module.exports = {
   isConfigured,
   searchProductWeb,
+  searchKosovoShops,
   buildBaseQuery,
   buildLevels,
   localityOf,
@@ -475,4 +535,6 @@ module.exports = {
   isHttpUrl,
   GEO_WORDS,
   SQ_TERMS,
+  SKIPPED_DOMAINS,
+  tokens,
 };

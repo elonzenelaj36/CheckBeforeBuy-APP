@@ -53,8 +53,10 @@ function summarizeItems(rows) {
     if (r.source === 'manual') certainty = 'listed';
     else if (c !== null && c >= HIGH_CONFIDENCE) certainty = 'detected';
     else certainty = 'possible';
-    const key = `${String(r.name).toLowerCase()}|${certainty}`;
-    const g = groups.get(key) || { name: displayName(r.name), category: r.category, count: 0, confidence: null, views: 0, certainty };
+    // Items that look different (color/material) stay separate: "white bed" and "dark bed" are different evidence.
+    const looks = [r.color, r.material].filter(Boolean).join(' ') || null;
+    const key = `${String(r.name).toLowerCase()}|${certainty}|${looks || ''}`;
+    const g = groups.get(key) || { name: displayName(r.name), category: r.category, looks, count: 0, confidence: null, views: 0, certainty };
     g.count += 1;
     if (c !== null && (g.confidence === null || c > g.confidence)) g.confidence = Math.round(c * 100) / 100;
     g.views = Math.max(g.views, Number(r.views || 0));
@@ -64,11 +66,11 @@ function summarizeItems(rows) {
 }
 
 function describeItem(i) {
-  const n = i.count > 1 ? `${i.count}× ${i.name}` : i.name;
+  const n = `${i.count > 1 ? `${i.count}× ` : ''}${i.name}${i.looks ? ` [${i.looks}]` : ''}`;
   if (i.certainty === 'listed') return `${n} (added by the user)`;
   if (i.certainty === 'detected') return `${n} (detected, confidence ${i.confidence})`;
   const conf = i.confidence !== null ? `, confidence ${i.confidence}` : ', confidence unknown';
-  return `a ${i.name.toLowerCase()}-like item${i.count > 1 ? ` (×${i.count})` : ''} may be present${conf}`;
+  return `a ${i.name.toLowerCase()}-like item${i.looks ? ` [${i.looks}]` : ''}${i.count > 1 ? ` (×${i.count})` : ''} may be present${conf}`;
 }
 
 /**
@@ -90,7 +92,7 @@ async function buildRoomContext(userId, roomId) {
 
   // Items of this room with their best detection confidence and how many views saw them.
   let itemRows = await optionalQuery(
-    `SELECT ui.name, ui.category, ui.source, MAX(o.confidence) AS confidence, COUNT(o.id) AS views
+    `SELECT ui.name, ui.category, ui.source, ui.color, ui.material, MAX(o.confidence) AS confidence, COUNT(o.id) AS views
      FROM user_items ui
      LEFT JOIN room_item_observations o ON o.user_item_id = ui.id
      WHERE ui.user_id = ? AND ui.room_id = ?
@@ -147,6 +149,7 @@ async function buildRoomContext(userId, roomId) {
       '- If something is NOT in the list, say it "was not detected in the selected room" — never claim the user does not own it.',
       '- Do not recommend skipping just because an item of the same broad kind exists. Compare function: is the product a duplicate (same function, same place), a possible replacement/upgrade, something that complements what is there (e.g. a side table next to an armchair), or does it fill a function the room seems to lack?',
       '- Base the price verdict on the product itself; the room only affects whether it fits a need.',
+      '- Where item colors/materials are given in [brackets], say whether the product\'s color and material go well with them (e.g. matches the bed\'s dark wood). Never guess colors that are not given.',
       'Add one more field to your JSON object:',
       '"roomFit": { "relation": "duplicate"|"replacement"|"complement"|"fills_gap"|"unclear",',
       '             "summary": string,          // 1-3 sentences for the user, following the wording rules above',
@@ -170,8 +173,16 @@ function parseRoomFit(raw, items) {
   const fit = raw && typeof raw === 'object' ? raw.roomFit : null;
   if (!fit || typeof fit !== 'object' || typeof fit.summary !== 'string' || !fit.summary.trim()) return null;
   const known = new Set(items.map((i) => i.name.toLowerCase()));
+  // The model may write "tan leather armchair" for the item "Armchair": map it back to the item's name.
   const related = Array.isArray(fit.relatedItems)
-    ? fit.relatedItems.filter((n) => typeof n === 'string' && known.has(displayName(n).toLowerCase())).map(displayName)
+    ? fit.relatedItems
+        .filter((n) => typeof n === 'string')
+        .map((n) => {
+          const lower = displayName(n).toLowerCase();
+          return [...known].sort((a, b) => b.length - a.length).find((k) => lower === k || lower.includes(k)) || null;
+        })
+        .filter(Boolean)
+        .map((k) => items.find((i) => i.name.toLowerCase() === k).name)
     : [];
   return {
     relation: ROOM_FIT_RELATIONS.has(fit.relation) ? fit.relation : 'unclear',

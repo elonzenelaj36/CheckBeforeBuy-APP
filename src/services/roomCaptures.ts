@@ -41,7 +41,8 @@ export const CAPTURE_LENSES: Record<
   wide: { label: '1×', fovDeg: 42, tooSlowDegS: 4, goodMaxDegS: 25, seconds: { '180': 18, '360': 35 }, maxGapDeg: 25 },
   'ultra-wide': {
     label: '0.5×',
-    fovDeg: 75,
+    // ≈60° measured from real 0.5× captures in portrait (was 75°). Captures carry their own measured value.
+    fovDeg: 60,
     tooSlowDegS: 6,
     goodMaxDegS: 40,
     seconds: { '180': 12, '360': 25 },
@@ -81,8 +82,15 @@ export type RoomCaptureSummary = {
   frameCount: number;
   coverImageUri: string | null;
   selectedView: RoomViewRef | null;
+  /** Field of view measured from the capture's own views (null/absent = not measured). */
+  fovDeg?: number | null;
   createdAt: string;
 };
+
+/** Horizontal field of view to use for a capture: measured from its views when known, else the lens's nominal value. */
+export function captureFovDeg(capture: { fovDeg?: number | null; lens?: CaptureLens | null }): number {
+  return capture.fovDeg ?? CAPTURE_LENSES[capture.lens ?? 'wide']?.fovDeg ?? CAPTURE_LENSES.wide.fovDeg;
+}
 
 export type RoomCaptureFrame = {
   id: string;
@@ -94,6 +102,8 @@ export type RoomCaptureFrame = {
   sharpness: number;
   /** How far the camera looked down for this view (null = not recorded; treat as level). */
   pitchDeg?: number | null;
+  /** How well this view lines up with the next (0 = they don't match: the viewer snaps instead of cross-fading). */
+  alignScore?: number | null;
 };
 
 export type RoomCapture = RoomCaptureSummary & {

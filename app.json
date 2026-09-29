@@ -46,6 +46,12 @@
         {
           "motionPermission": "Allow $(PRODUCT_NAME) to track how far you turn while recording a room."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your approximate location to find stores in your city. Only the city name is sent, never your exact position."
+        }
       ]
     ],
     "experiments": {

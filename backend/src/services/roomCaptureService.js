@@ -37,6 +37,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const sharp = require('sharp');
+const { alignCapture } = require('./captureAlignmentService');
 const ffmpegPath = require('ffmpeg-static');
 
 /**
@@ -462,6 +463,26 @@ async function processCapture({ videoPath, mode, motion, outputDir, lens = 'wide
       });
     }
 
+    // Check the sensor angles against the pictures: measured field of view,
+    // corrected per-view angles, and which neighbours don't line up. Never fails the capture.
+    let fovDeg = null;
+    try {
+      const aligned = await alignCapture(frames.map((f) => ({ angleDeg: f.angleDeg, path: path.join(outputDir, f.previewFileName) })));
+      if (aligned.ok) {
+        fovDeg = aligned.fovDeg;
+        frames.forEach((f, i) => {
+          f.gyroAngleDeg = f.angleDeg;
+          f.angleDeg = aligned.angles[i];
+          f.alignScore = i < aligned.pairScores.length ? aligned.pairScores[i] : null;
+        });
+        console.log(`[roomCapture] aligned with the pictures: field of view ${fovDeg}°`);
+      } else {
+        console.warn(`[roomCapture] kept sensor angles: ${aligned.reason}`);
+      }
+    } catch (err) {
+      console.warn('[roomCapture] alignment failed, kept sensor angles:', err.message);
+    }
+
     console.log(
       `[roomCapture] ${mode}° capture (${lens} lens): ${durationMs} ms video, ${files.length} candidates → ${frames.length} views, ` +
         `angles from ${angleSource}${track.ok ? ` (turned ${Math.round(track.coverage)}°, video offset ${track.offsetMs} ms)` : ''}`
@@ -469,6 +490,7 @@ async function processCapture({ videoPath, mode, motion, outputDir, lens = 'wide
     return {
       mode,
       lens,
+      fovDeg,
       angleSource,
       coverageDeg: Math.round(selection.rangeDeg * 10) / 10,
       loops: selection.loops,

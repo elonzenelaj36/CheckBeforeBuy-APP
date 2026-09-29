@@ -579,8 +579,10 @@ export default function RoomDetail() {
               {userItems.map((item) => {
                 const selected = item.id === selectedItemId;
                 const views = item.observations?.length ?? 0;
+                const looks = [item.color, item.material].filter(Boolean).join(' ');
                 const details = [
                   item.category,
+                  looks || null,
                   item.source === 'ai' ? 'Detected automatically' : 'Added by you',
                   views > 1 ? `seen in ${views} views` : null,
                   item.confidence != null ? `${Math.round(item.confidence * 100)}%` : null,

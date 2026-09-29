@@ -195,7 +195,7 @@ async function searchLocalStores({ name, category, city }) {
 
 // ── Social profiles ─────────────────────────────────────────────────────────
 
-const IG_NON_PROFILE = new Set(['p', 'reel', 'reels', 'tv', 'explore', 'stories', 'accounts', 'direct', 'about']);
+const IG_NON_PROFILE = new Set(['p', 'reel', 'reels', 'tv', 'explore', 'stories', 'accounts', 'direct', 'about', 'popular']);
 const FB_NON_PROFILE = new Set([
   'groups', 'events', 'photo', 'photo.php', 'photos', 'watch', 'story.php', 'permalink.php', 'marketplace', 'share',
   'people', 'pages', 'profile.php', 'reel', 'videos', 'hashtag', 'login', 'help', 'media',
@@ -230,6 +230,8 @@ function profileFromResult(r) {
 
   let handle = null;
   if (platform === 'instagram') {
+    // Topic/search pages ("instagram.com/popular/poang-chair") are not a business or its post.
+    if (['popular', 'explore'].includes((segments[0] || '').toLowerCase())) return null;
     if (segments[0] && !IG_NON_PROFILE.has(segments[0].toLowerCase())) handle = segments[0];
     else if (label && HANDLE.test(label)) handle = label;
     else {
@@ -298,6 +300,9 @@ async function searchSocialProfiles({ name, category, city }) {
     const text = `${r.title || ''} ${r.snippet || ''}`;
     const mentionsProduct = typeWords.some((w) => text.toLowerCase().includes(w));
     const locality = city && cityRegex(city).test(text) ? 'city' : GEO_WORDS.test(text) ? 'kosovo' : 'unknown';
+    // Neither about this kind of product nor about the place: noise (Google sometimes
+    // returns unrelated accounts for the same query), not a local business profile.
+    if (!mentionsProduct && locality === 'unknown') continue;
     const snippet = String(r.snippet || '').replace(/\s+/g, ' ').trim().slice(0, 160) || null;
 
     profiles.push({

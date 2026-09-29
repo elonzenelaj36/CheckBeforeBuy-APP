@@ -11,6 +11,8 @@ function serialize(row) {
     name: row.name,
     category: row.category,
     description: row.description || null,
+    color: row.color ?? null,
+    material: row.material ?? null,
     imageUri: toAbsoluteUrl(row.image_path),
     roomId: row.room_id ? String(row.room_id) : null,
     source: row.source || 'manual',

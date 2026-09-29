@@ -31,7 +31,7 @@ import ScreenHeader from '@/components/ScreenHeader';
 import SpatialBackdrop from '@/components/spatial/SpatialBackdrop';
 import { useSpatialAngle } from '@/components/spatial/useSpatialAngle';
 import { Colors } from '@/constants/colors';
-import { CAPTURE_LENSES, getRoomCapture, selectRoomView, type RoomCapture } from '@/services/roomCaptures';
+import { CAPTURE_LENSES, captureFovDeg, getRoomCapture, selectRoomView, type RoomCapture } from '@/services/roomCaptures';
 import { blendAt, stepFrame, wrap360 } from '@/services/roomViewMath';
 import { getRoomById, type Room } from '@/services/rooms';
 import { getSession, setSessionRoomView } from '@/services/visualizationSession';
@@ -55,7 +55,7 @@ export default function RoomView() {
   const frames = React.useMemo(() => capture?.frames ?? [], [capture]);
   const loops = !!capture?.loops;
   // A full-width drag turns the view by the lens's field of view (1:1 with the finger).
-  const fovDeg = CAPTURE_LENSES[capture?.lens ?? 'wide']?.fovDeg ?? CAPTURE_LENSES.wide.fovDeg;
+  const fovDeg = capture ? captureFovDeg(capture) : CAPTURE_LENSES.wide.fovDeg;
   const { angle, jumpTo, snapTo, drag } = useSpatialAngle(frames, loops);
   /** The view to open on — applied once the frames are rendered (jumpTo then clamps against them). */
   const [startAngle, setStartAngle] = React.useState<number | null>(null);
