@@ -35,6 +35,8 @@ import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 import { Colors } from '@/constants/colors';
 import {
   layerImageFor,
+  showsAsPhoto,
+  WALL_PREVIEW_BOX_SCALE,
   MAX_LAYER_WIDTH,
   MIN_LAYER_WIDTH,
   type ProductTransform,
@@ -126,6 +128,13 @@ export default function RoomComposer({
   const start = useSharedValue<Geometry>({ x: 0, y: 0, width: 0, rotation: 0 });
   const pinchStartWidth = useSharedValue(0);
   const rotationStart = useSharedValue(0);
+  /** Products whose tilt is fixed (wall-mounted on a wall: the wall decides it). */
+  const fixedTilt = useSharedValue<Record<string, true>>({});
+  React.useEffect(() => {
+    const ids: Record<string, true> = {};
+    for (const p of products) if (p.wallAttachment?.status === 'attached') ids[p.id] = true;
+    fixedTilt.set(ids);
+  }, [products, fixedTilt]);
   /** Who the current one-finger touch belongs to (spatial rooms). */
   const owner = useSharedValue<'product' | 'room' | null>(null);
   const roomTouchStart = useSharedValue({ x: 0, y: 0 });
@@ -254,7 +263,7 @@ export default function RoomComposer({
       })
       .onUpdate((event) => {
         const id = selectedId.get();
-        if (!id) return;
+        if (!id || fixedTilt.get()[id]) return;
         patch(id, { rotation: rotationStart.get() + event.rotation });
       })
       .onEnd(() => {
@@ -339,6 +348,7 @@ export default function RoomComposer({
     start,
     pinchStartWidth,
     rotationStart,
+    fixedTilt,
     owner,
     roomTouchStart,
     roomTxStart,
@@ -433,6 +443,15 @@ const ProductLayer = React.memo(function ProductLayer({
   const isCutout = layerUri !== null;
   const building3D = model3D.status === 'generating' || model3D.status === 'rendering';
 
+  // Wall product shown as its photo, on a wall: the photo in the wall's exact perspective
+  // (drawn by the backend like Generate does). While it's being re-worked out after a drop,
+  // the previous one stays, so it doesn't flash flat.
+  const attachment = product.wallAttachment;
+  const wallPreview =
+    showsAsPhoto(product) && (attachment?.status === 'attached' || attachment?.status === 'checking')
+      ? attachment.preview
+      : null;
+
   return (
     <Animated.View
       pointerEvents="none"
@@ -446,13 +465,21 @@ const ProductLayer = React.memo(function ProductLayer({
       <Image
         source={{ uri: layerUri ?? product.imageUri }}
         fadeDuration={0}
-        style={[styles.layerImage, !isCutout && styles.photoImage, cutout.status === 'pending' && styles.pendingImage]}
+        style={[
+          styles.layerImage,
+          !isCutout && styles.photoImage,
+          cutout.status === 'pending' && styles.pendingImage,
+          wallPreview && styles.hiddenImage,
+        ]}
         resizeMode={isCutout ? 'contain' : 'cover'}
         onLoad={(e) => {
           const { width: w, height: h } = e.nativeEvent.source;
           if (w && h && Math.abs(w / h - fallback.aspect) > 0.01) onAspect(id, w / h);
         }}
       />
+      {wallPreview && (
+        <Image source={wallPreview} fadeDuration={0} style={styles.wallPreview} resizeMode="stretch" />
+      )}
       {cutout.status === 'pending' && (
         <View style={styles.layerStatus}>
           <ActivityIndicator size="small" color={Colors.cardHighlight} />
@@ -523,6 +550,17 @@ const styles = StyleSheet.create({
   },
   photoImage: {
     borderRadius: 7,
+  },
+  // Still laid out (its onLoad reports the photo's aspect), but the wall preview is what's seen.
+  hiddenImage: {
+    opacity: 0,
+  },
+  wallPreview: {
+    position: 'absolute',
+    left: `${(-(WALL_PREVIEW_BOX_SCALE - 1) / 2) * 100}%`,
+    top: `${(-(WALL_PREVIEW_BOX_SCALE - 1) / 2) * 100}%`,
+    width: `${WALL_PREVIEW_BOX_SCALE * 100}%`,
+    height: `${WALL_PREVIEW_BOX_SCALE * 100}%`,
   },
   pendingImage: {
     opacity: 0.55,

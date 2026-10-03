@@ -22,6 +22,8 @@ export type ModelFrames = {
   frames: string[];
   /** width / height — the same for every frame. */
   aspect: number;
+  /** Frame that shows the photographed (front) side; 0 when unknown. */
+  frontIndex: number;
 };
 
 const memory = new Map<string, ModelFrames>();
@@ -44,10 +46,16 @@ export function loadCachedFrames(modelUrl: string, elevationDeg: number = DEFAUL
   try {
     const manifest = new File(folder(modelUrl, elevationDeg), 'manifest.json');
     if (!manifest.exists) return null;
-    const parsed = JSON.parse(manifest.textSync()) as { count: number; aspect: number };
+    const parsed = JSON.parse(manifest.textSync()) as { count: number; aspect: number; frontIndex?: number };
+    // Rendered before the front was detected: render once more so the product shows its front.
+    if (parsed.frontIndex === undefined) return null;
     const frames = Array.from({ length: parsed.count }, (_, i) => new File(folder(modelUrl, elevationDeg), `frame-${i}.png`));
     if (!frames.every((f) => f.exists)) return null;
-    const result = { frames: frames.map((f) => f.uri), aspect: parsed.aspect };
+    const result = {
+      frames: frames.map((f) => f.uri),
+      aspect: parsed.aspect,
+      frontIndex: parsed.frontIndex,
+    };
     memory.set(key, result);
     return result;
   } catch {
@@ -71,13 +79,14 @@ export function saveManifest(
   modelUrl: string,
   frames: string[],
   aspect: number,
-  elevationDeg: number = DEFAULT_ELEVATION_DEG
+  elevationDeg: number = DEFAULT_ELEVATION_DEG,
+  frontIndex = 0
 ): ModelFrames {
   const manifest = new File(folder(modelUrl, elevationDeg), 'manifest.json');
   if (manifest.exists) manifest.delete();
   manifest.create();
-  manifest.write(JSON.stringify({ count: frames.length, aspect }));
-  const result = { frames, aspect };
+  manifest.write(JSON.stringify({ count: frames.length, aspect, frontIndex }));
+  const result = { frames, aspect, frontIndex };
   memory.set(cacheKey(modelUrl, elevationDeg), result);
   return result;
 }

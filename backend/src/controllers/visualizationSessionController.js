@@ -7,6 +7,9 @@ const { relativeUploadPath, uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { generateRoomVisualization } = require('../services/imageGenerationService');
 const { roomViewImagePath } = require('./roomCaptureController');
+const { roomPicture } = require('./roomWallsController');
+const { cutoutModelWallShaped } = require('../services/productModelService');
+const { classifyCutout } = require('../services/productKindService');
 
 const MAX_PRODUCTS = 8;
 
@@ -60,6 +63,13 @@ function parseLayer(raw, { layerFile, cutoutPath, photoPath }) {
     imagePath,
     source: raw.source,
     fit: raw.source === 'photo' ? 'cover' : 'contain',
+    // Wall-mounted product (the app's classification) and the user's own turn of it (degrees):
+    // AI Render places it on the detected wall at this position (imageGenerationService).
+    kind: raw.kind === 'wall' ? 'wall' : 'floor',
+    userYawDeg: Number.isFinite(Number(raw.userYawDeg)) ? Number(raw.userYawDeg) : 0,
+    // The detected wall the app attached it to (see wallDetectionService ids).
+    wallId: typeof raw.wallId === 'string' && /^wall_\d{1,2}$/.test(raw.wallId) ? raw.wallId : null,
+    cutoutPath: cutoutPath || null,
     transform: { x, y, width, rotation, aspect, zIndex },
   };
 }
@@ -133,13 +143,24 @@ const generateSession = asyncHandler(async (req, res) => {
 
       const imagePath = path.join(uploadRoot, path.basename(storedPath));
       const cutoutPath = cutoutFile(meta.layer?.cutoutId);
+      const layer = parseLayer(meta.layer, { layerFile: files[`layerImage${i}`]?.[0], cutoutPath, photoPath: imagePath });
+      // A product whose 3D model is a thin upright panel (painting, mirror, TV…) hangs on the wall,
+      // even when the app couldn't tell from its name (e.g. "Unknown product").
+      if (
+        layer &&
+        layer.kind !== 'wall' &&
+        ((await cutoutModelWallShaped(req.user.id, meta.layer?.cutoutId).catch(() => null)) ||
+          (cutoutPath && (await classifyCutout(cutoutPath))?.wallMounted))
+      ) {
+        layer.kind = 'wall';
+      }
       resolved.push({
         storedPath,
         checkId,
         imagePath,
         // What the product really looks like: its cutout (no background), else the photo.
         appearancePath: cutoutPath || imagePath,
-        layer: parseLayer(meta.layer, { layerFile: files[`layerImage${i}`]?.[0], cutoutPath, photoPath: imagePath }),
+        layer,
         name: String(meta.name || `Product ${i + 1}`).slice(0, 120),
         category: meta.category || null,
         brand: meta.brand || null,
@@ -163,10 +184,13 @@ const generateSession = asyncHandler(async (req, res) => {
     );
     let generation;
     try {
+      // The picture's camera (180°/360° views: measured field of view + recorded tilt) for wall geometry.
+      const picture = await roomPicture({ roomId, userId: req.user.id, frameId: req.body.roomViewId || null }).catch(() => null);
       generation = await generateRoomVisualization({
         roomImagePath: path.join(uploadRoot, path.basename(roomImagePath)),
         products: resolved,
         roomType,
+        pictureHints: picture ? { fovDeg: picture.fovDeg, recordedPitchDeg: picture.recordedPitchDeg } : null,
       });
     } catch (err) {
       generation = { status: 'failed', generatedImagePath: null, provider: null, message: err.message };

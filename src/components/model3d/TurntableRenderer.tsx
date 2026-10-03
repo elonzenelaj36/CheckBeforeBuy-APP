@@ -30,7 +30,9 @@ type Props = {
   modelUrl: string;
   /** Camera elevation over the product (the room's up/down perspective). */
   elevationDeg?: number;
-  onDone: (productId: string, frames: string[], aspect: number) => void;
+  /** The product's cutout photo (http URL): lets the renderer find the frame showing its front. */
+  referenceUrl?: string | null;
+  onDone: (productId: string, frames: string[], aspect: number, frontIndex: number) => void;
   onError: (productId: string, message: string) => void;
 };
 
@@ -43,6 +45,7 @@ export default function TurntableRenderer({
   productId,
   modelUrl,
   elevationDeg = DEFAULT_ELEVATION_DEG,
+  referenceUrl = null,
   onDone,
   onError,
 }: Props) {
@@ -51,11 +54,11 @@ export default function TurntableRenderer({
   const settled = React.useRef(false);
 
   const finish = React.useCallback(
-    (result: { frames: string[]; aspect: number } | { error: string }) => {
+    (result: { frames: string[]; aspect: number; frontIndex: number } | { error: string }) => {
       if (settled.current) return;
       settled.current = true;
       if ('error' in result) onError(productId, result.error);
-      else onDone(productId, result.frames, result.aspect);
+      else onDone(productId, result.frames, result.aspect, result.frontIndex);
     },
     [productId, onDone, onError]
   );
@@ -77,10 +80,12 @@ export default function TurntableRenderer({
         frames: TURNTABLE_FRAMES,
         maxFrameSize: MAX_FRAME_SIZE,
         elevationDeg,
+        // Only a same-origin http photo can be compared (a WebView canvas can't read other origins).
+        referenceUrl: referenceUrl && originOf(referenceUrl) === originOf(modelUrl) ? referenceUrl : null,
       }),
       baseUrl: originOf(modelUrl),
     }),
-    [modelUrl, elevationDeg]
+    [modelUrl, elevationDeg, referenceUrl]
   );
 
   if (cached) return null;
@@ -98,7 +103,8 @@ export default function TurntableRenderer({
       } else if (message.type === 'done') {
         const all = frames.current.slice(0, message.frames);
         if (all.length !== message.frames || all.some((f) => !f)) throw new Error('Some 3D views are missing.');
-        finish(saveManifest(modelUrl, all, message.width / message.height, elevationDeg));
+        const frontIndex = Number.isInteger(message.frontIndex) && message.frontIndex < all.length ? message.frontIndex : 0;
+        finish(saveManifest(modelUrl, all, message.width / message.height, elevationDeg, frontIndex));
       } else if (message.type === 'error') {
         finish({ error: String(message.message) });
       }

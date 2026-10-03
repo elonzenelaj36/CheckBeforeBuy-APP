@@ -62,7 +62,7 @@ export default function SelectRoom() {
   // request, never just a roomType category.
   // The existing session start, unchanged except that Case 2 passes the
   // product the user outlined instead of the full photo.
-  const startWithProduct = (room: Room, selectedImageUri?: string) => {
+  const startWithProduct = (room: Room, selectedImageUri?: string, detected?: string | null) => {
     // Starts a fresh temporary session: the room + Product 1. It lives in
     // memory (services/visualizationSession.ts), so no images go through params.
     // The room's selected captured view if it has one, else the primary photo (as before).
@@ -80,7 +80,8 @@ export default function SelectRoom() {
         ? {
             imageUri: selectedImageUri ?? productImageUri,
             name: productName || 'Product',
-            category: first(params.productCategory),
+            // What the photo check saw (e.g. "framed painting") when nothing else names it.
+            category: first(params.productCategory) || detected || null,
             brand: first(params.productBrand),
             productCheckId: productCheckId ?? null,
             ...(selectedImageUri ? { selectedFromPhoto: true } : {}),
@@ -106,7 +107,7 @@ export default function SelectRoom() {
     setCheckingPhoto(false);
 
     if (decision.route === 'auto') {
-      startWithProduct(room);
+      startWithProduct(room, undefined, decision.detected);
       router.push('/visualization');
       return;
     }

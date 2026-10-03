@@ -96,6 +96,7 @@ On success you'll see:
 | DELETE | `/api/rooms/:id/photos/:photoId` | Remove a photo |
 | PATCH | `/api/rooms/:id/photos/:photoId` | Set as primary photo (`{ isPrimary: true }`) |
 | POST | `/api/rooms/:id/analyze` | AI-detect objects in the room's photos → save new ones to `user_items` (see "AI — room analysis") |
+| GET | `/api/rooms/:id/walls?frameId=` | Walls of the room's primary photo, or of one captured view (see "Wall-mounted products") |
 | GET | `/api/rooms/:id/capture` | The room's 180°/360° capture with all views, or `{ capture: null }` (see "Room capture") |
 | POST | `/api/rooms/:id/capture` | Upload a room sweep (multipart `video`, `mode`, `motion`) → extract views |
 | PATCH | `/api/rooms/:id/capture/:captureId` | "USE THIS VIEW": `{ selectedFrameId }` (null = primary photo again) |
@@ -298,6 +299,124 @@ photos, with a text placement hint.
 
 `IMAGE_AI_DEBUG=1` saves each AI Render's composition, reference images and
 prompt to `uploads/render-debug/`.
+
+### Room preservation (`roomPreservationService.js`)
+
+The AI's picture is never saved as it is. FLUX redraws the whole room, so the
+result is rebuilt on the ORIGINAL photo (at its own resolution, up to 2048 px):
+only each product's zone (its outline, grown a little, plus a soft floor
+shadow) comes from the AI output. That output is first aligned to the photo
+(shift search) and colour-matched on a ring around the zone. When the AI
+moved or lost a product (it matches the arrangement below 0.35), that
+product's arranged pixels are used instead. Every pixel outside the product
+zones is checked to be the photo's own (`backgroundPixelsChanged` must be 0;
+logged as "room kept"). Output is PNG.
+
+### Wall-mounted products (paintings, mirrors, TVs, wall shelves)
+
+A product is wall-mounted when its 3D model is an upright, thin panel:
+depth under 20% of its width, height over 20% (`wallShaped` in
+`productModelService.js`, read from the GLB's bounds; paintings measure
+0.03–0.13, furniture 0.74+, and rugs don't qualify because they are thin
+vertically). Its name/category also counts (`isWallMountedProduct` in
+`src/services/roomWalls.ts`). The backend checks the model shape itself, so
+an unnamed photo ("Unknown product") still counts.
+
+**Photo first** (app): wall products are shown as their real photo (cutout),
+and no 3D model is made for them unless the user taps "Show as 3D anyway"
+(with a warning that flat products' 3D is approximate and uses the 3D quota).
+They're recognised before any 3D exists by Groq on the cutout itself
+(`productKindService.js`, cached as `cutout-<hash>.kind.json`, returned as
+`kind: { name, wallMounted }` by `POST /api/product-cutouts`). That also covers
+products the user outlined by hand. Also by the photo check's product name
+(`/product-selection/detect` → `detected`, stored as the product's category,
+e.g. "framed picture"). A 3D model's shape is the backup.
+
+**Wall preview** (`GET /api/rooms/:id/walls/preview?frameId&wallId&cutoutId&x&y&width&aspect`,
+`roomWallsController.js`): once a photo-mode product is on a wall, Arrange
+shows a PNG of its cutout warped onto that wall. It uses the same geometry and
+the same `warpLayerToQuad` as AI Render, so the preview matches the generated
+image. The PNG covers the layer's box × 1.6 (`PREVIEW_BOX_SCALE` /
+`WALL_PREVIEW_BOX_SCALE`). It's about 0.1 s and is re-requested only on drop.
+
+**Wall attachment** (app, `attachToWall` in `visualizationSession.ts`): a wall
+product is either ON a wall of the picture in view or free. It's worked out
+when the product is dropped, the view changes, or its cutout/3D views arrive,
+never during a drag. It attaches when its centre is inside a detected wall
+with confidence ≥ 0.5 (`MIN_PREVIEW_CONFIDENCE` in `roomWalls.ts`, the same
+value as the backend's `MIN_WALL_CONFIDENCE`). There's no 3D distance: a room
+is one picture, so "on the wall" means inside its region.
+- Attached: its angle is the wall's. The 3D preview turns to lie flat on it,
+  its tilt is reset, the turn controls are hidden, the twist gesture is ignored,
+  and a chip says "ON THE WALL".
+- Free: it faces the camera again and can be turned like any 3D object.
+- Generate refuses a wall product that isn't attached in the current view
+  ("Move … onto a wall before generating").
+
+The app sends
+`layer.kind = 'wall'` plus `layer.wallId` (the wall it's attached to).
+
+**Wall detection** (`wallDetectionService.js`, `GET /api/rooms/:id/walls`):
+- WHERE: the Items Detected Groq vision call (`askGroqAboutImage`) with a
+  walls prompt. Each visible wall gives 4 corners, `facing`
+  (front/left/right), `mountable` and `confidence`.
+- WHICH WAY: deterministic geometry from the room's own straight lines
+  (`lineSegmentService.js`, an LSD-style detector on Sobel gradients;
+  `wallGeometry.js` turns each line into a 3D direction for the picture's
+  camera).
+  - **Room directions (`roomAxes`):** rooms are built at right angles, so
+    nearly every horizontal line runs along one of two perpendicular
+    directions. All the picture's lines vote: walls, skirting, window tops,
+    beds, dressers. A sloped attic ceiling fits neither direction and barely
+    counts.
+  - **Choosing per wall:** each wall takes the direction that faces the way
+    Groq says (front/left/right), or, if that's ambiguous, the one closest to
+    the lines on and around its own region (`geometry: 'room-lines'`).
+  - **Fallbacks:** with too few lines (under 30% agreement), the strongest group
+    of lines on the region (`'lines'`), else its rough edges (`'edges'`).
+  - **Why:** Groq's corners are only a rough box, often the photo's own edges,
+    and furniture lines inside a wall's area run other ways.
+  - **Cache:** the walls cache keeps Groq's raw regions separately, so geometry
+    changes (`CACHE_VERSION`) recompute angles without a new Groq call and keep
+    the wall ids.
+  Captures use their measured FOV and recorded tilt; photos assume a
+  69.4° phone lens and measure tilt from vertical edges.
+- Disagreement between the geometry and the model's front/left/right lowers
+  the confidence. Walls below 0.4 are dropped. Cached per picture as
+  `<image>.walls.json` (1 Groq call per picture); a Groq failure isn't cached.
+
+```json
+{ "status": "ok", "camera": { "fovDeg": 69.4, "aspect": 1, "pitchDeg": 10.5, "pitchSource": "measured" },
+  "walls": [{ "id": "wall_1", "polygon": [[0.18,0.25],[0.93,0.24],[0.85,0.83],[0.2,0.71]],
+              "facing": "front", "mountable": true, "confidence": 0.95, "normalDeg": -169.4, "geometry": "edges" }] }
+```
+`normalDeg`: the horizontal direction the wall faces, in degrees from the
+camera's forward direction (+ = right; ±180 = straight at the camera).
+
+**AI Render** (`resolveWallLayers` in `imageGenerationService.js`): at the
+product's FINAL position, the wall containing it is found. If it is confident
+(≥ 0.5), the product lies flat on it: it faces `wall.normalDeg`, and any turn
+(`userYawDeg`) or tilt from older apps is ignored. A painting has exactly one
+correct angle. Its exact
+perspective quad is projected with a pinhole camera: its size is the layer's
+on-screen height, its proportions the real product photo. The product's real
+cutout is warped into that quad (bilinear sampling, soft 1-px edge) for both
+the FLUX reference and the final picture, so the frame, the bottom edge and the
+design are the photo's own pixels, not redrawn. A deterministic soft shadow is
+added, and FLUX's lighting tone is applied only when its render matches. With
+no wall, low confidence or an edge-on view, the product still comes from its
+real photo, hung facing the camera plus the user's turn (logged as
+`wall products: [{used:false, reason, facing:'camera'}]`). It never comes from
+the 3D preview's frame. Only a product without a cutout keeps the previous
+behaviour.
+
+**3D preview** (app): the turntable renderer compares every frame with the
+cutout photo (outline + brightness-pattern correlation) to find the frame that
+shows the photographed front. TRELLIS sometimes puts it at 180°, and the back
+of a painting shows a mirrored texture. A wall-mounted product's preview then
+starts ONCE at that front, turned to the wall at its position (`autoYawDeg`).
+After that it never turns by itself: dragging doesn't re-derive the angle, and
+any user turn wins.
 
 ## Room capture (180° / 360° room views)
 

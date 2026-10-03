@@ -16,6 +16,7 @@ import {
   declineModel3D,
   retryCutout,
   retryModel3D,
+  showsAsPhoto,
   type SessionProduct,
 } from '@/services/visualizationSession';
 
@@ -33,6 +34,8 @@ const STAGE_LABELS: Record<ProductModelStage, string> = {
 function isPreparing(p: SessionProduct): boolean {
   if (p.cutout.status === 'pending') return true;
   if (p.cutout.status !== 'ready') return false;
+  // A wall product shown as its photo isn't waiting for 3D.
+  if (showsAsPhoto(p) && p.model3D.status === 'waiting') return false;
   return p.model3D.status === 'waiting' || p.model3D.status === 'generating' || p.model3D.status === 'rendering';
 }
 

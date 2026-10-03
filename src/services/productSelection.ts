@@ -24,7 +24,8 @@ export type PhotoSource = {
 export type SelectionReason = 'multiple' | 'uncertain' | 'none' | 'unavailable';
 
 export type ProductRoute =
-  | { route: 'auto' }
+  /** detected: what the photo shows (e.g. "framed painting"), when the check named it. */
+  | { route: 'auto'; detected: string | null }
   | { route: 'select'; reason: SelectionReason; products: string[] };
 
 /** A point normalized to the displayed image (0..1). */
@@ -60,7 +61,7 @@ export async function detectProductRoute(source: PhotoSource): Promise<ProductRo
     );
     const route: ProductRoute =
       result.route === 'auto'
-        ? { route: 'auto' }
+        ? { route: 'auto', detected: result.products?.[0] || null }
         : { route: 'select', reason: result.reason as SelectionReason, products: result.products ?? [] };
     routeCache.set(key, route);
     return route;

@@ -35,6 +35,54 @@ const activeJobs = new Set();
 /** Serializes generations (one at a time). */
 let jobChain = Promise.resolve();
 
+/**
+ * Is the model shaped like something that hangs on a wall (painting, mirror,
+ * TV, wall panel…)? Upright and very thin front-to-back. A rug or a mat is
+ * thin vertically, so it doesn't count. Read from the GLB's own bounds
+ * (glTF accessors carry min/max; TRELLIS models are Y-up with no node
+ * transforms), only the small JSON chunk, cached per file. null = unknown.
+ */
+const shapeCache = new Map();
+function wallShaped(modelPath) {
+  if (!modelPath) return null;
+  if (shapeCache.has(modelPath)) return shapeCache.get(modelPath);
+  let result = null;
+  let fd = null;
+  try {
+    fd = fs.openSync(path.join(uploadRoot, path.basename(modelPath)), 'r');
+    const head = Buffer.alloc(20);
+    fs.readSync(fd, head, 0, 20, 0);
+    if (head.readUInt32LE(0) === 0x46546c67 && head.readUInt32LE(16) === 0x4e4f534a) {
+      const json = Buffer.alloc(head.readUInt32LE(12));
+      fs.readSync(fd, json, 0, json.length, 20);
+      const gltf = JSON.parse(json.toString('utf8'));
+      const min = [Infinity, Infinity, Infinity];
+      const max = [-Infinity, -Infinity, -Infinity];
+      for (const mesh of gltf.meshes || []) {
+        for (const prim of mesh.primitives || []) {
+          const acc = gltf.accessors?.[prim.attributes?.POSITION];
+          if (!acc?.min || !acc?.max) continue;
+          for (let k = 0; k < 3; k += 1) {
+            min[k] = Math.min(min[k], acc.min[k]);
+            max[k] = Math.max(max[k], acc.max[k]);
+          }
+        }
+      }
+      const [x, y, z] = max.map((v, k) => v - min[k]);
+      if ([x, y, z].every((v) => Number.isFinite(v) && v >= 0)) {
+        const wide = Math.max(x, z);
+        result = wide > 0 && Math.min(x, z) / wide < 0.2 && y / wide > 0.2;
+      }
+    }
+  } catch {
+    result = null;
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
+  shapeCache.set(modelPath, result);
+  return result;
+}
+
 function serialize(row) {
   return {
     id: String(row.id),
@@ -45,6 +93,8 @@ function serialize(row) {
     reason: row.status === 'failed' ? row.provider_status || null : null,
     progress: row.progress ?? null,
     modelUrl: toAbsoluteUrl(row.model_path),
+    // Shaped like a wall-mounted product (see wallShaped); null while not ready / unknown.
+    wallShaped: row.status === 'ready' ? wallShaped(row.model_path) : null,
     message: row.error_message || null,
   };
 }
@@ -165,4 +215,11 @@ async function getModel({ userId, id }) {
   return serialize(row);
 }
 
-module.exports = { requestModel, getModel };
+/** Wall-shaped 3D model of a cutout (the user's), for AI Render; null when there's none. */
+async function cutoutModelWallShaped(userId, cutoutId) {
+  if (!/^[a-f0-9]{32}$/.test(String(cutoutId || ''))) return null;
+  const row = await findRow("user_id = ? AND source_hash = ? AND status = 'ready'", [userId, cutoutId]);
+  return row ? wallShaped(row.model_path) : null;
+}
+
+module.exports = { requestModel, getModel, cutoutModelWallShaped };

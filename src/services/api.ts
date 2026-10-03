@@ -35,6 +35,11 @@ export function setAuthToken(token: string | null): void {
   authToken = token;
 }
 
+/** Full URL of an API endpoint and its auth header — for images loaded straight from the API. */
+export function apiImageSource(endpoint: string): { uri: string; headers: Record<string, string> } {
+  return { uri: `${API_URL}${endpoint}`, headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} };
+}
+
 function getHeaders(
   extra?: Record<string, string>
 ): Record<string, string> {

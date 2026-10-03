@@ -129,6 +129,17 @@ function parseDetections(raw, width, height) {
 
 /** One image → detections. Throws on provider failure (after following rate-limit hints). */
 async function detectInImage(absoluteImagePath) {
+  const { content, width, height } = await askGroqAboutImage(absoluteImagePath, PROMPT);
+  return parseDetections(content, width, height);
+}
+
+/**
+ * One room picture + a JSON-answer prompt → the model's parsed JSON and the
+ * picture size it saw (boxes come back on the 0–1000 longer-side scale).
+ * Shared by Items Detected and wall detection (wallDetectionService.js).
+ * Throws on provider failure (after following rate-limit hints).
+ */
+async function askGroqAboutImage(absoluteImagePath, prompt) {
   if (!isAvailable()) throw new DetectionUnavailableError('Item detection needs AI_PROVIDER=groq and AI_API_KEY.');
   const buffer = await sharp(absoluteImagePath)
     .rotate()
@@ -144,7 +155,7 @@ async function detectInImage(absoluteImagePath) {
       {
         role: 'user',
         content: [
-          { type: 'text', text: PROMPT },
+          { type: 'text', text: prompt },
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${buffer.toString('base64')}` } },
         ],
       },
@@ -185,7 +196,7 @@ async function detectInImage(absoluteImagePath) {
     } catch {
       throw new Error('Groq returned a non-JSON item detection.');
     }
-    return parseDetections(content, width, height);
+    return { content, width, height };
   }
 }
 
@@ -337,6 +348,7 @@ module.exports = {
   detectRoomItems,
   isAvailable,
   DetectionUnavailableError,
+  askGroqAboutImage,
   // exported for tests
   parseDetections,
   pickViews,

@@ -13,6 +13,7 @@ const {
   analyzeRoom,
 } = require('../controllers/roomController');
 const { createCapture, getCapture, selectView, deleteCapture } = require('../controllers/roomCaptureController');
+const { getRoomWalls, getWallPreview } = require('../controllers/roomWallsController');
 
 const router = express.Router();
 
@@ -29,6 +30,10 @@ router.delete('/:id/photos/:photoId', removeRoomPhoto);
 router.patch('/:id/photos/:photoId', setPrimaryPhoto);
 
 router.post('/:id/analyze', analyzeRoom);
+
+// Walls of a room picture (for wall-mounted products), detected once per picture.
+router.get('/:id/walls', getRoomWalls);
+router.get('/:id/walls/preview', getWallPreview);
 
 // Optional 180°/360° room capture (room views). Never changes the room's photos.
 router.get('/:id/capture', getCapture);

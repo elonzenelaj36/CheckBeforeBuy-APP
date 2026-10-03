@@ -37,7 +37,11 @@ import {
   productsInView,
   type ProductTransform,
   type SessionSpatialFrame,
+  isWallProduct,
   regenerateSession,
+  showProductAsPhoto,
+  showProductIn3D,
+  showsAsPhoto,
   removeProduct,
   selectProduct,
   setModelFrames,
@@ -446,7 +450,62 @@ export default function Visualization() {
           </Text>
         )}
 
-        {!showingAi && selectedProduct && selected3D && (
+        {/* Wall-mounted product: on a wall (its angle is the wall's), or not yet. */}
+        {!showingAi && selectedProduct && isWallProduct(selectedProduct) && (
+          <View
+            style={[
+              styles.wallChip,
+              selectedProduct.wallAttachment?.status === 'attached' ? styles.wallChipOn : styles.wallChipOff,
+            ]}
+          >
+            <Text
+              style={[
+                styles.wallChipText,
+                { color: selectedProduct.wallAttachment?.status === 'attached' ? Colors.successText : Colors.warningText },
+              ]}
+            >
+              {selectedProduct.wallAttachment?.status === 'attached'
+                ? 'ON THE WALL · ITS ANGLE FOLLOWS THE WALL'
+                : selectedProduct.wallAttachment?.status === 'checking'
+                  ? 'FINDING THE WALL…'
+                  : selectedProduct.wallAttachment?.status === 'free' && selectedProduct.wallAttachment.reason === 'unavailable'
+                    ? "COULDN'T DETECT THE WALLS · MOVE IT TO TRY AGAIN"
+                    : 'NOT ON A WALL · DRAG IT ONTO A WALL'}
+            </Text>
+          </View>
+        )}
+
+        {/* Wall products are shown as their real photo; 3D only on request (approximate for flat products). */}
+        {!showingAi && selectedProduct && isWallProduct(selectedProduct) && selectedProduct.cutout.status === 'ready' && (
+          <TouchableOpacity
+            style={styles.displayToggle}
+            activeOpacity={0.85}
+            onPress={() => {
+              if (!showsAsPhoto(selectedProduct)) {
+                showProductAsPhoto(selectedProduct.id);
+                return;
+              }
+              Alert.alert(
+                'Show as 3D?',
+                "A 3D model of a flat product like a painting is only approximate: it can look washed out, and its angle on the wall is rough. Your photo shows exactly what the AI image will look like. Generate always uses your photo, on the wall's real angle.\n\nCreating 3D also uses your free daily 3D quota.",
+                [
+                  { text: 'Keep photo', style: 'cancel' },
+                  { text: 'Show as 3D anyway', onPress: () => showProductIn3D(selectedProduct.id) },
+                ]
+              );
+            }}
+          >
+            <Text style={styles.displayToggleText}>
+              {showsAsPhoto(selectedProduct) ? 'SHOW AS 3D ANYWAY' : 'SHOW AS PHOTO'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {!showingAi &&
+          selectedProduct &&
+          selected3D &&
+          !showsAsPhoto(selectedProduct) &&
+          selectedProduct.wallAttachment?.status !== 'attached' && (
           <TurnControl
             yawDeg={selectedProduct.transform.yawDeg}
             frameCount={selected3D.frames.length}
@@ -554,6 +613,7 @@ export default function Visualization() {
           productId={renderJob.id}
           modelUrl={renderJob.model3D.modelUrl}
           elevationDeg={renderJob.model3D.elevationDeg}
+          referenceUrl={renderJob.cutout.status === 'ready' ? renderJob.cutout.imageUri : null}
           onDone={setModelFrames}
           onError={setModelRenderFailed}
         />
@@ -665,6 +725,42 @@ const styles = StyleSheet.create({
   },
   roomViewButtonText: {
     color: Colors.accentText,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  displayToggle: {
+    alignSelf: 'center',
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+  },
+  displayToggleText: {
+    color: Colors.accent,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  wallChip: {
+    alignSelf: 'center',
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  wallChipOn: {
+    backgroundColor: Colors.successDim,
+    borderColor: Colors.success,
+  },
+  wallChipOff: {
+    backgroundColor: Colors.warningDim,
+    borderColor: Colors.warning,
+  },
+  wallChipText: {
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,

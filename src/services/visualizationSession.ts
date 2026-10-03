@@ -32,11 +32,12 @@ import React from 'react';
 
 import { File } from 'expo-file-system';
 
-import { apiUploadMultipart } from './api';
+import { apiImageSource, apiUploadMultipart } from './api';
 import { DEFAULT_ELEVATION_DEG, frameIndexForYaw, loadCachedFrames } from './modelFrames';
 import { removeProductBackground, type CutoutQuality } from './productCutouts';
 import { captureFovDeg, type CaptureMode, type RoomCapture, type SessionRoomView } from './roomCaptures';
 import { blendAt, directionAt, productElevationDeg, projectToFrame } from './roomViewMath';
+import { fetchRoomWalls, isWallMountedProduct, wallAtPoint, wallTurnDeg } from './roomWalls';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -129,7 +130,8 @@ export type SessionModel3D =
   /** GLB ready; its views are being rendered on this device. */
   /** elevationDeg: the up/down perspective the frames are rendered from (default 15°; spatial rooms: the room's). */
   | { status: 'rendering'; modelId: string; modelUrl: string; elevationDeg?: number }
-  | { status: 'ready'; modelId: string; modelUrl: string; frames: string[]; elevationDeg?: number }
+  /** frontIndex: the frame showing the photographed (front) side. */
+  | { status: 'ready'; modelId: string; modelUrl: string; frames: string[]; elevationDeg?: number; frontIndex?: number }
   /** `retry` says what "try again" re-runs: the backend generation, or only the on-device render. */
   | {
       status: 'failed';
@@ -171,7 +173,44 @@ export type SessionProduct = {
    * every step uses.
    */
   selectedFromPhoto?: boolean;
+  /** Hangs on a wall by what it IS (backend: the photo check, or its 3D model being a thin upright panel) — even without a telling name. */
+  wallShaped?: boolean;
+  /**
+   * Wall-mounted products: whether it is ON a wall of the picture in view.
+   * Worked out when the user drops it or changes view (never mid-drag). On a
+   * wall, its angle IS the wall's: flat against it, no turn or tilt of its
+   * own. Not on a wall, it's a free 3D object, and Generate waits for it.
+   */
+  wallAttachment?: WallAttachment;
+  /**
+   * Wall-mounted products: shown as the real photo (default — exact, and it
+   * matches the generated picture) or, when the user asks for it, as 3D.
+   * Other products are always 3D when available.
+   */
+  display?: 'photo' | '3d';
 };
+
+/** The PNG's box is the layer's box × this (same centre) — backend PREVIEW_BOX_SCALE. */
+export const WALL_PREVIEW_BOX_SCALE = 1.6;
+
+export type WallAttachment =
+  /** preview: the previous one, kept while the new one is worked out (no flash). */
+  | { status: 'checking'; preview: { uri: string; headers: Record<string, string> } | null }
+  | {
+      status: 'attached';
+      wallId: string;
+      frameId: string | null;
+      normalDeg: number;
+      /** The real photo drawn flat on the wall in its exact perspective (backend; same maths as Generate). */
+      preview: { uri: string; headers: Record<string, string> } | null;
+    }
+  /** 'unavailable' = the walls couldn't be detected right now. */
+  | { status: 'free'; reason: 'no-wall' | 'unavailable' };
+
+/** Hangs on a wall: by its name/category, or by the shape of its 3D model. */
+export function isWallProduct(p: SessionProduct): boolean {
+  return p.wallShaped === true || isWallMountedProduct(p);
+}
 
 /**
  * The image a product's layer shows on the Arrange canvas: the 3D model seen
@@ -179,8 +218,14 @@ export type SessionProduct = {
  * yet, or background removal failed) the original photo. RoomComposer draws
  * exactly this, and AI Render rebuilds the same picture from it.
  */
+/** A wall-mounted product shown as its real photo (not 3D). */
+export function showsAsPhoto(p: SessionProduct): boolean {
+  return isWallProduct(p) && p.display !== '3d';
+}
+
 export function layerImageFor(product: SessionProduct): { source: 'frame' | 'cutout' | 'photo'; uri: string } {
   const { cutout, model3D } = product;
+  if (showsAsPhoto(product) && cutout.status === 'ready') return { source: 'cutout', uri: cutout.imageUri };
   if (model3D.status === 'ready' && model3D.frames.length > 0) {
     return { source: 'frame', uri: model3D.frames[frameIndexForYaw(product.transform.yawDeg, model3D.frames.length)] };
   }
@@ -247,12 +292,13 @@ export function useVisualizationSession(): VisualizationSession | null {
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 /** New layers are staggered across the lower middle of the room so they don't stack exactly. */
-function defaultTransform(index: number, zIndex: number): ProductTransform {
+function defaultTransform(index: number, zIndex: number, wallMounted = false): ProductTransform {
   const column = index % 3;
   const row = Math.floor(index / 3) % 2;
   return {
     x: 0.3 + column * 0.2,
-    y: 0.58 + row * 0.16,
+    // Wall-mounted products start up on the wall, the rest on the floor.
+    y: (wallMounted ? 0.34 : 0.58) + row * 0.16,
     width: 0.3,
     rotation: 0,
     aspect: 1,
@@ -271,7 +317,7 @@ export function startSession(room: SessionRoom, firstProduct?: NewSessionProduct
     ? {
         ...firstProduct,
         id: nextId('product'),
-        transform: defaultTransform(0, 1),
+        transform: defaultTransform(0, 1, isWallMountedProduct(firstProduct)),
         cutout: { status: 'pending' },
         model3D: { status: 'waiting' },
       }
@@ -315,7 +361,7 @@ export function addProduct(input: NewSessionProduct): AddProductResult {
     };
   }
 
-  const transform = defaultTransform(session.products.length, topZIndex(session.products) + 1);
+  const transform = defaultTransform(session.products.length, topZIndex(session.products) + 1, isWallMountedProduct(input));
   const spatial = session.room.spatial;
   if (spatial) transform.anchorDeg = directionAt(transform.x, spatial.viewDeg, spatial.fovDeg);
   const product: SessionProduct = {
@@ -346,6 +392,8 @@ export function setSessionRoomView(imageUri: string | null, view: SessionRoomVie
     return;
   }
   commit({ ...session, room: { ...session.room, imageUri, view }, generation: null });
+  const next = getSession();
+  if (next) reattachInView(next);
 }
 
 /**
@@ -436,6 +484,8 @@ export function setSessionSpatial(capture: RoomCapture) {
     },
     products: projectProducts(products, spatial, start.angleDeg),
   });
+  const next = getSession();
+  if (next) reattachInView(next);
 }
 
 /**
@@ -460,6 +510,8 @@ export function setSessionViewAngle(angleDeg: number) {
     },
     products: projectProducts(session.products, spatial, frame.angleDeg),
   });
+  const next = getSession();
+  if (next) reattachInView(next);
 }
 
 /**
@@ -510,12 +562,22 @@ export function updateProductTransform(productId: string, patch: Partial<Product
   if (spatial && patch.x !== undefined && patch.anchorDeg === undefined) {
     patch = { ...patch, anchorDeg: directionAt(patch.x, spatial.viewDeg, spatial.fovDeg) };
   }
+  const product = session.products.find((p) => p.id === productId);
+  // On a wall, the wall decides its angle: no turn or tilt of its own.
+  if (product?.wallAttachment?.status === 'attached') {
+    const { yawDeg: _yaw, rotation: _rotation, ...rest } = patch;
+    patch = rest;
+  }
   commit({
     ...session,
     products: session.products.map((p) =>
       p.id === productId ? { ...p, transform: { ...p.transform, ...patch } } : p
     ),
   });
+  // Dropped somewhere new: is it on a wall now?
+  if (product && isWallProduct(product) && (patch.x !== undefined || patch.y !== undefined || patch.width !== undefined || patch.aspect !== undefined)) {
+    void attachToWall(session.id, productId);
+  }
 }
 
 function patchProduct(sessionId: string, productId: string, patch: (p: SessionProduct) => SessionProduct) {
@@ -542,8 +604,12 @@ async function prepareCutout(productId: string) {
       ...p,
       cutout: { status: 'ready', imageUri: cutout.imageUri, cutoutId: cutout.id, quality: cutout.quality },
       transform: { ...p.transform, aspect: cutout.width / cutout.height },
+      // What the photo shows, when nothing named it yet (e.g. a product outlined in a photo).
+      category: p.category || cutout.kind?.name || null,
+      ...(cutout.kind?.wallMounted ? { wallShaped: true } : {}),
     }));
     void startModel3D(productId);
+    void attachToWall(session.id, productId);
   } catch (error: any) {
     if (__DEV__) console.warn('[visualization] background removal failed:', error?.message ?? error);
     patchProduct(session.id, productId, (p) => ({
@@ -586,13 +652,17 @@ function setModel3D(sessionId: string, productId: string, model3D: SessionModel3
 /** Applies the backend's model state; returns true while it is still generating. */
 function applyModel(sessionId: string, productId: string, model: ProductModel): boolean {
   if (model.status === 'ready' && model.modelUrl) {
+    if (model.wallShaped) {
+      patchProduct(sessionId, productId, (p) => ({ ...p, wallShaped: true }));
+      void attachToWall(sessionId, productId);
+    }
     // Chosen automatically from the room's perspective (the user only turns it left/right).
     const session = getSession();
     const product = session?.products.find((p) => p.id === productId);
     const elevationDeg = session && product ? elevationFor(session, product) : DEFAULT_ELEVATION_DEG;
     const cached = loadCachedFrames(model.modelUrl, elevationDeg);
     if (cached) {
-      applyFrames(sessionId, productId, model.id, model.modelUrl, cached.frames, cached.aspect, elevationDeg);
+      applyFrames(sessionId, productId, model.id, model.modelUrl, cached.frames, cached.aspect, elevationDeg, cached.frontIndex);
     } else {
       setModel3D(sessionId, productId, { status: 'rendering', modelId: model.id, modelUrl: model.modelUrl, elevationDeg });
     }
@@ -654,6 +724,8 @@ async function startModel3D(productId: string, retry = false, reviewed = false) 
   const session = getSession();
   const product = session?.products.find((p) => p.id === productId);
   if (!session || !product || product.cutout.status !== 'ready') return;
+  // Wall-mounted: the real photo is the preview; 3D only when the user asks for it.
+  if (!retry && !reviewed && showsAsPhoto(product)) return;
   const allowed = retry
     ? product.model3D.status === 'failed'
     : product.model3D.status === 'waiting' || (reviewed && product.model3D.status === 'review');
@@ -696,7 +768,8 @@ function applyFrames(
   modelUrl: string,
   frames: string[],
   aspect: number,
-  elevationDeg?: number
+  elevationDeg?: number,
+  frontIndex = 0
 ) {
   patchProduct(sessionId, productId, (p) => {
     // Keep the product's on-screen HEIGHT when switching to the 3D view, so it
@@ -704,19 +777,102 @@ function applyFrames(
     const width = Math.min(MAX_LAYER_WIDTH, Math.max(MIN_LAYER_WIDTH, (p.transform.width / p.transform.aspect) * aspect));
     return {
       ...p,
-      model3D: { status: 'ready', modelId, modelUrl, frames, elevationDeg },
+      model3D: { status: 'ready', modelId, modelUrl, frames, elevationDeg, frontIndex },
       transform: { ...p.transform, aspect, width },
     };
   });
+  void attachToWall(sessionId, productId);
+}
+
+/** Turntable angle at which the 3D product shows its photographed front (0 = frame 0). */
+function frontYawDeg(p: SessionProduct): number {
+  if (p.model3D.status !== 'ready' || p.model3D.frames.length === 0) return 0;
+  return ((p.model3D.frontIndex ?? 0) * 360) / p.model3D.frames.length;
+}
+
+/**
+ * Wall-mounted product: attaches it to the wall of the current picture its
+ * centre is on (backend wall detection, cached per picture), or frees it.
+ * Attached: the 3D preview turns to lie flat on that wall and any tilt is
+ * removed. Free: it faces the camera again (its normal 3D view). Runs when
+ * the product is dropped, the view changes or its 3D views arrive — never
+ * during a drag. The preview is approximate; Generate uses the same wall
+ * with its exact perspective.
+ */
+async function attachToWall(sessionId: string, productId: string) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (!session || !product || !isWallProduct(product) || !session.room.id) return;
+  const frameId = session.room.view?.frameId ?? null;
+  const { x, y } = product.transform;
+  patchProduct(sessionId, productId, (p) => ({
+    ...p,
+    wallAttachment: {
+      status: 'checking',
+      preview:
+        p.wallAttachment?.status === 'attached' || p.wallAttachment?.status === 'checking' ? p.wallAttachment.preview : null,
+    },
+  }));
+
+  const walls = await fetchRoomWalls(session.room.id, frameId);
+  const latest = getSession();
+  const now = latest?.products.find((p) => p.id === productId);
+  // Moved again, or another view, meanwhile: that newer drop decides.
+  if (!latest || latest.id !== sessionId || !now) return;
+  if ((latest.room.view?.frameId ?? null) !== frameId || now.transform.x !== x || now.transform.y !== y) return;
+
+  const wall = walls.camera ? wallAtPoint(walls.walls, x, y) : null;
+  if (wall && wall.normalDeg !== null && walls.camera) {
+    const yawDeg = (((frontYawDeg(now) + wallTurnDeg(x, y, wall.normalDeg, walls.camera)) % 360) + 360) % 360;
+    patchProduct(sessionId, productId, (p) => ({
+      ...p,
+      wallAttachment: {
+        status: 'attached',
+        wallId: wall.id,
+        frameId,
+        normalDeg: wall.normalDeg as number,
+        preview:
+          p.cutout.status === 'ready'
+            ? apiImageSource(
+                `/rooms/${latest.room.id}/walls/preview?` +
+                  [
+                    frameId ? `frameId=${encodeURIComponent(frameId)}` : '',
+                    `wallId=${wall.id}`,
+                    `cutoutId=${p.cutout.cutoutId}`,
+                    `x=${round4(x)}`,
+                    `y=${round4(y)}`,
+                    `width=${round4(p.transform.width)}`,
+                    `aspect=${round4(p.transform.aspect)}`,
+                  ]
+                    .filter(Boolean)
+                    .join('&')
+              )
+            : null,
+      },
+      transform: { ...p.transform, yawDeg, rotation: 0 },
+    }));
+  } else {
+    patchProduct(sessionId, productId, (p) => ({
+      ...p,
+      wallAttachment: { status: 'free', reason: walls.status === 'ok' ? 'no-wall' : 'unavailable' },
+      // Back to its normal view: the front, facing the camera (keeps a tilt the user gave it).
+      transform: p.wallAttachment?.status === 'attached' ? { ...p.transform, yawDeg: frontYawDeg(p) } : p.transform,
+    }));
+  }
+}
+
+/** Wall products in the picture in view need their wall worked out again (another picture). */
+function reattachInView(session: VisualizationSession) {
+  for (const p of productsInView(session)) if (isWallProduct(p)) void attachToWall(session.id, p.id);
 }
 
 /** Called by the on-device renderer when a model's frames are ready. */
-export function setModelFrames(productId: string, frames: string[], aspect: number) {
+export function setModelFrames(productId: string, frames: string[], aspect: number, frontIndex = 0) {
   const session = getSession();
   const product = session?.products.find((p) => p.id === productId);
   if (!session || product?.model3D.status !== 'rendering') return;
   const m = product.model3D;
-  applyFrames(session.id, productId, m.modelId, m.modelUrl, frames, aspect, m.elevationDeg);
+  applyFrames(session.id, productId, m.modelId, m.modelUrl, frames, aspect, m.elevationDeg, frontIndex);
 }
 
 /** Called by the on-device renderer when the model couldn't be displayed. */
@@ -733,6 +889,24 @@ export function setModelRenderFailed(productId: string, message: string) {
     modelUrl: product.model3D.modelUrl,
     elevationDeg: product.model3D.elevationDeg,
   });
+}
+
+/** Wall-mounted product: show it as 3D anyway (creates its 3D model if it has none yet). */
+export function showProductIn3D(productId: string) {
+  const session = getSession();
+  const product = session?.products.find((p) => p.id === productId);
+  if (!session || !product) return;
+  patchProduct(session.id, productId, (p) => ({ ...p, display: '3d' }));
+  void startModel3D(productId);
+  void attachToWall(session.id, productId);
+}
+
+/** Wall-mounted product: back to its real photo (the 3D model, if made, is kept). */
+export function showProductAsPhoto(productId: string) {
+  const session = getSession();
+  if (!session) return;
+  patchProduct(session.id, productId, (p) => ({ ...p, display: 'photo' }));
+  void attachToWall(session.id, productId);
 }
 
 /** User chose to create the 3D model despite the photo-quality warnings. */
@@ -812,6 +986,10 @@ export type GenerationLayer = {
   source: 'frame' | 'cutout' | 'photo';
   /** Backend cutout the layer shows (source 'cutout'); also the product's appearance reference. */
   cutoutId?: string;
+  /** 'wall' = wall-mounted product: AI Render hangs it on the wall detected at x/y. */
+  kind?: 'wall';
+  /** Wall-mounted and attached: the wall of this picture it hangs on (backend wall detection id). */
+  wallId?: string;
 };
 
 /** Spatial rooms: only the products in the current view are part of this picture (see productsInView). */
@@ -838,6 +1016,12 @@ export function buildGenerationPayload(session: VisualizationSession): Generatio
         zIndex: p.transform.zIndex,
         source: layerImageFor(p).source,
         ...(p.cutout.status === 'ready' ? { cutoutId: p.cutout.cutoutId } : {}),
+        ...(isWallProduct(p)
+          ? {
+              kind: 'wall' as const,
+              ...(p.wallAttachment?.status === 'attached' ? { wallId: p.wallAttachment.wallId } : {}),
+            }
+          : {}),
       },
     })),
   };
@@ -897,6 +1081,25 @@ export async function regenerateSession(): Promise<RegenerateResult> {
   const sent = productsInView(session);
   if (sent.length === 0) {
     return { ok: false, message: 'None of your products are in this view. Swipe the room to where they are.' };
+  }
+
+  // A wall-mounted product is generated only on the wall it's attached to — never guessed.
+  const viewFrameId = session.room.view?.frameId ?? null;
+  const offWall = sent.find(
+    (p) =>
+      isWallProduct(p) && !(p.wallAttachment?.status === 'attached' && p.wallAttachment.frameId === viewFrameId)
+  );
+  if (offWall) {
+    const a = offWall.wallAttachment;
+    return {
+      ok: false,
+      message:
+        a?.status === 'checking'
+          ? 'Still finding the walls in this view. Try again in a moment.'
+          : a?.status === 'free' && a.reason === 'unavailable'
+            ? "Couldn't detect the walls in this view right now. Please try again."
+            : `Move "${offWall.name}" onto a wall before generating.`,
+    };
   }
 
   const payload = buildGenerationPayload(session);

@@ -13,7 +13,12 @@
  * Messages posted to React Native (JSON strings):
  *   { type: 'loaded' }
  *   { type: 'frame', index, base64, width, height }   (turntable)
- *   { type: 'done', frames, width, height }            (turntable)
+ *   { type: 'done', frames, width, height, frontIndex }  (turntable)
+ *
+ * Turntable with `referenceUrl` (the product's cutout photo): the frame that
+ * looks most like the photo is reported as `frontIndex` — 3D generators don't
+ * always put the photographed side at angle 0 (a painting's picture can be
+ * on the back). Without a reference: frontIndex 0.
  *   { type: 'orbit', yawDeg }                          (viewer, after the user turns it)
  *   { type: 'error', message }
  */
@@ -25,7 +30,14 @@ export const TURNTABLE_ELEVATION_DEG = 15;
 
 /** elevationDeg: camera height angle over the product (default TURNTABLE_ELEVATION_DEG). */
 export type ModelViewerHtmlOptions =
-  | { mode: 'turntable'; modelUrl: string; frames: number; maxFrameSize: number; elevationDeg?: number }
+  | {
+      mode: 'turntable';
+      modelUrl: string;
+      frames: number;
+      maxFrameSize: number;
+      elevationDeg?: number;
+      referenceUrl?: string | null;
+    }
   | { mode: 'viewer'; modelUrl: string; initialYawDeg: number; elevationDeg?: number };
 
 export function buildModelViewerHtml(options: ModelViewerHtmlOptions): string {
@@ -136,7 +148,75 @@ export function buildModelViewerHtml(options: ModelViewerHtmlOptions): string {
       post({ type: 'frame', index: j, base64: out.toDataURL('image/png').split(',')[1], width: ow, height: oh });
       await nextFrame(); // let the bridge breathe between frames
     }
-    post({ type: 'done', frames: captures.length, width: ow, height: oh });
+    var frontIndex = 0;
+    try {
+      frontIndex = await findFront(captures);
+    } catch (e) {
+      // the reference couldn't be read: frame 0, as before
+    }
+    post({ type: 'done', frames: captures.length, width: ow, height: oh, frontIndex: frontIndex });
+  }
+
+  var SIG = 24;
+  // A small signature of an image's visible part: alpha + colour, cropped to its own box.
+  function signature(source, box) {
+    var c = document.createElement('canvas');
+    c.width = SIG; c.height = SIG;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(source, box.x, box.y, box.w, box.h, 0, 0, SIG, SIG);
+    return ctx.getImageData(0, 0, SIG, SIG).data;
+  }
+
+  // Outline overlap + correlation of the brightness pattern inside it (the outer 15% — a frame's border —
+  // left out). The pattern tells the photographed side from the mirrored texture seen from behind.
+  function similarity(a, b) {
+    var inter = 0, union = 0, n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    var m = Math.round(SIG * 0.15);
+    for (var y = 0; y < SIG; y++) {
+      for (var x = 0; x < SIG; x++) {
+        var i = (y * SIG + x) * 4;
+        var ia = a[i + 3] > 128, ib = b[i + 3] > 128;
+        if (ia && ib) inter++;
+        if (ia || ib) union++;
+        if (!ia || !ib || x < m || y < m || x >= SIG - m || y >= SIG - m) continue;
+        var la = 0.3 * a[i] + 0.59 * a[i + 1] + 0.11 * a[i + 2];
+        var lb = 0.3 * b[i] + 0.59 * b[i + 1] + 0.11 * b[i + 2];
+        n++; sx += la; sy += lb; sxx += la * la; syy += lb * lb; sxy += la * lb;
+      }
+    }
+    var ncc = 0;
+    if (n > 8) {
+      var vx = sxx / n - (sx / n) * (sx / n), vy = syy / n - (sy / n) * (sy / n);
+      if (vx > 1e-6 && vy > 1e-6) ncc = (sxy / n - (sx / n) * (sy / n)) / Math.sqrt(vx * vy);
+    }
+    return 0.3 * (union ? inter / union : 0) + 0.7 * ncc;
+  }
+
+  async function findFront(captures) {
+    if (!config.referenceUrl) return 0;
+    var ref = await new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject(new Error('reference failed')); };
+      img.src = config.referenceUrl;
+    });
+    var rc = document.createElement('canvas');
+    rc.width = ref.width; rc.height = ref.height;
+    rc.getContext('2d').drawImage(ref, 0, 0);
+    var rbox = alphaBox(rc);
+    if (!rbox) return 0;
+    var refSig = signature(rc, rbox);
+    var best = 0, bestScore = -1;
+    for (var i = 0; i < captures.length; i++) {
+      var box = alphaBox(captures[i]);
+      if (!box) continue;
+      // The photo's proportions matter too: a side view of a painting is a sliver.
+      var shape = Math.min(box.w / box.h, rbox.w / rbox.h) / Math.max(box.w / box.h, rbox.w / rbox.h);
+      var score = similarity(signature(captures[i], box), refSig) * (0.5 + 0.5 * shape);
+      if (score > bestScore) { bestScore = score; best = i; }
+    }
+    return best;
   }
 
   mv.addEventListener('error', function (event) {

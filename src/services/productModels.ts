@@ -22,6 +22,8 @@ export type ProductModel = {
   progress: number | null;
   /** GLB, once ready. */
   modelUrl: string | null;
+  /** The ready model is an upright thin panel (painting, mirror, TV…) — it hangs on a wall. */
+  wallShaped?: boolean | null;
   message: string | null;
   /** Why it failed, when known — 'quota' = the free daily 3D limit is used up. */
   reason?: string | null;

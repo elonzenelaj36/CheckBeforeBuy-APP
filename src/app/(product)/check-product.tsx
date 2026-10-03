@@ -101,10 +101,12 @@ export default function CheckProduct() {
 
   // The existing "add to this room" step, unchanged. Case 1 calls it with the
   // photo as taken; Case 2 with the product the user outlined.
-  const addToCurrentSession = (productImageUri: string, selectedFromPhoto = false) => {
+  const addToCurrentSession = (productImageUri: string, selectedFromPhoto = false, detected: string | null = null) => {
     const result = addProduct({
       imageUri: productImageUri,
       name: `Product ${(session?.products.length ?? 0) + 1}`,
+      // What the photo check saw (e.g. "framed painting"): lets a painting be recognised as wall-mounted.
+      category: detected,
       ...(selectedFromPhoto ? { selectedFromPhoto: true } : {}),
     });
 
@@ -124,7 +126,7 @@ export default function CheckProduct() {
     setCheckingPhoto(false);
 
     if (decision.route === 'auto') {
-      if (addToCurrentSession(photoUri)) router.back(); // back to the visualization screen, same session
+      if (addToCurrentSession(photoUri, false, decision.detected)) router.back(); // back to the visualization screen, same session
       return;
     }
 

@@ -24,6 +24,8 @@ export type ProductCutout = {
   height: number;
   /** null when it wasn't measured (e.g. cutouts made before the check existed). */
   quality: CutoutQuality | null;
+  /** What the photo shows and whether it hangs on a wall (backend vision); null = unknown. */
+  kind: { name: string | null; wallMounted: boolean } | null;
 };
 
 export type CutoutSource = {
@@ -53,6 +55,7 @@ export async function removeProductBackground(source: CutoutSource): Promise<Pro
     width: number;
     height: number;
     quality?: CutoutQuality | null;
+    kind?: { name: string | null; wallMounted: boolean } | null;
   }>(
     '/product-cutouts',
     { image: isLocal ? source.imageUri : null },
@@ -65,6 +68,7 @@ export async function removeProductBackground(source: CutoutSource): Promise<Pro
     width: response.width,
     height: response.height,
     quality: response.quality ?? null,
+    kind: response.kind ?? null,
   };
   cache.set(key, cutout);
   return cutout;

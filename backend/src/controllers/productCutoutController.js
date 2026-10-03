@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { uploadRoot } = require('../middleware/upload');
 const { toAbsoluteUrl } = require('../utils/imageUrl');
 const { removeBackground, BackgroundRemovalError } = require('../services/backgroundRemovalService');
+const { classifyCutout } = require('../services/productKindService');
 
 /**
  * POST /api/product-cutouts   (multipart/form-data)
@@ -13,7 +14,9 @@ const { removeBackground, BackgroundRemovalError } = require('../services/backgr
  *   productCheckId — an analyzed product; its saved photo is used.
  *
  * Returns a transparent PNG of the product for use as a movable layer:
- *   { cutoutId, cutoutImageUri, width, height, cached, quality }
+ *   { cutoutId, cutoutImageUri, width, height, cached, quality, kind }
+ * kind: { name, wallMounted } from the photo itself (null = unknown) — lets a
+ * painting the user never named still hang on a wall.
  * cutoutId (the content hash) identifies the product photo for 3D generation.
  *
  * Nothing is written to the database: cutouts are files cached by the
@@ -45,6 +48,7 @@ const createProductCutout = asyncHandler(async (req, res) => {
       throw err;
     }
 
+    const kind = await classifyCutout(result.imagePath.startsWith(uploadRoot) ? result.imagePath : path.join(uploadRoot, path.basename(result.imagePath)));
     res.status(result.cached ? 200 : 201).json({
       cutoutId: path.basename(result.imagePath, '.png').replace(/^cutout-/, ''),
       cutoutImageUri: toAbsoluteUrl(result.imagePath),
@@ -53,6 +57,7 @@ const createProductCutout = asyncHandler(async (req, res) => {
       cached: result.cached,
       // How suitable this cutout is for 3D (warnings are advisory; null = not measured).
       quality: result.quality ? { ok: result.quality.ok, warnings: result.quality.warnings } : null,
+      kind,
     });
   } finally {
     if (upload) fs.promises.unlink(upload.path).catch(() => {});

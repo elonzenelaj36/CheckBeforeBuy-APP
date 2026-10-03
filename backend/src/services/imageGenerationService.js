@@ -33,8 +33,73 @@ const sharp = require('sharp');
 const env = require('../config/env');
 const { uploadRoot } = require('../middleware/upload');
 const { composeArrangement } = require('./arrangeCompositionService');
+const { preserveRoom } = require('./roomPreservationService');
+const { detectWalls, wallForLayer } = require('./wallDetectionService');
+const { wallQuad, levelRay } = require('./wallGeometry');
+
+/** A wall below this confidence isn't used: the product renders the way it always did. */
+const MIN_WALL_CONFIDENCE = 0.5;
+
+/**
+ * Wall-mounted products: which detected wall each one hangs on, at its FINAL
+ * arranged position (the user decides where), and the exact shape it has on
+ * that wall — facing = the wall's normal + the user's own turn of the product.
+ * Adds `quad` (+ the real photo to draw in it) and `wall` to those layers.
+ * Without a confident wall the layer is left exactly as it was (old behaviour).
+ */
+async function resolveWallLayers(products, roomImagePath, pictureHints) {
+  if (!products.some((p) => p.layer?.kind === 'wall')) return null;
+  let walls;
+  try {
+    walls = await detectWalls(roomImagePath, pictureHints || {});
+  } catch (err) {
+    console.warn('[imageGeneration] wall detection unavailable:', err.message);
+    return null;
+  }
+  for (const p of products) {
+    const layer = p.layer;
+    if (layer?.kind !== 'wall') continue;
+    const t = layer.transform;
+    // Size = the layer's on-screen height (the user's scale); proportions = the real product photo
+    // (cutouts are cropped to the product). A 3D frame's box is wider than the product itself.
+    const height = (t.width * walls.camera.aspect) / t.aspect;
+    let objectAspect = t.aspect;
+    if (layer.cutoutPath) {
+      const meta = await sharp(layer.cutoutPath).metadata().catch(() => null);
+      if (meta?.width && meta?.height) objectAspect = meta.width / meta.height;
+    }
+    // The wall the app attached it to (same detection, cached per picture); older apps: the wall at its position.
+    const wall = wallForLayer(walls.walls, layer.wallId, t.x, t.y);
+    let facing;
+    if (wall && wall.confidence >= MIN_WALL_CONFIDENCE && wall.normalDeg !== null) {
+      // Flat on the wall: the wall alone decides its angle (no turn or tilt of its own).
+      facing = wall.normalDeg;
+      layer.transform = { ...t, rotation: 0 };
+      layer.wall = { used: true, id: wall.id, facing: wall.facing, normalDeg: wall.normalDeg, confidence: wall.confidence };
+    } else {
+      // No trustworthy wall here: it faces the camera (plus the user's own turn) — still the real photo, never the 3D copy.
+      const ray = levelRay(t.x, t.y, walls.camera);
+      facing = Math.atan2(-ray[0], -ray[2]) / (Math.PI / 180) + (layer.userYawDeg || 0);
+      layer.wall = { used: false, reason: wall ? 'low confidence' : 'no wall at this position', facing: 'camera' };
+    }
+    let quad = wallQuad(t.x, t.y, height, objectAspect, facing, walls.camera);
+    if (!quad && layer.wall.used) {
+      // Seen edge-on on that wall: show it facing the camera instead.
+      const ray = levelRay(t.x, t.y, walls.camera);
+      quad = wallQuad(t.x, t.y, height, objectAspect, Math.atan2(-ray[0], -ray[2]) / (Math.PI / 180), walls.camera);
+      layer.wall = { used: false, reason: 'wall seen edge-on', facing: 'camera' };
+    }
+    if (!quad || !layer.cutoutPath) continue; // no real photo to draw: previous behaviour
+    layer.quad = quad;
+    layer.quadAspect = objectAspect;
+    layer.quadImagePath = layer.cutoutPath; // the real product photo (faithful design)
+    layer.source = 'cutout';
+  }
+  return walls;
+}
 
 const CLOUDFLARE_TIMEOUT_MS = 120000;
+const CLOUDFLARE_FIRST_TRY_MS = 60000;
 const MAX_SIDE = 1024;
 /** Documented FLUX.2 [klein] limits on Workers AI. */
 const MAX_REFERENCE_IMAGES = 4;
@@ -161,17 +226,26 @@ async function generateWithCloudflare({ roomImagePath, products, roomType }) {
 async function runCloudflare(form) {
   const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.imageAi.accountId)}/ai/run/${env.imageAi.model}`;
 
+  // Workers AI is sometimes very slow for one request; a fresh attempt usually returns in ~10–20 s.
+  // First try: CLOUDFLARE_FIRST_TRY_MS; after a timeout, one more try with the full limit.
   let response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.imageAi.apiKey}` }, // Content-Type (with boundary) is set by fetch
-      body: form,
-      signal: AbortSignal.timeout(CLOUDFLARE_TIMEOUT_MS),
-    });
-  } catch (err) {
-    console.error('[imageGeneration] Cloudflare request failed:', err.message);
-    throw new Error(`Image generation request failed: ${err.name === 'TimeoutError' ? 'timed out' : err.message}`);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.imageAi.apiKey}` }, // Content-Type (with boundary) is set by fetch
+        body: form,
+        signal: AbortSignal.timeout(attempt === 1 ? CLOUDFLARE_FIRST_TRY_MS : CLOUDFLARE_TIMEOUT_MS),
+      });
+      break;
+    } catch (err) {
+      if (err.name === 'TimeoutError' && attempt === 1) {
+        console.warn('[imageGeneration] Cloudflare was slow — trying once more.');
+        continue;
+      }
+      console.error('[imageGeneration] Cloudflare request failed:', err.message);
+      throw new Error(`Image generation request failed: ${err.name === 'TimeoutError' ? 'timed out' : err.message}`);
+    }
   }
 
   const contentType = response.headers.get('content-type') || '';
@@ -238,7 +312,12 @@ function pickAppearanceReferences(products) {
  * authority for WHAT it looks like. A 3D-view layer is only a stand-in.
  */
 function productEntry(product, imageIndex) {
-  const where = `the ${product.name || product.category || 'product'} at the ${describeArea(product.layer.transform)}`;
+  const name = product.name || product.category || 'product';
+  const wall = product.layer.wall?.used ? product.layer.wall : null;
+  // A wall-mounted product on a detected wall: say which wall, so lighting/shadow go the right way.
+  const where = wall
+    ? `the ${name} hanging flat on the ${wall.facing === 'front' ? 'wall facing the camera' : `${wall.facing} side wall`} at the ${describeArea(product.layer.transform)}`
+    : `the ${name} at the ${describeArea(product.layer.transform)}`;
   if (product.layer.source === 'frame') {
     return imageIndex ? `${where} (3D preview; real product: image ${imageIndex})` : `${where} (3D preview)`;
   }
@@ -297,13 +376,14 @@ async function toReference(input, background = '#ffffff') {
 }
 
 /** Temporary copies of what AI Render sent, only when IMAGE_AI_DEBUG=1 (uploads/render-debug/). */
-async function saveDiagnostics(generatedImagePath, { composition, references, config }) {
+async function saveDiagnostics(generatedImagePath, { composition, references, config, raw = null }) {
   if (!env.imageAi.debug) return;
   try {
     const dir = path.join(uploadRoot, 'render-debug');
     await fs.promises.mkdir(dir, { recursive: true });
     const base = path.basename(generatedImagePath, path.extname(generatedImagePath));
     await fs.promises.writeFile(path.join(dir, `${base}.arrange.png`), composition);
+    if (raw) await fs.promises.writeFile(path.join(dir, `${base}.ai-raw${raw[0] === 0xff ? '.jpg' : '.png'}`), raw);
     await Promise.all(references.map((buf, i) => fs.promises.writeFile(path.join(dir, `${base}.input_image_${i}.jpg`), buf)));
     await fs.promises.writeFile(path.join(dir, `${base}.json`), JSON.stringify(config, null, 2));
     console.log(`[imageGeneration] diagnostics: uploads/render-debug/${base}.*`);
@@ -316,11 +396,12 @@ async function saveDiagnostics(generatedImagePath, { composition, references, co
  * AI Render of an arranged scene: the exact composition is the spatial
  * reference, product cutouts are appearance references.
  */
-async function generateArrangedWithCloudflare({ roomImagePath, products, roomType }) {
+async function generateArrangedWithCloudflare({ roomImagePath, products, roomType, pictureHints }) {
   if (!roomImagePath) {
     throw new Error('A room photo is required to generate a visualization. Add a photo to this room first.');
   }
 
+  const walls = await resolveWallLayers(products, roomImagePath, pictureHints);
   const composition = await composeArrangement({
     roomImagePath,
     layers: products.map((p) => p.layer),
@@ -349,7 +430,14 @@ async function generateArrangedWithCloudflare({ roomImagePath, products, roomTyp
         `appearance: ${product.name || 'product'} (original photo${product.appearancePath === product.imagePath ? '' : ' cutout'})`,
       ])
     ),
-    layers: products.map((p) => ({ name: p.name, fit: p.layer.fit, source: p.layer.source, transform: p.layer.transform })),
+    layers: products.map((p) => ({
+      name: p.name,
+      fit: p.layer.fit,
+      source: p.layer.source,
+      kind: p.layer.kind,
+      wall: p.layer.wall ?? null,
+      transform: p.layer.transform,
+    })),
     prompt,
   };
   console.log(
@@ -358,8 +446,38 @@ async function generateArrangedWithCloudflare({ roomImagePath, products, roomTyp
   );
 
   const result = await runCloudflare(form);
-  await saveDiagnostics(result.generatedImagePath, { composition: composition.buffer, references: images, config });
-  return result;
+
+  // The model redraws the whole picture (no mask input): the final image is built on the
+  // ORIGINAL room photo — room pixels untouched, AI output only where products are refined,
+  // wall-mounted products on their detected wall exactly as arranged.
+  const rawPath = path.join(uploadRoot, path.basename(result.generatedImagePath));
+  const raw = await fs.promises.readFile(rawPath);
+  const { buffer: final, stats } = await preserveRoom({
+    room: composition.room,
+    generated: raw,
+    arranged: composition.buffer,
+    roomImagePath,
+    width: composition.width,
+    height: composition.height,
+    layers: composition.placed,
+  });
+  if (stats.backgroundPixelsChanged) {
+    console.error(`[imageGeneration] ${stats.backgroundPixelsChanged} room pixels changed outside the products`);
+  }
+  const finalName = `${path.basename(rawPath, path.extname(rawPath))}.png`;
+  await fs.promises.writeFile(path.join(uploadRoot, finalName), final);
+  if (finalName !== path.basename(rawPath)) await fs.promises.unlink(rawPath).catch(() => {});
+  console.log(
+    `[imageGeneration] room kept: ${stats.backgroundPixelsUntouched}% of the photo untouched, ${stats.backgroundPixelsChanged} changed elsewhere ` +
+      `(the AI had drifted ${stats.aiDriftOutsideProducts}/255 there); wall products: ${JSON.stringify(products.filter((p) => p.layer.kind === 'wall').map((p) => p.layer.wall))}`
+  );
+  await saveDiagnostics(`/${env.uploadDir}/${finalName}`, {
+    composition: composition.buffer,
+    references: images,
+    config: { ...config, walls: walls ? { camera: walls.camera, count: walls.walls.length } : null, roomPreservation: stats },
+    raw,
+  });
+  return { ...result, generatedImagePath: `/${env.uploadDir}/${finalName}` };
 }
 
 /**
@@ -371,7 +489,7 @@ async function generateArrangedWithCloudflare({ roomImagePath, products, roomTyp
  * @param {string} params.roomType
  * @returns {Promise<{status: 'pending'|'completed'|'failed', generatedImagePath: string|null, provider: string|null, message?: string}>}
  */
-async function generateRoomVisualization({ roomImagePath, products, roomType }) {
+async function generateRoomVisualization({ roomImagePath, products, roomType, pictureHints = null }) {
   if (!Array.isArray(products) || products.length === 0) {
     throw new Error('At least one product is required.');
   }
@@ -390,7 +508,7 @@ async function generateRoomVisualization({ roomImagePath, products, roomType }) 
 
   if (provider === 'cloudflare') {
     return products.every((p) => p.layer)
-      ? generateArrangedWithCloudflare({ roomImagePath, products, roomType })
+      ? generateArrangedWithCloudflare({ roomImagePath, products, roomType, pictureHints })
       : generateWithCloudflare({ roomImagePath, products, roomType });
   }
 
