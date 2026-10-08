@@ -12,13 +12,13 @@ const { LENS_FOV_DEG } = require('../services/roomItemDetectionService');
 /**
  * The picture products are arranged on — a room's primary photo, or one view
  * of its 180°/360° capture — and what is known about its camera.
- * @returns {Promise<{ imagePath: string, fovDeg: number|null, recordedPitchDeg: number|null } | null>}
+ * @returns {Promise<{ imagePath: string, fovDeg: number|null, recordedPitchDeg: number|null, capture?: object } | null>}
  */
 async function roomPicture({ roomId, userId, frameId = null }) {
   if (frameId) {
     if (!/^\d+$/.test(String(frameId))) return null;
     const [rows] = await pool.query(
-      `SELECT f.image_path, f.pitch_deg, c.fov_deg, c.lens
+      `SELECT f.capture_id, f.angle_deg, f.image_path, f.pitch_deg, c.fov_deg, c.lens
          FROM room_capture_frames f
          JOIN room_captures c ON c.id = f.capture_id
          JOIN rooms r ON r.id = c.room_id
@@ -27,10 +27,16 @@ async function roomPicture({ roomId, userId, frameId = null }) {
     );
     if (!rows.length) return null;
     const f = rows[0];
+    const [frames] = await pool.query('SELECT image_path, angle_deg FROM room_capture_frames WHERE capture_id = ?', [f.capture_id]);
     return {
       imagePath: path.join(uploadRoot, path.basename(f.image_path)),
       fovDeg: f.fov_deg != null ? Number(f.fov_deg) : LENS_FOV_DEG[f.lens] || LENS_FOV_DEG.wide,
       recordedPitchDeg: f.pitch_deg != null ? Number(f.pitch_deg) : null,
+      // The recording's other views: walls are checked against the whole room (wallDetectionService.alignToCapture).
+      capture: {
+        angleDeg: Number(f.angle_deg),
+        frames: frames.map((fr) => ({ imagePath: path.join(uploadRoot, path.basename(fr.image_path)), angleDeg: Number(fr.angle_deg) })),
+      },
     };
   }
   const [rows] = await pool.query(

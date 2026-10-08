@@ -239,13 +239,97 @@ const running = new Map();
 const noWallsUntil = new Map();
 const NO_WALLS_RETRY_MS = 2 * 60 * 1000;
 
+/**
+ * The walls of a room picture. `capture` (a 180°/360° view): { angleDeg, frames: [{ imagePath, angleDeg }] }
+ * — the other views of the same recording, used to correct walls that disagree with the room (alignToCapture).
+ */
 async function detectWalls(imagePath, options = {}) {
   let pending = running.get(imagePath);
   if (!pending) {
     pending = analyse(imagePath, options).finally(() => running.delete(imagePath));
     running.set(imagePath, pending);
   }
-  return pending;
+  const result = await pending;
+  return options.capture ? alignToCapture(result, options.capture) : result;
+}
+
+/** Side check shared with the vanishing point: a side wall must really turn that way, a front wall roughly face the camera. */
+function onItsSide(facing, rel) {
+  return facing === 'left' ? rel <= -15 : facing === 'right' ? rel >= 15 : Math.abs(rel) <= 50;
+}
+
+/** Direction (degrees, + = right of the camera's forward) a wall faces relative to the camera ray through its middle: 0 = straight at it. */
+function relToCamera(wall, normalDeg, camera) {
+  const cx = wall.polygon.reduce((sum, p) => sum + p[0], 0) / wall.polygon.length;
+  const cy = wall.polygon.reduce((sum, p) => sum + p[1], 0) / wall.polygon.length;
+  const ray = geo.levelRay(cx, cy, camera);
+  return geo.wrap180(normalDeg - Math.atan2(ray[0], ray[2]) / (Math.PI / 180) - 180);
+}
+
+/** A wall this far from every room direction is a misreading (e.g. a sloped attic ceiling taken for a horizontal line). */
+const CAPTURE_OUTLIER_DEG = 20;
+const MIN_CAPTURE_WALLS = 6;
+const MIN_CAPTURE_VIEWS = 4;
+const MIN_CAPTURE_SHARE = 0.45;
+
+/**
+ * A 180°/360° recording sees the same room from many directions, each view's
+ * direction known from the gyroscope. Rooms are built at right angles, so
+ * every wall of every view faces one of four room directions (axis + k·90°).
+ * Those are voted by all analysed views; a wall in this view that is far off
+ * all of them (a plain wall, a sloped ceiling, a rough region) is turned to
+ * the nearest room direction that keeps it on the side the model saw it.
+ * Walls that roughly agree keep their own measurement. Views analysed later
+ * add to the vote, so this runs on every request (not cached).
+ */
+async function alignToCapture(result, capture) {
+  if (result.status !== 'ok' || !result.walls.length) return result;
+  const votes = [];
+  const views = new Set();
+  for (const frame of capture.frames) {
+    let cached;
+    try {
+      cached = JSON.parse(await fs.promises.readFile(`${frame.imagePath}.walls.json`, 'utf8'));
+    } catch {
+      continue; // not analysed yet
+    }
+    if (cached.version !== CACHE_VERSION) continue;
+    for (const w of cached.result.walls) {
+      if (w.normalDeg === null) continue;
+      votes.push({ deg: geo.wrap180(w.normalDeg + frame.angleDeg), w: w.confidence * (w.geometry === 'vanishing-point' ? 1 : 0.6) });
+      views.add(frame.imagePath);
+    }
+  }
+  const total = votes.reduce((sum, v) => sum + v.w, 0);
+  if (votes.length < MIN_CAPTURE_WALLS || views.size < MIN_CAPTURE_VIEWS) return result;
+  const off = (deg, t) => {
+    const d = Math.abs(geo.wrap180(deg - t)) % 90;
+    return Math.min(d, 90 - d);
+  };
+  let axis = 0;
+  let support = -1;
+  for (let t = 0; t < 90; t += 0.5) {
+    const score = votes.reduce((sum, v) => sum + v.w * Math.exp(-((off(v.deg, t) / 6) ** 2)), 0);
+    if (score > support) {
+      support = score;
+      axis = t;
+    }
+  }
+  if (support / total < MIN_CAPTURE_SHARE) return result;
+
+  const walls = result.walls.map((w) => {
+    if (w.normalDeg === null) return w;
+    const roomDeg = geo.wrap180(w.normalDeg + capture.angleDeg);
+    if (off(roomDeg, axis) < CAPTURE_OUTLIER_DEG) return w;
+    const choices = [0, 1, 2, 3]
+      .map((k) => geo.wrap180(axis + k * 90 - capture.angleDeg))
+      .filter((n) => onItsSide(w.facing, relToCamera(w, n, result.camera)))
+      .sort((a, b) => Math.abs(geo.wrap180(a - w.normalDeg)) - Math.abs(geo.wrap180(b - w.normalDeg)));
+    if (!choices.length || Math.abs(geo.wrap180(choices[0] - w.normalDeg)) > 50) return w;
+    // Its own vanishing point was the misreading: the quad follows the corrected direction instead.
+    return { ...w, normalDeg: Math.round(choices[0] * 10) / 10, geometry: 'room-capture', vp: null };
+  });
+  return { ...result, walls };
 }
 
 async function analyse(imagePath, { fovDeg = null, recordedPitchDeg = null } = {}) {
@@ -294,11 +378,8 @@ async function analyse(imagePath, { fovDeg = null, recordedPitchDeg = null } = {
       if (vanishing) {
         const [cx, cy] = [r.polygon.reduce((sum, p) => sum + p[0], 0) / 4, r.polygon.reduce((sum, p) => sum + p[1], 0) / 4];
         const normalDeg = geo.normalFacingCamera(geo.vanishingDirectionDeg(vanishing.vp, camera), cx, cy, camera);
-        const ray = geo.levelRay(cx, cy, camera);
-        const rel = geo.wrap180(normalDeg - Math.atan2(ray[0], ray[2]) / (Math.PI / 180) - 180);
         // A side wall must really turn that way; a front wall must roughly face the camera.
-        const otherSide = (r.facing === 'left' && rel > -15) || (r.facing === 'right' && rel < 15) || (r.facing === 'front' && Math.abs(rel) > 50);
-        if (!otherSide) {
+        if (onItsSide(r.facing, relToCamera(r, normalDeg, camera))) {
           n = { normalDeg, source: 'vanishing-point', agreement: 1 };
           vp = vanishing.vp.map((v) => Math.round(v * 1e6) / 1e6);
         }

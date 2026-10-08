@@ -417,6 +417,19 @@ The app sends
   2 minutes. The app starts detection as soon as products are added (while
   background removal runs), so a painting dropped on a wall is usually placed
   without a "finding the wall" wait; a picture's walls are kept in memory.
+- **180°/360° views are checked against the whole recording**
+  (`alignToCapture`). Each view's direction is known from the gyroscope, so
+  every wall of every analysed view votes for the room's four directions
+  (axis + k·90°). A wall ≥ 20° off all of them — a plain wall, or a sloped
+  attic ceiling read as a horizontal line — is turned to the nearest room
+  direction that keeps it on the side Groq saw it (`geometry:
+  'room-capture'`, its vanishing point dropped). Runs per request (needs ≥ 6
+  walls in ≥ 4 views), so views analysed later improve it.
+- Recordings without a recorded camera tilt (made before the app sent it):
+  the app uses the tilt the wall analysis measured from vertical lines
+  (`camera.pitchSource === 'measured'`), else the recording's median, for the
+  3D product's up/down angle — before, such rooms were treated as level and
+  a chair was drawn from too low.
 
 ```json
 { "status": "ok", "camera": { "fovDeg": 69.4, "aspect": 1, "pitchDeg": 10.5, "pitchSource": "measured" },

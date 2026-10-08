@@ -190,7 +190,7 @@ const generateSession = asyncHandler(async (req, res) => {
         roomImagePath: path.join(uploadRoot, path.basename(roomImagePath)),
         products: resolved,
         roomType,
-        pictureHints: picture ? { fovDeg: picture.fovDeg, recordedPitchDeg: picture.recordedPitchDeg } : null,
+        pictureHints: picture ? { fovDeg: picture.fovDeg, recordedPitchDeg: picture.recordedPitchDeg, capture: picture.capture } : null,
       });
     } catch (err) {
       generation = { status: 'failed', generatedImagePath: null, provider: null, message: err.message };

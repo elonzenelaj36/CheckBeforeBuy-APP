@@ -23,7 +23,8 @@ export type RoomWall = {
   normalDeg: number | null;
 };
 
-export type RoomWallsCamera = { fovDeg: number; aspect: number; pitchDeg: number };
+/** pitchSource: 'recorded' (gyroscope), 'measured' (from the picture's vertical lines) or 'assumed'. */
+export type RoomWallsCamera = { fovDeg: number; aspect: number; pitchDeg: number; pitchSource?: 'recorded' | 'measured' | 'assumed' };
 
 export type RoomWalls = { status: 'ok' | 'unavailable'; camera: RoomWallsCamera | null; walls: RoomWall[] };
 

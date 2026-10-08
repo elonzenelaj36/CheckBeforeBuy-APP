@@ -71,6 +71,8 @@ export type SessionSpatialFrame = {
   previewUri: string;
   /** How far the camera looked down for this view (null/absent = not recorded → level). */
   pitchDeg?: number | null;
+  /** Not recorded (older recordings): measured by the backend from this view's vertical lines, once its walls are known. */
+  measuredPitchDeg?: number | null;
   /** How well it lines up with the next view (0 = snap, see roomViewMath.blendAt). */
   alignScore?: number | null;
 };
@@ -197,7 +199,7 @@ export const WALL_PREVIEW_BOX_SCALE = 1.6;
 
 export type WallAttachment =
   /** preview: the previous one, kept while the new one is worked out (no flash). */
-  | { status: 'checking'; preview: { uri: string; headers: Record<string, string> } | null }
+  | { status: 'checking'; frameId: string | null; preview: { uri: string; headers: Record<string, string> } | null }
   | {
       status: 'attached';
       wallId: string;
@@ -411,7 +413,46 @@ function elevationFor(session: VisualizationSession, product: SessionProduct): n
 }
 
 function spatialElevation(spatial: SessionSpatial, frame: SessionSpatialFrame, y: number): number {
-  return productElevationDeg(y, frame.pitchDeg ?? 0, spatial.fovDeg, spatial.frameAspect);
+  return productElevationDeg(y, framePitchDeg(spatial, frame), spatial.fovDeg, spatial.frameAspect);
+}
+
+/**
+ * How far the camera looked down for a view: recorded, else measured from the
+ * picture, else the recording's typical measured tilt (people sweep a room
+ * holding the phone about the same way), else level.
+ */
+function framePitchDeg(spatial: SessionSpatial, frame: SessionSpatialFrame): number {
+  if (frame.pitchDeg != null) return frame.pitchDeg;
+  if (frame.measuredPitchDeg != null) return frame.measuredPitchDeg;
+  const measured = spatial.frames.flatMap((f) => (f.measuredPitchDeg != null ? [f.measuredPitchDeg] : [])).sort((a, b) => a - b);
+  return measured.length ? measured[Math.floor(measured.length / 2)] : 0;
+}
+
+/** Products whose 3D view must be re-drawn from a new up/down angle (the room's camera changed). */
+function withSpatialElevations(products: SessionProduct[], spatial: SessionSpatial): SessionProduct[] {
+  const frame = frameAt(spatial, spatial.viewDeg);
+  return products.map((p) => {
+    const m = p.model3D;
+    if (m.status !== 'ready' && m.status !== 'rendering') return p;
+    const elevationDeg = spatialElevation(spatial, frame, p.transform.y);
+    if ((m.elevationDeg ?? DEFAULT_ELEVATION_DEG) === elevationDeg) return p;
+    return { ...p, model3D: { status: 'rendering' as const, modelId: m.modelId, modelUrl: m.modelUrl, elevationDeg } };
+  });
+}
+
+/**
+ * A view without a recorded tilt (recordings made before the app recorded
+ * it): the backend's measurement from its vertical lines. Without it the
+ * camera was taken as level, so 3D products (a chair) were drawn from too low
+ * for a room photographed looking down. Local only.
+ */
+function setFrameMeasuredPitch(frameId: string, pitchDeg: number) {
+  const session = getSession();
+  const spatial = session?.room.spatial;
+  const frame = spatial?.frames.find((f) => f.id === frameId);
+  if (!session || !spatial || !frame || frame.pitchDeg != null || frame.measuredPitchDeg === pitchDeg) return;
+  const next = { ...spatial, frames: spatial.frames.map((f) => (f.id === frameId ? { ...f, measuredPitchDeg: pitchDeg } : f)) };
+  commit({ ...session, room: { ...session.room, spatial: next }, products: withSpatialElevations(session.products, next) });
 }
 
 /**
@@ -425,21 +466,7 @@ export function setSessionFrameAspect(aspect: number) {
   const spatial = session?.room.spatial;
   if (!session || !spatial || !(aspect > 0) || Math.abs((spatial.frameAspect ?? 0) - aspect) < 0.01) return;
   const next = { ...spatial, frameAspect: aspect };
-  const frame = frameAt(next, next.viewDeg);
-  commit({
-    ...session,
-    room: { ...session.room, spatial: next },
-    products: session.products.map((p) => {
-      const m = p.model3D;
-      if (m.status !== 'ready' && m.status !== 'rendering') return p;
-      const elevationDeg = spatialElevation(next, frame, p.transform.y);
-      if ((m.elevationDeg ?? DEFAULT_ELEVATION_DEG) === elevationDeg) return p;
-      return {
-        ...p,
-        model3D: { status: 'rendering' as const, modelId: m.modelId, modelUrl: m.modelUrl, elevationDeg },
-      };
-    }),
-  });
+  commit({ ...session, room: { ...session.room, spatial: next }, products: withSpatialElevations(session.products, next) });
 }
 
 /** The captured frame nearest a direction (the view that is actually shown / generated). */
@@ -843,8 +870,12 @@ async function attachToWall(sessionId: string, productId: string) {
       ...p,
       wallAttachment: {
         status: 'checking',
+        frameId,
+        // Same picture: the previous preview stays until the new one is ready. Another view: it belonged to that picture.
         preview:
-          p.wallAttachment?.status === 'attached' || p.wallAttachment?.status === 'checking' ? p.wallAttachment.preview : null,
+          (p.wallAttachment?.status === 'attached' || p.wallAttachment?.status === 'checking') && p.wallAttachment.frameId === frameId
+            ? p.wallAttachment.preview
+            : null,
       },
     }));
   }
@@ -911,7 +942,10 @@ function reattachInView(session: VisualizationSession) {
 function prefetchWalls(session: VisualizationSession) {
   if (!session.room.id || !session.products.length) return;
   if (session.room.captureId && !session.room.view) return; // its views are still loading
-  void fetchRoomWalls(session.room.id, session.room.view?.frameId ?? null);
+  const frameId = session.room.view?.frameId ?? null;
+  void fetchRoomWalls(session.room.id, frameId).then((walls) => {
+    if (frameId && walls.camera?.pitchSource === 'measured') setFrameMeasuredPitch(frameId, walls.camera.pitchDeg);
+  });
 }
 
 /** Called by the on-device renderer when a model's frames are ready. */
