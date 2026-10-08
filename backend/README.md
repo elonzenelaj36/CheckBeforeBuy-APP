@@ -303,9 +303,23 @@ prompt to `uploads/render-debug/`.
 ### Room preservation (`roomPreservationService.js`)
 
 The AI's picture is never saved as it is. FLUX redraws the whole room, so the
-result is rebuilt on the ORIGINAL photo (at its own resolution, up to 2048 px):
-only each product's zone (its outline, grown a little, plus a soft floor
-shadow) comes from the AI output. That output is first aligned to the photo
+result is rebuilt on the ORIGINAL photo (at its own resolution, up to 2048 px).
+For floor products, the product is taken **as FLUX drew it** (`aiProduct`), so
+it's realistic, from the product photo:
+- **Finding it:** near the arranged spot, the pixels FLUX changed from the
+  room. The room is first tone-matched to FLUX's output locally, from the area
+  around the product, because FLUX also relights the floor. The shape that
+  overlaps the arranged product is kept, with small holes filled.
+- **Placing it:** it's moved so it covers the arranged product best
+  (overlap/union), because FLUX often draws it a little off and the user's
+  placement is authoritative.
+- **Clipping it:** a soft border follows the product's outline, so FLUX's
+  changes further away (the curtain next to it) are left out.
+- **Fallback:** if FLUX didn't draw it there (overlap under 0.35, or a
+  wrong-sized area), the arranged 3D view is used and the reason is logged
+  (`[roomPreservation] AI product not found (…)`).
+- **Shadow:** an ellipse under it, plus the 3D viewer's own faint ground
+  shadow. There FLUX may only darken the real floor. That output is first aligned to the photo
 (shift search) and colour-matched on a ring around the zone. When the AI
 moved or lost a product (it matches the arrangement below 0.35), that
 product's arranged pixels are used instead. Every pixel outside the product
@@ -321,6 +335,12 @@ depth under 20% of its width, height over 20% (`wallShaped` in
 vertically). Its name/category also counts (`isWallMountedProduct` in
 `src/services/roomWalls.ts`). The backend checks the model shape itself, so
 an unnamed photo ("Unknown product") still counts.
+
+**3D camera height in 180°/360° rooms:** `productElevationDeg` needs the
+captured views' real shape. The Arrange screen reports it
+(`setSessionFrameAspect`) once the view loads. Before, portrait 9:16 was
+assumed, so in landscape captures (1280×720) a chair low in the picture was
+drawn from 55° above instead of 30°, which looked squashed.
 
 **Photo first** (app): wall products are shown as their real photo (cutout),
 and no 3D model is made for them unless the user taps "Show as 3D anyway"
@@ -369,6 +389,14 @@ The app sends
     directions. All the picture's lines vote: walls, skirting, window tops,
     beds, dressers. A sloped attic ceiling fits neither direction and barely
     counts.
+  - **Vanishing point (first choice, `vanishingPoint`):** where the wall's own
+    horizontal lines meet in the picture: ceiling and floor lines, skirting,
+    door tops. It needs at least two lines at different heights, and it must
+    put the wall on the side Groq saw it (left/right walls must really turn
+    that way). When it's found, a painting's top and bottom edges are aimed
+    at it (`wallQuadToVanishingPoint`), and the wall's angle comes from it.
+    This is found in the picture itself, so it matches the room's lines even
+    when the camera (lens width, tilt, a cropped photo) is only roughly known.
   - **Choosing per wall:** each wall takes the direction that faces the way
     Groq says (front/left/right), or, if that's ambiguous, the one closest to
     the lines on and around its own region (`geometry: 'room-lines'`).
@@ -384,6 +412,11 @@ The app sends
 - Disagreement between the geometry and the model's front/left/right lowers
   the confidence. Walls below 0.4 are dropped. Cached per picture as
   `<image>.walls.json` (1 Groq call per picture); a Groq failure isn't cached.
+  Concurrent requests for one picture share a single analysis. An answer with
+  no walls is asked once more, isn't cached on disk and isn't asked again for
+  2 minutes. The app starts detection as soon as products are added (while
+  background removal runs), so a painting dropped on a wall is usually placed
+  without a "finding the wall" wait; a picture's walls are kept in memory.
 
 ```json
 { "status": "ok", "camera": { "fovDeg": 69.4, "aspect": 1, "pitchDeg": 10.5, "pitchSource": "measured" },

@@ -4,8 +4,9 @@
  * TVs, wall shelves…). The preview is approximate; AI Render works out the
  * exact wall and perspective on the backend at the product's final position.
  *
- * Fetched once per picture (the backend caches its analysis too) and only
- * when a wall-mounted product is placed. Any failure just means "no walls":
+ * Fetched once per picture (the backend caches its analysis too), started as
+ * soon as products are added so it's ready when one is dropped on a wall.
+ * Any failure just means "no walls":
  * the product keeps facing the camera, as before.
  */
 
@@ -30,14 +31,25 @@ export type RoomWalls = { status: 'ok' | 'unavailable'; camera: RoomWallsCamera 
 const MIN_PREVIEW_CONFIDENCE = 0.5;
 
 const cache = new Map<string, Promise<RoomWalls>>();
+/** Answers already received (so a product dropped again is placed at once, without "finding the wall"). */
+const known = new Map<string, RoomWalls>();
+
+const wallsKey = (roomId: string, frameId: string | null) => `${roomId}:${frameId ?? ''}`;
+
+/** The picture's walls if they are already known, else undefined. */
+export function knownRoomWalls(roomId: string, frameId: string | null): RoomWalls | undefined {
+  return known.get(wallsKey(roomId, frameId));
+}
 
 export function fetchRoomWalls(roomId: string, frameId: string | null): Promise<RoomWalls> {
-  const key = `${roomId}:${frameId ?? ''}`;
+  const key = wallsKey(roomId, frameId);
   let pending = cache.get(key);
   if (!pending) {
     pending = apiGet<RoomWalls>(`/rooms/${roomId}/walls${frameId ? `?frameId=${encodeURIComponent(frameId)}` : ''}`).then(
       (result) => {
-        if (result.status !== 'ok') cache.delete(key); // try again next time
+        // No walls, or not available: try again next time.
+        if (result.status !== 'ok' || !result.walls.length) cache.delete(key);
+        else known.set(key, result);
         return result;
       },
       () => {

@@ -168,6 +168,100 @@ function wallQuad(x, y, height, objectAspect, normalDeg, cam) {
 }
 
 /**
+ * A wall's VANISHING POINT in the picture: where its horizontal lines (its
+ * line with the ceiling and the floor, skirting, door and window tops,
+ * frames…) meet. Found from the picture alone — no camera model — so it
+ * matches what the eye sees even when the camera (lens width, tilt) is only
+ * roughly known. Pairs of the longest lines on/around the wall's region give
+ * candidates; the one most lines point at (within 2°) wins, if at least two
+ * lines at different heights agree. Homogeneous, in aspect-corrected
+ * coordinates (x·aspect, y): [a, b, c] (c ≈ 0 = a direction, lines parallel).
+ */
+function vanishingPoint(segments, polygon, aspect, margin = 0.06) {
+  const xs = polygon.map((p) => p[0]);
+  const ys = polygon.map((p) => p[1]);
+  const [bx1, bx2, by1, by2] = [Math.min(...xs) - margin, Math.max(...xs) + margin, Math.min(...ys) - margin, Math.max(...ys) + margin];
+  const lines = [];
+  for (const s of segments) {
+    const mx = (s[0] + s[2]) / 2;
+    const my = (s[1] + s[3]) / 2;
+    if (mx < bx1 || mx > bx2 || my < by1 || my > by2) continue;
+    const dx = (s[2] - s[0]) * aspect;
+    const dy = s[3] - s[1];
+    if (Math.abs(dy) > Math.abs(dx) * 1.2) continue; // (near-)vertical: not a horizontal room line
+    const len = Math.hypot(dx, dy);
+    const p = [s[0] * aspect, s[1], 1];
+    const q = [s[2] * aspect, s[3], 1];
+    const l = cross(p, q);
+    const n = Math.hypot(l[0], l[1]);
+    lines.push({ l: l.map((v) => v / n), w: len, mid: [mx * aspect, my], dir: [dx / len, dy / len] });
+  }
+  lines.sort((a, b) => b.w - a.w);
+  const support = (vp) => {
+    let weight = 0;
+    let count = 0;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const it of lines) {
+      const t = Math.abs(vp[2]) < 1e-9 ? [vp[0], vp[1]] : [vp[0] / vp[2] - it.mid[0], vp[1] / vp[2] - it.mid[1]];
+      const tn = Math.hypot(t[0], t[1]);
+      if (!tn) continue;
+      const cos = Math.min(1, Math.abs((t[0] * it.dir[0] + t[1] * it.dir[1]) / tn));
+      if (Math.acos(cos) / DEG > 2) continue;
+      weight += it.w;
+      count += 1;
+      lo = Math.min(lo, it.mid[1]);
+      hi = Math.max(hi, it.mid[1]);
+    }
+    return { weight, count, spread: count ? hi - lo : 0 };
+  };
+  const top = lines.slice(0, 25);
+  let best = null;
+  for (let i = 0; i < top.length; i += 1) {
+    for (let j = i + 1; j < top.length; j += 1) {
+      const vp = cross(top[i].l, top[j].l);
+      const n = Math.hypot(...vp);
+      if (!n) continue;
+      const v = vp.map((x) => x / n);
+      const sup = support(v);
+      if (sup.count >= 2 && sup.spread > 0.08 && (!best || sup.weight > best.weight)) best = { vp: v, ...sup };
+    }
+  }
+  return best;
+}
+
+/** Horizontal direction (axis, [0, 180)) of the room lines that meet at vanishing point `vp` (see vanishingPoint). */
+function vanishingDirectionDeg(vp, cam) {
+  // Parallel in the picture (c ≈ 0): the lines run across the view, perpendicular to forward.
+  if (Math.abs(vp[2]) < 1e-9) return 90;
+  const r = levelRay(vp[0] / vp[2] / cam.aspect, vp[1] / vp[2], cam);
+  const deg = Math.atan2(r[0], r[2]) / DEG; // same convention as segmentDirectionDeg
+  return ((deg % 180) + 180) % 180;
+}
+
+/**
+ * wallQuad, with its top and bottom edges aimed exactly at the wall's
+ * vanishing point (the picture's own lines), keeping its size, centre and
+ * sides. The camera model gives how foreshortened it is; the vanishing point
+ * gives the slopes the eye compares with the room's lines.
+ */
+function wallQuadToVanishingPoint(quad, vp, aspect) {
+  const P = (p) => [p[0] * aspect, p[1], 1];
+  const [tl, tr, br, bl] = quad.map(P);
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 1];
+  const topLine = cross(mid(tl, tr), vp);
+  const bottomLine = cross(mid(bl, br), vp);
+  const leftLine = cross(tl, bl);
+  const rightLine = cross(tr, br);
+  const meet = (a, b) => {
+    const p = cross(a, b);
+    return Math.abs(p[2]) < 1e-12 ? null : [p[0] / p[2] / aspect, p[1] / p[2]];
+  };
+  const out = [meet(topLine, leftLine), meet(topLine, rightLine), meet(bottomLine, rightLine), meet(bottomLine, leftLine)];
+  return out.every(Boolean) ? out : quad;
+}
+
+/**
  * Turntable angle at which an object facing along `normalDeg` is seen from
  * the camera at picture point (x, y) (model-viewer convention: + = camera on
  * the model's +X side). Used for the 3D preview's starting turn.
@@ -193,4 +287,7 @@ module.exports = {
   wrap180,
   wallQuad,
   turnDeg,
+  vanishingPoint,
+  vanishingDirectionDeg,
+  wallQuadToVanishingPoint,
 };

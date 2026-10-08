@@ -37,7 +37,7 @@ import { DEFAULT_ELEVATION_DEG, frameIndexForYaw, loadCachedFrames } from './mod
 import { removeProductBackground, type CutoutQuality } from './productCutouts';
 import { captureFovDeg, type CaptureMode, type RoomCapture, type SessionRoomView } from './roomCaptures';
 import { blendAt, directionAt, productElevationDeg, projectToFrame } from './roomViewMath';
-import { fetchRoomWalls, isWallMountedProduct, wallAtPoint, wallTurnDeg } from './roomWalls';
+import { fetchRoomWalls, isWallMountedProduct, knownRoomWalls, wallAtPoint, wallTurnDeg } from './roomWalls';
 import { getProductModel, ModelsUnavailableError, requestProductModel, type ProductModel, type ProductModelStage } from './productModels';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -84,6 +84,8 @@ export type SessionSpatial = {
   frames: SessionSpatialFrame[];
   /** Direction the user is looking, settled on a real frame (= room.view.angleDeg). */
   viewDeg: number;
+  /** Width / height of the captured views (reported once shown); unknown → portrait 9:16 (productElevationDeg default). */
+  frameAspect?: number;
 };
 
 /**
@@ -409,7 +411,35 @@ function elevationFor(session: VisualizationSession, product: SessionProduct): n
 }
 
 function spatialElevation(spatial: SessionSpatial, frame: SessionSpatialFrame, y: number): number {
-  return productElevationDeg(y, frame.pitchDeg ?? 0, spatial.fovDeg);
+  return productElevationDeg(y, frame.pitchDeg ?? 0, spatial.fovDeg, spatial.frameAspect);
+}
+
+/**
+ * The captured views' real shape, once they're displayed. Captures can be
+ * landscape (e.g. 1280×720): assuming portrait made the up/down angle far too
+ * steep, so 3D products (a chair) were drawn as if seen from high above. 3D
+ * products whose angle changes are re-drawn once. Local only.
+ */
+export function setSessionFrameAspect(aspect: number) {
+  const session = getSession();
+  const spatial = session?.room.spatial;
+  if (!session || !spatial || !(aspect > 0) || Math.abs((spatial.frameAspect ?? 0) - aspect) < 0.01) return;
+  const next = { ...spatial, frameAspect: aspect };
+  const frame = frameAt(next, next.viewDeg);
+  commit({
+    ...session,
+    room: { ...session.room, spatial: next },
+    products: session.products.map((p) => {
+      const m = p.model3D;
+      if (m.status !== 'ready' && m.status !== 'rendering') return p;
+      const elevationDeg = spatialElevation(next, frame, p.transform.y);
+      if ((m.elevationDeg ?? DEFAULT_ELEVATION_DEG) === elevationDeg) return p;
+      return {
+        ...p,
+        model3D: { status: 'rendering' as const, modelId: m.modelId, modelUrl: m.modelUrl, elevationDeg },
+      };
+    }),
+  });
 }
 
 /** The captured frame nearest a direction (the view that is actually shown / generated). */
@@ -598,6 +628,7 @@ async function prepareCutout(productId: string) {
   if (!session || !product || product.cutout.status === 'ready') return;
 
   patchProduct(session.id, productId, (p) => ({ ...p, cutout: { status: 'pending' } }));
+  prefetchWalls(session);
   try {
     const cutout = await removeProductBackground({ imageUri: product.imageUri, productCheckId: product.productCheckId });
     patchProduct(session.id, productId, (p) => ({
@@ -805,16 +836,20 @@ async function attachToWall(sessionId: string, productId: string) {
   if (!session || !product || !isWallProduct(product) || !session.room.id) return;
   const frameId = session.room.view?.frameId ?? null;
   const { x, y } = product.transform;
-  patchProduct(sessionId, productId, (p) => ({
-    ...p,
-    wallAttachment: {
-      status: 'checking',
-      preview:
-        p.wallAttachment?.status === 'attached' || p.wallAttachment?.status === 'checking' ? p.wallAttachment.preview : null,
-    },
-  }));
+  // Walls of this picture already known: placed at once (no "finding the wall" in between).
+  const ready = knownRoomWalls(session.room.id, frameId);
+  if (!ready) {
+    patchProduct(sessionId, productId, (p) => ({
+      ...p,
+      wallAttachment: {
+        status: 'checking',
+        preview:
+          p.wallAttachment?.status === 'attached' || p.wallAttachment?.status === 'checking' ? p.wallAttachment.preview : null,
+      },
+    }));
+  }
 
-  const walls = await fetchRoomWalls(session.room.id, frameId);
+  const walls = ready ?? (await fetchRoomWalls(session.room.id, frameId));
   const latest = getSession();
   const now = latest?.products.find((p) => p.id === productId);
   // Moved again, or another view, meanwhile: that newer drop decides.
@@ -863,7 +898,20 @@ async function attachToWall(sessionId: string, productId: string) {
 
 /** Wall products in the picture in view need their wall worked out again (another picture). */
 function reattachInView(session: VisualizationSession) {
+  prefetchWalls(session);
   for (const p of productsInView(session)) if (isWallProduct(p)) void attachToWall(session.id, p.id);
+}
+
+/**
+ * Starts finding the walls of the picture in view while the products are
+ * still being prepared (background removal takes about as long), so a
+ * wall-mounted product dropped on a wall is placed without waiting. Spatial
+ * rooms only once their view is chosen. Analysed once per picture.
+ */
+function prefetchWalls(session: VisualizationSession) {
+  if (!session.room.id || !session.products.length) return;
+  if (session.room.captureId && !session.room.view) return; // its views are still loading
+  void fetchRoomWalls(session.room.id, session.room.view?.frameId ?? null);
 }
 
 /** Called by the on-device renderer when a model's frames are ready. */

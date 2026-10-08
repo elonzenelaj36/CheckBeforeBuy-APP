@@ -5,7 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { uploadRoot } = require('../middleware/upload');
 const sharp = require('sharp');
 const { detectWalls, wallForLayer } = require('../services/wallDetectionService');
-const { wallQuad } = require('../services/wallGeometry');
+const { wallQuad, wallQuadToVanishingPoint } = require('../services/wallGeometry');
 const { warpLayerToQuad } = require('../services/arrangeCompositionService');
 const { LENS_FOV_DEG } = require('../services/roomItemDetectionService');
 
@@ -81,8 +81,9 @@ const getWallPreview = asyncHandler(async (req, res) => {
 
   // Same sizing as AI Render (imageGenerationService.resolveWallLayers).
   const height = (width * camera.aspect) / aspect;
-  const quad = wallQuad(x, y, height, objectAspect, wall.normalDeg, camera);
+  let quad = wallQuad(x, y, height, objectAspect, wall.normalDeg, camera);
   if (!quad) throw new ApiError(422, 'The wall is seen edge-on here.');
+  if (wall.vp) quad = wallQuadToVanishingPoint(quad, wall.vp, camera.aspect);
 
   const bw = width * PREVIEW_BOX_SCALE;
   const bh = height * PREVIEW_BOX_SCALE;

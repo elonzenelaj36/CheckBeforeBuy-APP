@@ -39,6 +39,7 @@ import {
   type SessionSpatialFrame,
   isWallProduct,
   regenerateSession,
+  setSessionFrameAspect,
   showProductAsPhoto,
   showProductIn3D,
   showsAsPhoto,
@@ -389,7 +390,10 @@ export default function Visualization() {
                       loops={spatial.loops}
                       angle={viewAngle}
                       style={StyleSheet.absoluteFill}
-                      onAspect={setRoomAspect}
+                      onAspect={(aspect) => {
+                        setRoomAspect(aspect);
+                        setSessionFrameAspect(aspect);
+                      }}
                     />
                   ) : undefined
                 }

@@ -27,7 +27,7 @@ const { lineSegments } = require('./lineSegmentService');
 const geo = require('./wallGeometry');
 
 /** Version of the geometry (angles) — bump when wallNormal changes; Groq's regions are kept. */
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 5;
 /** Version of the Groq regions (the prompt) — bump only when PROMPT/parseWalls change. */
 const REGIONS_VERSION = 1;
 /** Lines this close to a wall's region still belong to it (its floor and ceiling lines lie ON its border). */
@@ -233,7 +233,22 @@ function wallNormal(wall, segments, cam, axes = null) {
  * @param {{ fovDeg?: number|null, recordedPitchDeg?: number|null }} camera hints (captures: measured FOV / recorded tilt)
  * @returns {Promise<{ status: 'ok'|'unavailable', camera: object, walls: Array }>}
  */
-async function detectWalls(imagePath, { fovDeg = null, recordedPitchDeg = null } = {}) {
+/** Analyses running now, per picture: concurrent requests (walls, preview, Generate) share one Groq call. */
+const running = new Map();
+/** Pictures the model just found no walls in: not asked again for a while (each drop would spend Groq's rate limit). */
+const noWallsUntil = new Map();
+const NO_WALLS_RETRY_MS = 2 * 60 * 1000;
+
+async function detectWalls(imagePath, options = {}) {
+  let pending = running.get(imagePath);
+  if (!pending) {
+    pending = analyse(imagePath, options).finally(() => running.delete(imagePath));
+    running.set(imagePath, pending);
+  }
+  return pending;
+}
+
+async function analyse(imagePath, { fovDeg = null, recordedPitchDeg = null } = {}) {
   const cachePath = `${imagePath}.walls.json`;
   let regions = null;
   try {
@@ -254,9 +269,13 @@ async function detectWalls(imagePath, { fovDeg = null, recordedPitchDeg = null }
 
   if (!regions) {
     if (!isAvailable()) return { status: 'unavailable', camera, walls: [] };
+    if ((noWallsUntil.get(imagePath) || 0) > Date.now()) return { status: 'ok', camera, walls: [] };
     try {
-      const { content, width: w, height: h } = await askGroqAboutImage(imagePath, PROMPT);
-      regions = parseWalls(content, w, h);
+      // The model now and then answers with no walls at all for a picture it reads fine the next time: ask once more.
+      for (let attempt = 0; attempt < 2 && !regions?.length; attempt += 1) {
+        const { content, width: w, height: h } = await askGroqAboutImage(imagePath, PROMPT);
+        regions = parseWalls(content, w, h);
+      }
     } catch (err) {
       console.warn('[walls] detection failed:', err.message);
       return { status: 'unavailable', camera, walls: [] }; // not cached: try again next time
@@ -267,7 +286,23 @@ async function detectWalls(imagePath, { fovDeg = null, recordedPitchDeg = null }
   const axes = found && found.share >= MIN_AXES_SHARE ? found : null;
   const walls = regions
     .map((r, i) => {
-      const n = wallNormal(r, segments, camera, axes);
+      let n = wallNormal(r, segments, camera, axes);
+      // The wall's own vanishing point (its lines meeting in the picture) is the most direct evidence:
+      // it decides the angle unless it puts the wall on the other side than the model saw it.
+      const vanishing = geo.vanishingPoint(segments, r.polygon, camera.aspect);
+      let vp = null;
+      if (vanishing) {
+        const [cx, cy] = [r.polygon.reduce((sum, p) => sum + p[0], 0) / 4, r.polygon.reduce((sum, p) => sum + p[1], 0) / 4];
+        const normalDeg = geo.normalFacingCamera(geo.vanishingDirectionDeg(vanishing.vp, camera), cx, cy, camera);
+        const ray = geo.levelRay(cx, cy, camera);
+        const rel = geo.wrap180(normalDeg - Math.atan2(ray[0], ray[2]) / (Math.PI / 180) - 180);
+        // A side wall must really turn that way; a front wall must roughly face the camera.
+        const otherSide = (r.facing === 'left' && rel > -15) || (r.facing === 'right' && rel < 15) || (r.facing === 'front' && Math.abs(rel) > 50);
+        if (!otherSide) {
+          n = { normalDeg, source: 'vanishing-point', agreement: 1 };
+          vp = vanishing.vp.map((v) => Math.round(v * 1e6) / 1e6);
+        }
+      }
       const round = (v) => Math.round(v * 1000) / 1000;
       return {
         id: `wall_${i + 1}`,
@@ -277,14 +312,18 @@ async function detectWalls(imagePath, { fovDeg = null, recordedPitchDeg = null }
         // The model's confidence, lowered when the geometry disagrees with its front/left/right.
         confidence: round(r.confidence * (n ? n.agreement : 0.5)),
         normalDeg: n ? Math.round(n.normalDeg * 10) / 10 : null,
-        // 'room-lines' (the room's two directions) | 'lines' | 'edges' | null (no usable geometry)
+        // 'vanishing-point' | 'room-lines' (the room's two directions) | 'lines' | 'edges' | null (no usable geometry)
         geometry: n ? n.source : null,
+        // Its vanishing point (homogeneous, aspect-corrected), when found: a painting's top and bottom edges aim at it.
+        vp,
       };
     })
     .filter((w) => w.confidence >= MIN_CONFIDENCE);
 
   const result = { status: 'ok', camera: { ...camera, fovDeg: Math.round(camera.fovDeg * 10) / 10 }, walls };
-  await fs.promises.writeFile(cachePath, JSON.stringify({ version: CACHE_VERSION, regionsVersion: REGIONS_VERSION, regions, result })).catch(() => {});
+  // No walls found: not kept on disk, asked again after a short while (a room picture practically always shows one).
+  if (!regions.length) noWallsUntil.set(imagePath, Date.now() + NO_WALLS_RETRY_MS);
+  else await fs.promises.writeFile(cachePath, JSON.stringify({ version: CACHE_VERSION, regionsVersion: REGIONS_VERSION, regions, result })).catch(() => {});
   console.log(`[walls] ${walls.length} wall(s): ${walls.map((w) => `${w.facing} n=${w.normalDeg} (${w.geometry}, ${w.confidence})`).join('; ')}`);
   return result;
 }

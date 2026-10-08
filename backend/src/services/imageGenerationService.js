@@ -35,7 +35,7 @@ const { uploadRoot } = require('../middleware/upload');
 const { composeArrangement } = require('./arrangeCompositionService');
 const { preserveRoom } = require('./roomPreservationService');
 const { detectWalls, wallForLayer } = require('./wallDetectionService');
-const { wallQuad, levelRay } = require('./wallGeometry');
+const { wallQuad, levelRay, wallQuadToVanishingPoint } = require('./wallGeometry');
 
 /** A wall below this confidence isn't used: the product renders the way it always did. */
 const MIN_WALL_CONFIDENCE = 0.5;
@@ -83,6 +83,8 @@ async function resolveWallLayers(products, roomImagePath, pictureHints) {
       layer.wall = { used: false, reason: wall ? 'low confidence' : 'no wall at this position', facing: 'camera' };
     }
     let quad = wallQuad(t.x, t.y, height, objectAspect, facing, walls.camera);
+    // On its wall, its top and bottom edges aim at the wall's own vanishing point (the room's lines).
+    if (quad && layer.wall.used && wall.vp) quad = wallQuadToVanishingPoint(quad, wall.vp, walls.camera.aspect);
     if (!quad && layer.wall.used) {
       // Seen edge-on on that wall: show it facing the camera instead.
       const ray = levelRay(t.x, t.y, walls.camera);
