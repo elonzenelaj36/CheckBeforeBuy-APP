@@ -11,7 +11,8 @@
  *   2. each FLOOR product is taken as the AI drew it — realistic, from the
  *      product photo — even when the AI drew it a little off or in a slightly
  *      different shape: the pixels it changed near the arranged spot, moved so
- *      its feet stand where the user put it (aiProduct);
+ *      its feet stand where the user put it (aiProduct) — its outline cut by
+ *      background removal of the AI picture (whole, nothing half see-through);
  *   3. its shadow (an ellipse under it, plus the 3D view's own faint ground
  *      shadow) may only darken the real floor; safety net: a product the AI
  *      didn't draw there at all keeps its arranged (3D) pixels;
@@ -29,6 +30,7 @@
 
 const sharp = require('sharp');
 const { warpLayerToQuad } = require('./arrangeCompositionService');
+const { fetchRawCutout } = require('./backgroundRemovalService');
 
 const EDGE_GROW = 0.005;
 /** A layer pixel at least this opaque is the product itself; fainter ones are its (3D viewer's) shadow. */
@@ -42,6 +44,13 @@ const AI_DIFF = 45;
 const MIN_AI_OVERLAP = 0.35;
 /** How far around a product's outline (share of its size, as a soft blur) the AI's version of it may reach. */
 const NEAR_PRODUCT = 0.12;
+/** The AI's product is grown this much (share of its size) so its edges are whole, then feathered this much outside. */
+const PRODUCT_GROW = 0.015;
+/** The matted product may reach this far (share of its size) beyond what the AI visibly changed. */
+const MATTE_ALLOWANCE = 0.06;
+/** Dents up to about this deep (share of its size) along the AI product's edge are closed. */
+const PRODUCT_CLOSE = 0.07;
+const PRODUCT_FEATHER = 0.008;
 
 /**
  * The floor product AS THE AI DREW IT: FLUX often draws it a little off its
@@ -246,35 +255,118 @@ async function aiProduct(l, room, gen, gains, width, height) {
   if (move.score < MIN_AI_OVERLAP) return debugNull(`overlap ${move.score.toFixed(2)}`);
   const { dx, dy } = move;
 
-  // Only what lands near the arranged product — within a soft border that follows its outline (and a
-  // little more below it, for the contact shadow): changes the AI made further away (the curtain next
-  // to it, a shadow thrown on the wall) are left out, without hard straight edges.
-  const near = await blurMask(arranged, w, h, NEAR_PRODUCT * Math.max(bw, bh));
-  const below = new Float32Array(w * h);
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      const gy = y0 + y;
-      const gx = x0 + x;
-      if (gy > y2 - bh * 0.2 && gy < y2 + bh * 0.12 && gx > x1 - bw * 0.05 && gx < x2 + bw * 0.05) below[y * w + x] = 1;
-    }
-  }
-  const belowSoft = await blurMask(below, w, h, 0.03 * Math.max(bw, bh));
-  const mask = new Float32Array(w * h);
+  // The product is taken WHOLE, as one solid piece: what the AI changed near the arranged spot (where
+  // the product lands once moved; its shadow further out is the soft darken-only zone, step 4, never a
+  // pasted block whose straight edges show) — changes further away (the
+  // curtain next to it, things on a dresser) are left out — then grown a little and every hole
+  // filled, because parts of a product the colour of what's behind it (a grey chair against a grey
+  // curtain) don't show as changed. Only a thin border just OUTSIDE the product is soft, where the
+  // AI's floor and the real floor match; nothing inside it is half see-through.
+  const size = Math.max(bw, bh);
+  const near = await blurMask(arranged, w, h, NEAR_PRODUCT * size);
+  const core = new Float32Array(w * h);
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       if (!drawn[y * w + x]) continue;
       const tx = x + dx;
       const ty = y + dy;
       if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
-      const t = ty * w + tx;
-      mask[y * w + x] = Math.min(1, Math.max(Math.min(1, near[t] * 4), belowSoft[t]));
+      if (near[ty * w + tx] > 0.05) core[y * w + x] = 1;
     }
   }
+  // Closed (grown, then shrunk back): an edge the colour of the floor (a grey arm's underside) leaves
+  // a dent; small holes are filled too. Big holes — the floor between legs — stay the real room
+  // unless the AI changed them (its shadow is part of the shape already).
+  const grown = await growMask(core, w, h, PRODUCT_CLOSE * size);
+  const shrunk = await growMask(Float32Array.from(grown, (v) => (v >= 0.5 ? 0 : 1)), w, h, PRODUCT_CLOSE * size);
+  const sealed = Uint8Array.from(shrunk, (v, i) => (v < 0.5 || core[i] ? 1 : 0));
+  const seenHole = new Uint8Array(w * h);
+  for (let start = 0; start < w * h; start += 1) {
+    if (sealed[start] || seenHole[start]) continue;
+    const region = [];
+    let touchesBorder = false;
+    seenHole[start] = 1;
+    stack.push(start);
+    while (stack.length) {
+      const p = stack.pop();
+      region.push(p);
+      const px = p % w;
+      const py = (p - px) / w;
+      if (px === 0 || py === 0 || px === w - 1 || py === h - 1) touchesBorder = true;
+      for (const q of [p - 1, p + 1, p - w, p + w]) {
+        if (q < 0 || q >= w * h || seenHole[q] || sealed[q]) continue;
+        if ((q === p - 1 && px === 0) || (q === p + 1 && px === w - 1)) continue;
+        seenHole[q] = 1;
+        stack.push(q);
+      }
+    }
+    if (!touchesBorder && region.length <= maxHole) for (const p of region) sealed[p] = 1;
+  }
   let kept = 0;
-  for (let i = 0; i < w * h; i += 1) kept += mask[i] > 0.5 ? 1 : 0;
+  for (let i = 0; i < w * h; i += 1) kept += core[i];
   const ratio = kept / area;
-  if (ratio < 0.4 || ratio > 2) return debugNull(`changed area ${ratio.toFixed(2)}× the product`); // nothing drawn, or a whole area changed
-  return { x0, y0, w, h, mask, dx, dy, ratio: Math.round(ratio * 100) / 100 };
+  // Nothing drawn, or a whole area changed (the product with its own shadow is up to ~3× its size).
+  if (ratio < 0.4 || ratio > 3) return debugNull(`changed area ${ratio.toFixed(2)}× the product`);
+
+  // Its exact outline: the AI's picture around it through background removal (the same BiRefNet as the
+  // product cutouts) — colour differences can't tell a grey chair from a floor the AI also repainted.
+  // Kept only near where the AI changed things (another object the matting picks up is dropped).
+  const matte = await matteOf(gen, width, height, x0, y0, w, h, sealed, size);
+  if (matte) {
+    const allowed = await growMask(Float32Array.from(sealed), w, h, MATTE_ALLOWANCE * size);
+    const mask = Float32Array.from(matte, (v, i) => (allowed[i] >= 0.5 ? v : 0));
+    let solidArea = 0;
+    for (let i = 0; i < w * h; i += 1) solidArea += mask[i] >= 0.5 ? 1 : 0;
+    if (solidArea >= 0.4 * area && solidArea <= 2 * area) return { x0, y0, w, h, mask, dx, dy, ratio: Math.round((solidArea / area) * 100) / 100, outline: 'matte' };
+    console.log(`[roomPreservation] AI product matte ${(solidArea / area).toFixed(2)}× the product: its changed pixels are used`);
+  }
+  const solid = await growMask(Float32Array.from(sealed), w, h, PRODUCT_GROW * size);
+  const mask = await blurMask(solid, w, h, PRODUCT_FEATHER * size);
+  return { x0, y0, w, h, mask, dx, dy, ratio: Math.round(ratio * 100) / 100, outline: 'changed' };
+}
+
+/**
+ * Background removal of the AI picture around the product (window coordinates), as alpha 0..1 —
+ * or null when the Worker isn't available (then the changed pixels decide the outline).
+ */
+async function matteOf(gen, width, height, x0, y0, w, h, sealed, size) {
+  let bx1 = w;
+  let by1 = h;
+  let bx2 = -1;
+  let by2 = -1;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (!sealed[y * w + x]) continue;
+      bx1 = Math.min(bx1, x);
+      bx2 = Math.max(bx2, x);
+      by1 = Math.min(by1, y);
+      by2 = Math.max(by2, y);
+    }
+  }
+  if (bx2 < 0) return null;
+  const pad = Math.round(0.15 * size);
+  const cx1 = Math.max(0, bx1 - pad);
+  const cy1 = Math.max(0, by1 - pad);
+  const cw = Math.min(w - 1, bx2 + pad) - cx1 + 1;
+  const ch = Math.min(h - 1, by2 + pad) - cy1 + 1;
+  const crop = Buffer.alloc(cw * ch * 3);
+  for (let y = 0; y < ch; y += 1) {
+    const from = ((y0 + cy1 + y) * width + x0 + cx1) * 3;
+    gen.copy(crop, y * cw * 3, from, from + cw * 3);
+  }
+  try {
+    const png = await sharp(crop, { raw: { width: cw, height: ch, channels: 3 } }).png().toBuffer();
+    const cut = await fetchRawCutout(png, 'image/png');
+    const { data, info } = await sharp(cut).ensureAlpha().resize(cw, ch, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
+    const alpha = new Float32Array(w * h);
+    for (let y = 0; y < ch; y += 1) {
+      for (let x = 0; x < cw; x += 1) alpha[(cy1 + y) * w + cx1 + x] = data[(y * cw + x) * info.channels + 3] / 255;
+    }
+    return alpha;
+  } catch (err) {
+    console.log(`[roomPreservation] AI product matte unavailable (${err.message}): its changed pixels are used`);
+    return null;
+  }
 }
 const SHADOW_WIDTH = 0.65;
 const SHADOW_HEIGHT = 0.14;

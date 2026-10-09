@@ -313,10 +313,20 @@ it's realistic, from the product photo:
 - **Placing it:** it's moved so it covers the arranged product best
   (overlap/union), because FLUX often draws it a little off and the user's
   placement is authoritative.
-- **Clipping it:** a soft border follows the product's outline, so FLUX's
-  changes further away (the curtain next to it) are left out.
+- **Its outline:** FLUX's picture around the product goes through the same
+  background removal as product photos (`fetchRawCutout`, the BiRefNet
+  Worker, ~4 s, one call per floor product per render, counts towards the
+  Worker's free 5,000/month). That matte is the product's exact outline,
+  soft edges included, kept only within 6% of what FLUX visibly changed near
+  the arranged spot (so a laptop FLUX invented on the dresser stays out).
+  Colour differences alone can't separate a grey chair from a floor FLUX
+  also repainted: that gave ghost legs, torn edges and pasted floor patches.
+  If the Worker fails or the matte is the wrong size, the changed pixels
+  are used, closed (dents up to 7% of its size), small holes filled, grown
+  1.5% and feathered. Its shadow is never pasted: it is the soft darken-only
+  zone below.
 - **Fallback:** if FLUX didn't draw it there (overlap under 0.35, or a
-  wrong-sized area), the arranged 3D view is used and the reason is logged
+  changed area under 0.4× or over 3× the product, shadow included), the arranged 3D view is used and the reason is logged
   (`[roomPreservation] AI product not found (…)`).
 - **Shadow:** an ellipse under it, plus the 3D viewer's own faint ground
   shadow. There FLUX may only darken the real floor. That output is first aligned to the photo
